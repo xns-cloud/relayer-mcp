@@ -149,6 +149,7 @@ function captureAuthCode(opts) {
 
     return new Promise((resolve, reject) => {
         let timeoutHandle;
+        let capturedPort;
 
         const srv = createServer((req, res) => {
             const url = new URL(req.url, `http://127.0.0.1`);
@@ -172,17 +173,18 @@ function captureAuthCode(opts) {
             res.writeHead(200, { 'Content-Type': 'text/html' });
             res.end('<html><body><h1>Authentication successful</h1><p>You can close this window and return to the agent.</p></body></html>');
             clearTimeout(timeoutHandle);
-            srv.close();
 
-            const address = srv.address();
-            const redirectUri = `http://127.0.0.1:${address.port}/callback`;
+            // Capture redirect URI from the port stored in listen callback
+            // BEFORE calling srv.close() — after close, srv.address() may return null
+            const redirectUri = `http://127.0.0.1:${capturedPort}/callback`;
+            srv.close();
             resolve({ code, redirectUri });
         });
 
         // Bind to 127.0.0.1:0 (ephemeral port) — R7 platform-agnostic
         srv.listen(0, '127.0.0.1', () => {
-            const { port } = srv.address();
-            const redirectUri = `http://127.0.0.1:${port}/callback`;
+            capturedPort = srv.address().port;
+            const redirectUri = `http://127.0.0.1:${capturedPort}/callback`;
             const state = crypto.randomBytes(16).toString('hex');
 
             const params = new URLSearchParams({

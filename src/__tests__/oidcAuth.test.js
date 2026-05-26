@@ -94,6 +94,52 @@ describe('oidcAuth', () => {
             expect(postCall[1]).toContain('code_verifier=');
         });
 
+        // R3-RACE-1: regression test — srv.address() returns null after close()
+        test('uses captured port, not srv.address() after close', async () => {
+            let requestHandler;
+            const mockServer = {
+                listen: jest.fn((port, host, cb) => cb()),
+                address: jest.fn()
+                    .mockReturnValueOnce({ port: 54321 }) // first call in listen callback
+                    .mockReturnValueOnce(null),            // would be null after close
+                close: jest.fn(),
+            };
+            const createServer = jest.fn((handler) => {
+                requestHandler = handler;
+                return mockServer;
+            });
+
+            const openBrowser = jest.fn().mockImplementation(async () => {
+                requestHandler(
+                    { url: '/callback?code=race-code&state=xyz' },
+                    { writeHead: jest.fn(), end: jest.fn() },
+                );
+            });
+
+            const httpClient = {
+                post: jest.fn().mockResolvedValue({
+                    status: 200,
+                    data: {
+                        access_token: 'race-access',
+                        refresh_token: 'race-refresh',
+                        expires_in: 300,
+                    },
+                }),
+                get: jest.fn(),
+            };
+
+            const result = await acquireToken({
+                createServer,
+                openBrowser,
+                httpClient,
+            });
+
+            expect(result.access_token).toBe('race-access');
+            // Verify the token exchange used the correct redirect_uri with port 54321
+            const postBody = httpClient.post.mock.calls[0][1];
+            expect(postBody).toContain('redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Fcallback');
+        });
+
         test('rejects when OIDC returns error', async () => {
             let requestHandler;
             const createServer = jest.fn((handler) => {
