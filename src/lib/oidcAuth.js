@@ -226,19 +226,27 @@ function captureAuthCode(opts) {
 
 /**
  * Default browser opener — platform-aware.
+ * Uses execFile (not exec) to avoid shell interpolation of the URL.
  * @param {string} url
  * @returns {Promise<void>}
  */
 function defaultOpenBrowser(url) {
-    const { exec } = require('child_process');
+    const { execFile } = require('child_process');
     return new Promise((resolve, reject) => {
         const platform = process.platform;
-        let cmd;
-        if (platform === 'darwin') cmd = `open "${url}"`;
-        else if (platform === 'win32') cmd = `start "" "${url}"`;
-        else cmd = `xdg-open "${url}"`;
+        let cmd, args;
+        if (platform === 'darwin') {
+            cmd = 'open';
+            args = [url];
+        } else if (platform === 'win32') {
+            cmd = 'cmd';
+            args = ['/c', 'start', '', url];
+        } else {
+            cmd = 'xdg-open';
+            args = [url];
+        }
 
-        exec(cmd, (err) => {
+        execFile(cmd, args, (err) => {
             if (err) return reject(err);
             resolve();
         });
