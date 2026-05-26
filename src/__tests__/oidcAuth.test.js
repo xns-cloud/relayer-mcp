@@ -50,10 +50,11 @@ describe('oidcAuth', () => {
             });
 
             const openBrowser = jest.fn().mockImplementation(async (url) => {
-                // Simulate the browser completing the auth flow
-                // The redirect comes back to the loopback server
+                // Extract the state from the authorize URL to echo it back
+                const authorizeUrl = new URL(url);
+                const state = authorizeUrl.searchParams.get('state');
                 const mockReq = {
-                    url: '/callback?code=test-auth-code&state=abc',
+                    url: `/callback?code=test-auth-code&state=${state}`,
                 };
                 const mockRes = {
                     writeHead: jest.fn(),
@@ -109,9 +110,11 @@ describe('oidcAuth', () => {
                 return mockServer;
             });
 
-            const openBrowser = jest.fn().mockImplementation(async () => {
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                const authorizeUrl = new URL(url);
+                const state = authorizeUrl.searchParams.get('state');
                 requestHandler(
-                    { url: '/callback?code=race-code&state=xyz' },
+                    { url: `/callback?code=race-code&state=${state}` },
                     { writeHead: jest.fn(), end: jest.fn() },
                 );
             });
@@ -176,9 +179,11 @@ describe('oidcAuth', () => {
                 };
             });
 
-            const openBrowser = jest.fn().mockImplementation(async () => {
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                const authorizeUrl = new URL(url);
+                const state = authorizeUrl.searchParams.get('state');
                 requestHandler(
-                    { url: '/callback?code=test-code&state=abc' },
+                    { url: `/callback?code=test-code&state=${state}` },
                     { writeHead: jest.fn(), end: jest.fn() },
                 );
             });
@@ -194,6 +199,32 @@ describe('oidcAuth', () => {
                     get: jest.fn(),
                 },
             })).rejects.toThrow('Token exchange failed');
+        });
+        // R5-STATE-1: state mismatch → rejection
+        test('rejects when callback state does not match expected state', async () => {
+            let requestHandler;
+            const createServer = jest.fn((handler) => {
+                requestHandler = handler;
+                return {
+                    listen: jest.fn((port, host, cb) => cb()),
+                    address: jest.fn(() => ({ port: 12345 })),
+                    close: jest.fn(),
+                };
+            });
+
+            const openBrowser = jest.fn().mockImplementation(async () => {
+                // Send a mismatched state value
+                requestHandler(
+                    { url: '/callback?code=stolen-code&state=wrong-state-value' },
+                    { writeHead: jest.fn(), end: jest.fn() },
+                );
+            });
+
+            await expect(acquireToken({
+                createServer,
+                openBrowser,
+                httpClient: { post: jest.fn(), get: jest.fn() },
+            })).rejects.toThrow('state mismatch');
         });
     });
 

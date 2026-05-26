@@ -150,6 +150,7 @@ function captureAuthCode(opts) {
     return new Promise((resolve, reject) => {
         let timeoutHandle;
         let capturedPort;
+        let expectedState;
 
         const srv = createServer((req, res) => {
             const url = new URL(req.url, `http://127.0.0.1`);
@@ -170,6 +171,16 @@ function captureAuthCode(opts) {
                 return; // Don't close server — wait for the real redirect
             }
 
+            // R5-STATE-1: Validate OIDC state parameter to prevent CSRF
+            const returnedState = url.searchParams.get('state');
+            if (returnedState !== expectedState) {
+                res.writeHead(400, { 'Content-Type': 'text/html' });
+                res.end('<html><body><h1>Invalid state parameter</h1><p>Possible CSRF attack. Please try again.</p></body></html>');
+                clearTimeout(timeoutHandle);
+                srv.close();
+                return reject(new Error('OIDC callback state mismatch — possible CSRF. Please try again.'));
+            }
+
             res.writeHead(200, { 'Content-Type': 'text/html' });
             res.end('<html><body><h1>Authentication successful</h1><p>You can close this window and return to the agent.</p></body></html>');
             clearTimeout(timeoutHandle);
@@ -185,7 +196,7 @@ function captureAuthCode(opts) {
         srv.listen(0, '127.0.0.1', () => {
             capturedPort = srv.address().port;
             const redirectUri = `http://127.0.0.1:${capturedPort}/callback`;
-            const state = crypto.randomBytes(16).toString('hex');
+            expectedState = crypto.randomBytes(16).toString('hex');
 
             const params = new URLSearchParams({
                 response_type: 'code',
@@ -194,7 +205,7 @@ function captureAuthCode(opts) {
                 scope: scopes.join(' '),
                 code_challenge: challenge,
                 code_challenge_method: 'S256',
-                state,
+                state: expectedState,
             });
 
             const authorizeUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth?${params}`;
