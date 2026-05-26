@@ -1,0 +1,20 @@
+{
+  "name": "@xns/relayer-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for XNS Relayer onboarding — 10 tools, stdio transport, npx-ready",
+  "bin": {
+    "relayer-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "test": "jest --verbose",
+    "start": "node src/index.js"
+  },
+  "keywords": ["mcp", "relayer", "xns", "onboarding"],
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src/"
+  ]
+}
