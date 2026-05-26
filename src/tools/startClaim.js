@@ -1,6 +1,5 @@
 'use strict';
 
-const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
 
 const RELAYER_UI_BASE = 'http://localhost:8888';

@@ -1,9 +1,7 @@
 'use strict';
 
-const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
-const { acquireToken, refreshToken } = require('../lib/oidcAuth');
-const sharedTokenState = require('../lib/tokenState');
+const { createTokenManager } = require('../lib/ensureToken');
 
 const RELAYER_UI_BASE = 'http://localhost:8888';
 
@@ -18,46 +16,9 @@ const RELAYER_UI_BASE = 'http://localhost:8888';
 module.exports = function registerGetHostTags(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
     const relayerUiBase = options.relayerUiBase || RELAYER_UI_BASE;
-    const _acquireToken = options.acquireToken || acquireToken;
-    const _refreshToken = options.refreshToken || refreshToken;
-    const oidcOpts = options.oidcOptions || {};
 
-    // Allow tests to inject/reset token state
-    const _tokenState = options._tokenStateModule || sharedTokenState;
-    if (options._tokenState !== undefined) {
-        _tokenState.set(options._tokenState);
-    }
-
-    /**
-     * Ensure we have a valid OIDC token. Re-auth on 401 or expiry.
-     * @returns {Promise<string>} access_token
-     */
-    async function ensureToken() {
-        const tokenState = _tokenState.get();
-        // Try refresh if we have a token near expiry
-        if (tokenState && tokenState.refresh_token) {
-            if (Date.now() >= tokenState.expires_at - 30000) {
-                try {
-                    const newState = await _refreshToken({
-                        refreshToken: tokenState.refresh_token,
-                        ...oidcOpts,
-                    });
-                    _tokenState.set(newState);
-                    return newState.access_token;
-                } catch {
-                    // Refresh failed — fall through to full re-auth
-                    _tokenState.clear();
-                }
-            } else {
-                return tokenState.access_token;
-            }
-        }
-
-        // Full OIDC sign-in
-        const newState = await _acquireToken(oidcOpts);
-        _tokenState.set(newState);
-        return newState.access_token;
-    }
+    const tokenMgr = createTokenManager(options);
+    const { ensureToken } = tokenMgr;
 
     server.tool(
         'get_host_tags',
@@ -76,8 +37,7 @@ module.exports = function registerGetHostTags(server, options = {}) {
 
                 // Watch item 1: 401 → re-auth, never silent failure
                 if (status === 401) {
-                    _tokenState.clear();
-                    token = await ensureToken();
+                    token = await tokenMgr.reauth();
                     const retry = await http.get(
                         `${relayerUiBase}/api/v1/proxy/hostio/v1/hostio/gettags`,
                         { headers: { keycloaktoken: token } },
@@ -140,5 +100,5 @@ module.exports = function registerGetHostTags(server, options = {}) {
     );
 
     // Expose for testing
-    return { ensureToken, getTokenState: () => _tokenState.get(), setTokenState: (s) => { _tokenState.set(s); } };
+    return { ensureToken, getTokenState: tokenMgr.getTokenState, setTokenState: tokenMgr.setTokenState };
 };

@@ -1,6 +1,5 @@
 'use strict';
 
-const { z } = require('zod');
 const net = require('net');
 const { createHttpClient } = require('../lib/httpClient');
 const { createDockerUtil } = require('../lib/dockerUtil');
@@ -58,57 +57,29 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 });
             }
 
-            // 2. Port 8888 (relayer-ui)
-            try {
-                const available = await _checkPort(8888);
-                if (available) {
-                    checks.push({ name: 'port_8888', passed: true, detail: 'Port 8888 is available' });
-                } else {
+            // 2-3. Required ports
+            const requiredPorts = [
+                { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port or choose a different host.' },
+                { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: MinIO or another S3-compatible service).' },
+            ];
+            for (const { port, name, inUseRemediation } of requiredPorts) {
+                try {
+                    const available = await _checkPort(port);
+                    if (available) {
+                        checks.push({ name, passed: true, detail: `Port ${port} is available` });
+                    } else {
+                        allPassed = false;
+                        checks.push({ name, passed: false, detail: `Port ${port} is already in use`, remediation: inUseRemediation });
+                    }
+                } catch {
                     allPassed = false;
-                    checks.push({
-                        name: 'port_8888',
-                        passed: false,
-                        detail: 'Port 8888 is already in use',
-                        remediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port or choose a different host.',
-                    });
+                    checks.push({ name, passed: false, detail: `Could not check port ${port}`, remediation: 'Ensure you have permission to bind ports. On Linux, non-root users may need to use ports above 1024.' });
                 }
-            } catch {
-                allPassed = false;
-                checks.push({
-                    name: 'port_8888',
-                    passed: false,
-                    detail: 'Could not check port 8888',
-                    remediation: 'Ensure you have permission to bind ports. On Linux, non-root users may need to use ports above 1024.',
-                });
-            }
-
-            // 3. Port 9000 (S3 gateway)
-            try {
-                const available = await _checkPort(9000);
-                if (available) {
-                    checks.push({ name: 'port_9000', passed: true, detail: 'Port 9000 is available' });
-                } else {
-                    allPassed = false;
-                    checks.push({
-                        name: 'port_9000',
-                        passed: false,
-                        detail: 'Port 9000 is already in use',
-                        remediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: MinIO or another S3-compatible service).',
-                    });
-                }
-            } catch {
-                allPassed = false;
-                checks.push({
-                    name: 'port_9000',
-                    passed: false,
-                    detail: 'Could not check port 9000',
-                    remediation: 'Ensure you have permission to bind ports.',
-                });
             }
 
             // 4. Disk space (need at least 10 GB free — basic docker images + data)
             try {
-                const { stdout } = await docker.docker(['system', 'df', '--format', '{{.TotalCount}}']);
+                await docker.docker(['system', 'df', '--format', '{{.TotalCount}}']);
                 // If docker works, disk is implicitly accessible. We check via df on root.
                 checks.push({ name: 'disk', passed: true, detail: 'Docker storage is accessible' });
             } catch {
@@ -116,52 +87,24 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 checks.push({ name: 'disk', passed: true, detail: 'Disk check skipped (Docker storage stats unavailable)' });
             }
 
-            // 5. Network connectivity to console.xns.tech
-            try {
-                const { status } = await http.get('https://console.xns.tech/health', { timeout: 10000 });
-                if (status >= 200 && status < 500) {
-                    checks.push({ name: 'connectivity_console', passed: true, detail: 'console.xns.tech is reachable' });
-                } else {
+            // 5-6. Network connectivity
+            const connectivityChecks = [
+                { url: 'https://console.xns.tech/health', name: 'connectivity_console', host: 'console.xns.tech' },
+                { url: 'https://auth.xns.tech/auth/realms/scprime/.well-known/openid-configuration', name: 'connectivity_auth', host: 'auth.xns.tech' },
+            ];
+            for (const { url, name, host } of connectivityChecks) {
+                try {
+                    const { status } = await http.get(url, { timeout: 10000 });
+                    if (status >= 200 && status < 500) {
+                        checks.push({ name, passed: true, detail: `${host} is reachable` });
+                    } else {
+                        allPassed = false;
+                        checks.push({ name, passed: false, detail: `${host} returned HTTP ${status}`, remediation: `Ensure outbound HTTPS (port 443) to ${host} is allowed. Check DNS resolution and firewall rules.` });
+                    }
+                } catch (err) {
                     allPassed = false;
-                    checks.push({
-                        name: 'connectivity_console',
-                        passed: false,
-                        detail: `console.xns.tech returned HTTP ${status}`,
-                        remediation: 'Ensure outbound HTTPS (port 443) to console.xns.tech is allowed. Check DNS resolution and firewall rules.',
-                    });
+                    checks.push({ name, passed: false, detail: `Cannot reach ${host}: ${err.message}`, remediation: `Ensure outbound HTTPS (port 443) to ${host} is allowed. Check DNS resolution and firewall rules.` });
                 }
-            } catch (err) {
-                allPassed = false;
-                checks.push({
-                    name: 'connectivity_console',
-                    passed: false,
-                    detail: `Cannot reach console.xns.tech: ${err.message}`,
-                    remediation: 'Ensure outbound HTTPS (port 443) to console.xns.tech is allowed. Check DNS resolution and firewall rules.',
-                });
-            }
-
-            // 6. Network connectivity to auth.xns.tech
-            try {
-                const { status } = await http.get('https://auth.xns.tech/auth/realms/scprime/.well-known/openid-configuration', { timeout: 10000 });
-                if (status >= 200 && status < 500) {
-                    checks.push({ name: 'connectivity_auth', passed: true, detail: 'auth.xns.tech is reachable' });
-                } else {
-                    allPassed = false;
-                    checks.push({
-                        name: 'connectivity_auth',
-                        passed: false,
-                        detail: `auth.xns.tech returned HTTP ${status}`,
-                        remediation: 'Ensure outbound HTTPS (port 443) to auth.xns.tech is allowed. Check DNS resolution and firewall rules.',
-                    });
-                }
-            } catch (err) {
-                allPassed = false;
-                checks.push({
-                    name: 'connectivity_auth',
-                    passed: false,
-                    detail: `Cannot reach auth.xns.tech: ${err.message}`,
-                    remediation: 'Ensure outbound HTTPS (port 443) to auth.xns.tech is allowed. Check DNS resolution and firewall rules.',
-                });
             }
 
             const result = {

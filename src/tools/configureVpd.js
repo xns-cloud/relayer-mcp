@@ -2,8 +2,7 @@
 
 const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
-const { acquireToken, refreshToken } = require('../lib/oidcAuth');
-const sharedTokenState = require('../lib/tokenState');
+const { createTokenManager } = require('../lib/ensureToken');
 
 const RELAYER_UI_BASE = 'http://localhost:8888';
 
@@ -19,37 +18,9 @@ const RELAYER_UI_BASE = 'http://localhost:8888';
 module.exports = function registerConfigureVpd(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
     const relayerUiBase = options.relayerUiBase || RELAYER_UI_BASE;
-    const _acquireToken = options.acquireToken || acquireToken;
-    const _refreshToken = options.refreshToken || refreshToken;
-    const oidcOpts = options.oidcOptions || {};
 
-    const _tokenState = options._tokenStateModule || sharedTokenState;
-    if (options._tokenState !== undefined) {
-        _tokenState.set(options._tokenState);
-    }
-
-    async function ensureToken() {
-        const tokenState = _tokenState.get();
-        if (tokenState && tokenState.refresh_token) {
-            if (Date.now() >= tokenState.expires_at - 30000) {
-                try {
-                    const newState = await _refreshToken({
-                        refreshToken: tokenState.refresh_token,
-                        ...oidcOpts,
-                    });
-                    _tokenState.set(newState);
-                    return newState.access_token;
-                } catch {
-                    _tokenState.clear();
-                }
-            } else {
-                return tokenState.access_token;
-            }
-        }
-        const newState = await _acquireToken(oidcOpts);
-        _tokenState.set(newState);
-        return newState.access_token;
-    }
+    const tokenMgr = createTokenManager(options);
+    const { ensureToken } = tokenMgr;
 
     server.tool(
         'configure_vpd',
@@ -75,8 +46,7 @@ module.exports = function registerConfigureVpd(server, options = {}) {
 
                 // Watch item 1: 401 → re-auth
                 if (status === 401) {
-                    _tokenState.clear();
-                    token = await ensureToken();
+                    token = await tokenMgr.reauth();
                     const retry = await http.post(
                         `${relayerUiBase}/api/v1/proxy/hostio/v1/hostio/setexpressions`,
                         payload,
@@ -171,5 +141,5 @@ module.exports = function registerConfigureVpd(server, options = {}) {
         },
     );
 
-    return { ensureToken, getTokenState: () => _tokenState.get(), setTokenState: (s) => { _tokenState.set(s); } };
+    return { ensureToken, getTokenState: tokenMgr.getTokenState, setTokenState: tokenMgr.setTokenState };
 };
