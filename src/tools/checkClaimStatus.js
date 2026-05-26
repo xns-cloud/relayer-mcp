@@ -135,7 +135,7 @@ module.exports = function registerCheckClaimStatus(server, options = {}) {
                         type: 'text',
                         text: JSON.stringify(result, null, 2),
                     }],
-                    isError: result.success === false && !result.continue_polling === false ? true : undefined,
+                    isError: (result.success === false && result.continue_polling !== false) ? true : undefined,
                 };
             } catch (err) {
                 return {

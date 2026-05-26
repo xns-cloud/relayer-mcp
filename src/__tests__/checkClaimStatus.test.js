@@ -104,6 +104,58 @@ describe('check_claim_status', () => {
         expect(parsed.message).toContain('start_claim');
     });
 
+    // R3-PREC-1: isError=true for non-402 errors (404, 5xx), undefined for 402 graceful stop
+    test('404 → isError is true (not undefined)', async () => {
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 404, data: {} }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ claim_id: 'claim-abc', timeout_ms: 5000 });
+        expect(result.isError).toBe(true);
+    });
+
+    test('5xx → isError is true', async () => {
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 500, data: { error: 'server error' } }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ claim_id: 'claim-abc', timeout_ms: 5000 });
+        expect(result.isError).toBe(true);
+    });
+
+    test('402 → isError is undefined (graceful stop)', async () => {
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 402, data: {} }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ claim_id: 'claim-abc', timeout_ms: 5000 });
+        expect(result.isError).toBeUndefined();
+    });
+
+    test('STATE_3 success → isError is undefined', async () => {
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockResolvedValue({
+                    status: 200,
+                    data: { state: 'STATE_3', installation_id: 'inst-1' },
+                }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ claim_id: 'claim-abc', timeout_ms: 5000 });
+        expect(result.isError).toBeUndefined();
+    });
+
     // AC-16: timeout → expired + suggest new claim
     test('timeout → session expired message', async () => {
         const handler = registerWithOptions({
