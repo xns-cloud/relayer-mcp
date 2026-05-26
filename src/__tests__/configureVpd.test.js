@@ -1,5 +1,10 @@
 'use strict';
 
+function createIsolatedTokenState(initial = null) {
+    let state = initial;
+    return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+}
+
 describe('configure_vpd', () => {
     let server;
 
@@ -9,12 +14,14 @@ describe('configure_vpd', () => {
 
     function registerWithOptions(opts) {
         const register = require('../tools/configureVpd');
+        const defaultToken = opts._tokenState !== undefined ? opts._tokenState : {
+            access_token: 'valid-token',
+            refresh_token: 'ref-token',
+            expires_at: Date.now() + 300000,
+        };
+        const tokenStateMod = createIsolatedTokenState(defaultToken);
         return register(server, {
-            _tokenState: {
-                access_token: 'valid-token',
-                refresh_token: 'ref-token',
-                expires_at: Date.now() + 300000,
-            },
+            _tokenStateModule: tokenStateMod,
             acquireToken: jest.fn().mockResolvedValue({
                 access_token: 'new-token',
                 refresh_token: 'ref',

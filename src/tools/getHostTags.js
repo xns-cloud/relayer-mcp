@@ -3,11 +3,9 @@
 const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
 const { acquireToken, refreshToken } = require('../lib/oidcAuth');
+const sharedTokenState = require('../lib/tokenState');
 
 const RELAYER_UI_BASE = 'http://localhost:8888';
-
-// Module-level token cache — shared across tool invocations in the same process.
-let tokenState = null;
 
 /**
  * Tool 8: get_host_tags
@@ -25,8 +23,9 @@ module.exports = function registerGetHostTags(server, options = {}) {
     const oidcOpts = options.oidcOptions || {};
 
     // Allow tests to inject/reset token state
+    const _tokenState = options._tokenStateModule || sharedTokenState;
     if (options._tokenState !== undefined) {
-        tokenState = options._tokenState;
+        _tokenState.set(options._tokenState);
     }
 
     /**
@@ -34,18 +33,20 @@ module.exports = function registerGetHostTags(server, options = {}) {
      * @returns {Promise<string>} access_token
      */
     async function ensureToken() {
+        const tokenState = _tokenState.get();
         // Try refresh if we have a token near expiry
         if (tokenState && tokenState.refresh_token) {
             if (Date.now() >= tokenState.expires_at - 30000) {
                 try {
-                    tokenState = await _refreshToken({
+                    const newState = await _refreshToken({
                         refreshToken: tokenState.refresh_token,
                         ...oidcOpts,
                     });
-                    return tokenState.access_token;
+                    _tokenState.set(newState);
+                    return newState.access_token;
                 } catch {
                     // Refresh failed — fall through to full re-auth
-                    tokenState = null;
+                    _tokenState.clear();
                 }
             } else {
                 return tokenState.access_token;
@@ -53,8 +54,9 @@ module.exports = function registerGetHostTags(server, options = {}) {
         }
 
         // Full OIDC sign-in
-        tokenState = await _acquireToken(oidcOpts);
-        return tokenState.access_token;
+        const newState = await _acquireToken(oidcOpts);
+        _tokenState.set(newState);
+        return newState.access_token;
     }
 
     server.tool(
@@ -74,7 +76,7 @@ module.exports = function registerGetHostTags(server, options = {}) {
 
                 // Watch item 1: 401 → re-auth, never silent failure
                 if (status === 401) {
-                    tokenState = null;
+                    _tokenState.clear();
                     token = await ensureToken();
                     const retry = await http.get(
                         `${relayerUiBase}/api/v1/proxy/hostio/v1/hostio/gettags`,
@@ -138,5 +140,5 @@ module.exports = function registerGetHostTags(server, options = {}) {
     );
 
     // Expose for testing
-    return { ensureToken, getTokenState: () => tokenState, setTokenState: (s) => { tokenState = s; } };
+    return { ensureToken, getTokenState: () => _tokenState.get(), setTokenState: (s) => { _tokenState.set(s); } };
 };

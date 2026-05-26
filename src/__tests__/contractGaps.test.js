@@ -14,6 +14,11 @@
  * - checkRelayerHealth S3 4xx-as-healthy contract
  */
 
+function createIsolatedTokenState(initial = null) {
+    let state = initial;
+    return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+}
+
 describe('T1 Contract-Gap: checkClaimStatus isError logic', () => {
     let server;
 
@@ -53,9 +58,9 @@ describe('T1 Contract-Gap: checkClaimStatus isError logic', () => {
         expect(parsed.continue_polling).toBe(false);
     });
 
-    // 404 expired path — should also not set isError (session expired is
-    // informational, not a system error)
-    test('404 expired path does not set isError', async () => {
+    // 404 expired path — isError=true (this is an error state, not guidance).
+    // R3-PREC-1 fix corrected the precedence bug so 404 now correctly sets isError.
+    test('404 expired path sets isError true', async () => {
         const handler = registerWithOptions({
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 404, data: {} }),
@@ -68,9 +73,8 @@ describe('T1 Contract-Gap: checkClaimStatus isError logic', () => {
 
         // Verify expired is set
         expect(parsed.expired).toBe(true);
-        // The isError should be undefined/falsy for expired (guidance, not error)
-        // This documents the actual behavior produced by the precedence bug
-        expect(result.isError).toBeFalsy();
+        // 404 is an error — isError should be true after the R3-PREC-1 fix
+        expect(result.isError).toBe(true);
     });
 
     // STATE_3 success path — isError must not be set
@@ -112,11 +116,11 @@ describe('T1 Contract-Gap: getHostTags empty tags array', () => {
     test('empty tags array returns empty array, not the data object', async () => {
         const register = require('../tools/getHostTags');
         register(server, {
-            _tokenState: {
+            _tokenStateModule: createIsolatedTokenState({
                 access_token: 'valid-token',
                 refresh_token: 'ref-token',
                 expires_at: Date.now() + 300000,
-            },
+            }),
             acquireToken: jest.fn(),
             refreshToken: jest.fn(),
             httpClient: {
@@ -149,11 +153,11 @@ describe('T1 Contract-Gap: configureVpd string response body', () => {
     function registerWithOptions(opts) {
         const register = require('../tools/configureVpd');
         register(server, {
-            _tokenState: {
+            _tokenStateModule: createIsolatedTokenState({
                 access_token: 'valid-token',
                 refresh_token: 'ref-token',
                 expires_at: Date.now() + 300000,
-            },
+            }),
             acquireToken: jest.fn().mockResolvedValue({
                 access_token: 'new-token',
                 refresh_token: 'ref',
@@ -233,11 +237,11 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
 
         const register = require('../tools/getHostTags');
         register(server, {
-            _tokenState: {
+            _tokenStateModule: createIsolatedTokenState({
                 access_token: 'my-jwt-token',
                 refresh_token: 'ref',
                 expires_at: Date.now() + 300000,
-            },
+            }),
             acquireToken: jest.fn(),
             refreshToken: jest.fn(),
             httpClient: { get: getMock, post: jest.fn() },
@@ -259,11 +263,11 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
 
         const register = require('../tools/configureVpd');
         register(server, {
-            _tokenState: {
+            _tokenStateModule: createIsolatedTokenState({
                 access_token: 'vpd-jwt-token',
                 refresh_token: 'ref',
                 expires_at: Date.now() + 300000,
-            },
+            }),
             acquireToken: jest.fn().mockResolvedValue({
                 access_token: 'new',
                 refresh_token: 'ref',

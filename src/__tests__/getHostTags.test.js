@@ -1,5 +1,10 @@
 'use strict';
 
+function createIsolatedTokenState(initial = null) {
+    let state = initial;
+    return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+}
+
 describe('get_host_tags', () => {
     let server;
 
@@ -9,8 +14,9 @@ describe('get_host_tags', () => {
 
     function registerWithOptions(opts) {
         const register = require('../tools/getHostTags');
+        const tokenStateMod = createIsolatedTokenState(opts._tokenState ?? null);
         return register(server, {
-            _tokenState: null,
+            _tokenStateModule: tokenStateMod,
             ...opts,
         });
     }
