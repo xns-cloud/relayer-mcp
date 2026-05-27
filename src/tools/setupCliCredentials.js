@@ -26,9 +26,10 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
         'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
         {
             muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),
+            installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
             relayer_ui_url: z.string().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
         },
-        async ({ muse_token, relayer_ui_url }) => {
+        async ({ muse_token, installation_id, relayer_ui_url }) => {
             try {
                 // Step 1: create IAM user "xns-cli" via MC proxy
                 const { status, data } = await http.post(
@@ -81,7 +82,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                             endpoint: s3Endpoint,
                             access_key_id: ak,
                             secret_access_key: sk,
-                            cost_center_id: '',
+                            cost_center_id: installation_id,
                             muse_token: muse_token,
                         },
                     },
