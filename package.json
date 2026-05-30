@@ -1,7 +1,17 @@
 {
   "name": "@xns/relayer-mcp",
-  "version": "0.1.0",
-  "description": "MCP server for XNS Relayer onboarding — 10 tools, stdio transport, npx-ready",
+  "version": "0.2.0",
+  "description": "MCP server for XNS Relayer onboarding — drives a complete Relayer setup conversationally over stdio, npx-ready",
+  "author": "SCP Corp",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://xns.tech",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/scpcorp/relayer-mcp.git"
+  },
+  "bugs": {
+    "url": "https://gitlab.com/scpcorp/relayer-mcp/-/issues"
+  },
   "bin": {
     "relayer-mcp": "./src/index.js"
   },
@@ -15,7 +25,6 @@
     "xns",
     "onboarding"
   ],
-  "license": "UNLICENSED",
   "engines": {
     "node": ">=20"
   },

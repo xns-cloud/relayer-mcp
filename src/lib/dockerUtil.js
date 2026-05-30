@@ -39,10 +39,12 @@ function createDockerUtil(options = {}) {
      * Run docker compose up -d with a given compose file path.
      *
      * @param {string} composePath - Absolute path to docker-compose file
+     * @param {object} [execOptions] - Extra execFile options (cwd, env). Lets the
+     *   caller resolve .env interpolation + relative binds in the install dir.
      * @returns {Promise<{stdout: string, stderr: string}>}
      */
-    async function composeUp(composePath) {
-        return docker(['compose', '-f', composePath, 'up', '-d'], { timeout: 300000 });
+    async function composeUp(composePath, execOptions = {}) {
+        return docker(['compose', '-f', composePath, 'up', '-d'], { timeout: 300000, ...execOptions });
     }
 
     /**
