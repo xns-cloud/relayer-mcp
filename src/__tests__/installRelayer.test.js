@@ -1,5 +1,7 @@
 'use strict';
 
+const { z } = require('zod');
+
 describe('install_relayer', () => {
     let server;
 
@@ -7,10 +9,13 @@ describe('install_relayer', () => {
         server = { tool: jest.fn() };
     });
 
+    // Wrap the handler so the registered Zod shape is applied first — mirrors how
+    // the MCP SDK validates + fills defaults before the handler ever runs.
     function registerWithOptions(opts) {
         const register = require('../tools/installRelayer');
         register(server, opts);
-        return server.tool.mock.calls[0][3];
+        const [, , shape, handler] = server.tool.mock.calls[0];
+        return (args) => handler(z.object(shape).parse(args));
     }
 
     // TP-30: uses execFile, no shell (security non-negotiable)
@@ -101,5 +106,64 @@ describe('install_relayer', () => {
 
         expect(parsed.success).toBe(false);
         expect(result.isError).toBe(true);
+    });
+
+    // --- Default path: bundled released compose, user authors nothing ---------
+
+    function fakeFs() {
+        const writes = {};
+        return {
+            writes,
+            readFile: jest.fn().mockResolvedValue('BUNDLED_COMPOSE_TEMPLATE\n'),
+            writeFile: jest.fn(async (p, data) => { writes[p] = data; }),
+        };
+    }
+
+    // The whole point: a first-time user supplies no compose_url, and the tool
+    // writes BOTH docker-compose.yml and .env for them — no curl.
+    test('no compose_url → writes bundled compose + .env, never curls', async () => {
+        const execFileCalls = [];
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push(cmd); cb(null, '', ''); }),
+            fs,
+            dockerUtil: { composeUp },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.source).toBe('bundled');
+        // No curl in the default path — only mkdir.
+        expect(execFileCalls).toContain('mkdir');
+        expect(execFileCalls).not.toContain('curl');
+        // Bundled template written to docker-compose.yml.
+        expect(fs.readFile).toHaveBeenCalled();
+        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
+        // .env written with default ports.
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nMINIO_PORT=9000\n');
+    });
+
+    // Custom ports flow into .env AND into the compose env (interpolation).
+    test('custom ports → .env + composeUp env carry them', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: { composeUp },
+        });
+
+        await handler({ install_path: '/tmp/xns', ui_port: 18888, minio_port: 19000 });
+
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nMINIO_PORT=19000\n');
+        // composeUp runs in the install dir with the ports in env.
+        const [composePath, execOpts] = composeUp.mock.calls[0];
+        expect(composePath).toBe('/tmp/xns/docker-compose.yml');
+        expect(execOpts.cwd).toBe('/tmp/xns');
+        expect(execOpts.env.UI_PORT).toBe('18888');
+        expect(execOpts.env.MINIO_PORT).toBe('19000');
     });
 });

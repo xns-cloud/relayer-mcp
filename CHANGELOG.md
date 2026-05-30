@@ -1,3 +1,26 @@
+## [0.2.0] — 2026-05-30
+
+### Changed
+- `install_relayer` now writes the compose file **and** `.env` for the user — a
+  first-time user (who has never heard of a Relayer) no longer hand-authors
+  either file. Defaults to the documented released install: Docker Hub
+  `scprime/xns-relayer:stable`, relayer-only, ports 8888 (UI) + 9000 (S3).
+  Mirrors https://xns.tech/docs/windows-ui/.
+  - `compose_url` is now **optional** — kept only as an override for custom
+    installs. Omitting it (the normal path) writes the bundled compose.
+  - New optional `ui_port` / `minio_port` params (default 8888 / 9000) flow into
+    the generated `.env` and the `docker compose` env, so a port conflict found
+    by `check_prerequisites` can be remapped without editing files.
+- Bundled released compose shipped at `src/templates/docker-compose.yml`
+  (covered by `package.json` `files: ["src/"]` — verified in the npm tarball).
+  SMB ports 139/445 are intentionally not exposed (445 is held by Windows SMB
+  on consumer hosts and would fail the install).
+
+### Fixed
+- `index.test.js` asserted 10 registered tools; it has been 11 since
+  `setup_cli_credentials` (tool 11) merged. Corrected the count + name list so
+  the suite is green on the default branch.
+
 ## [0.1.0] — 2026-05-26
 
 ### Added

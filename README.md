@@ -26,7 +26,7 @@ No separate install step required.
 | 1 | `check_prerequisites` | Verify Docker, ports (8888, 9000), disk, and network connectivity. |
 | 2 | `register_account` | Register an XNS account (email + password) via Console2. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Download compose file and start Relayer containers. |
+| 4 | `install_relayer` | Write the released `docker-compose.yml` + `.env` (Docker Hub `scprime/xns-relayer:stable`) and start the containers. The user authors nothing; `compose_url` is an optional override. |
 | 5 | `check_relayer_health` | Poll UI, S3, and HostIO health (10s interval, 300s timeout). |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
@@ -39,7 +39,8 @@ No separate install step required.
 1. Agent checks prerequisites (Tool 1).
 2. Agent registers account or skips if existing (Tool 2).
 3. User clicks email verification link; agent polls (Tool 3).
-4. Agent installs and starts Relayer containers (Tool 4).
+4. Agent installs and starts Relayer containers (Tool 4) — it writes the
+   released compose + `.env` itself; the user is never asked for a compose URL.
 5. Agent polls health until UI + S3 are up (Tool 5).
 6. Agent initiates claim; user opens claim URL in browser (Tools 6 + 7).
 7. Agent signs in via OIDC to configure host preferences (Tools 8 + 9).

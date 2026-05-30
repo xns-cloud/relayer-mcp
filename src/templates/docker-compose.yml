@@ -1,0 +1,24 @@
+# Bundled by @xns/relayer-mcp — the documented released XNS Relayer install.
+# Source of truth: https://xns.tech/docs/windows-ui/ (Docker Hub scprime/xns-relayer:stable).
+#
+# A first-time user no longer hand-writes this file or the .env — install_relayer
+# writes both. Differences from the hand-written docs compose, by design:
+#   - data lives in ./data (relative to this file) instead of a Windows-only
+#     C:\XNS-Relayer bind, so the same file works on Windows, macOS, and Linux.
+#   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
+#     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
+#   - pull_policy: always so `docker compose up -d` fetches the current :stable
+#     image without a separate `docker compose pull` step.
+services:
+  xns:
+    container_name: xns-relayer
+    image: scprime/xns-relayer:stable
+    pull_policy: always
+    restart: unless-stopped
+    volumes:
+      - ./data:/relayer
+    ports:
+      - ${UI_PORT:-8888}:8888
+      - ${MINIO_PORT:-9000}:9000
+    env_file:
+      - .env
