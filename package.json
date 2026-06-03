@@ -29,7 +29,10 @@
     "node": ">=20"
   },
   "files": [
-    "src/",
+    "src/index.js",
+    "src/lib/",
+    "src/tools/",
+    "src/templates/",
     "LICENSE",
     "NOTICE"
   ],
