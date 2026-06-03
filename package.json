@@ -13,7 +13,7 @@
     "url": "https://gitlab.com/scpcorp/relayer-mcp/-/issues"
   },
   "bin": {
-    "relayer-mcp": "./src/index.js"
+    "relayer-mcp": "src/index.js"
   },
   "scripts": {
     "test": "jest --verbose",
