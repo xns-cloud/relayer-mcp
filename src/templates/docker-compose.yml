@@ -1,4 +1,4 @@
-# Bundled by @xns-dev/relayer-mcp — the documented released XNS Relayer install.
+# Bundled by @xns-cloud/relayer-mcp — the documented released XNS Relayer install.
 # Source of truth: https://xns.tech/docs/windows-ui/ (Docker Hub scprime/xns-relayer).
 #
 # Pre-release: pinned to the :beta channel so alpha/beta testers exercise the

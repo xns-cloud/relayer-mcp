@@ -1,5 +1,5 @@
 {
-  "name": "@xns-dev/relayer-mcp",
+  "name": "@xns-cloud/relayer-mcp",
   "version": "0.3.0",
   "description": "MCP server for XNS Relayer onboarding — drives a complete Relayer setup conversationally over stdio, npx-ready",
   "author": "SCP Corp",

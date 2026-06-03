@@ -1,4 +1,4 @@
-# @xns-dev/relayer-mcp
+# @xns-cloud/relayer-mcp
 
 MCP server for XNS Relayer onboarding. Provides 10 tools that let an AI agent drive the complete Relayer setup conversationally over stdio transport.
 
@@ -11,7 +11,7 @@ Add to your Claude Desktop `claude_desktop_config.json`:
   "mcpServers": {
     "relayer": {
       "command": "npx",
-      "args": ["@xns-dev/relayer-mcp@latest"]
+      "args": ["@xns-cloud/relayer-mcp@latest"]
     }
   }
 }
@@ -65,7 +65,7 @@ Requires Node.js 20+.
 
 ## Note on `relayer-native` client
 
-This package uses the `relayer-native` Keycloak client ID for OIDC authentication. The same client ID is intended for reuse by a future standalone Relayer CLI (`@xns-dev/relayer-cli`), with the OIDC module (`src/lib/oidcAuth.js`) extracted to a shared `@xns-dev/relayer-auth` package.
+This package uses the `relayer-native` Keycloak client ID for OIDC authentication. The same client ID is intended for reuse by a future standalone Relayer CLI (`@xns-cloud/relayer-cli`), with the OIDC module (`src/lib/oidcAuth.js`) extracted to a shared `@xns-cloud/relayer-auth` package.
 
 ## License
 
