@@ -18,7 +18,7 @@ const DEFAULT_CLIENT_ID = 'relayer-native';
  * 4. Capture the authorization code on the redirect
  * 5. Exchange code for access_token + refresh_token
  *
- * Interface is kept clean for future extraction to @xns-dev/relayer-auth (CLI reuse).
+ * Interface is kept clean for future extraction to @xns-cloud/relayer-auth (CLI reuse).
  *
  * @param {object} opts
  * @param {string} [opts.clientId] - Keycloak public client ID
