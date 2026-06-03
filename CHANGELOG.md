@@ -1,3 +1,16 @@
+## [0.3.0] — 2026-06-03
+
+### Changed
+- **License is now Apache-2.0** (permissive, open source) — replaces the prior
+  proprietary license. Adds `LICENSE` (full Apache-2.0 text) + `NOTICE`, sets
+  `package.json` `license: "Apache-2.0"`, and ships both in the npm tarball
+  (`files`). The MCP can now be published to the wider world on release.
+- `install_relayer` bundled compose now pins the **pre-release `:beta` channel**
+  (`scprime/xns-relayer:beta`) instead of `:stable`, so alpha/beta testers
+  exercise the current Relayer agentically. The image tag flips to `:stable` at
+  general release — a one-line change in `src/templates/docker-compose.yml`.
+  Tool params and the `compose_url` override are unchanged.
+
 ## [0.2.0] — 2026-05-30
 
 ### Changed
