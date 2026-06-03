@@ -16,6 +16,9 @@
   files, 35.2 kB → 23.8 kB packed. Removed the `.npmignore`, which was dead
   config: a `files` allowlist overrides `.npmignore`, so it never excluded the
   tests it listed. (0.3.0 is not yet published, so this folds into it.)
+- **Package scope is `@xns-dev`** (renamed from `@xns`): the npm org is
+  `xns-dev`, so the package publishes as `@xns-dev/relayer-mcp`. A future GA may
+  republish under a cleaner scope; nothing was ever published under `@xns`.
 
 ## [0.2.0] — 2026-05-30
 
@@ -43,7 +46,7 @@
 ## [0.1.0] — 2026-05-26
 
 ### Added
-- Initial release of `@xns/relayer-mcp` — MCP server for XNS Relayer onboarding.
+- Initial release of `@xns-dev/relayer-mcp` — MCP server for XNS Relayer onboarding.
 - 10 MCP tools (stdio transport) orchestrating end-to-end Relayer setup:
   - `check_prerequisites` — Docker, ports, disk, connectivity checks with remediation hints.
   - `register_account` — E2 account registration (POST /api/auth/register); 409 skip hint, 422 validation detail.
@@ -57,6 +60,6 @@
   - `verify_storage` — S3 round-trip (CreateBucket/PutObject/GetObject) at localhost:9000.
 - OIDC Authorization Code + PKCE (S256) token acquisition (`src/lib/oidcAuth.js`) for tools 8/9.
   - Loopback `127.0.0.1` listener, browser-based sign-in, code-to-token exchange, refresh.
-  - Interface designed for future extraction to `@xns/relayer-auth` (CLI reuse).
+  - Interface designed for future extraction to `@xns-dev/relayer-auth` (CLI reuse).
 - Shared libraries: httpClient, pollUntil, dockerUtil (execFile only), s3Client.
-- npx distribution: `npx @xns/relayer-mcp@latest` in Claude Desktop config.
+- npx distribution: `npx @xns-dev/relayer-mcp@latest` in Claude Desktop config.
