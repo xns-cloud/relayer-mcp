@@ -166,4 +166,17 @@ describe('install_relayer', () => {
         expect(execOpts.env.UI_PORT).toBe('18888');
         expect(execOpts.env.MINIO_PORT).toBe('19000');
     });
+
+    // Pre-release channel lock: the bundled template ships pinned to :beta so
+    // alpha/beta testers exercise the current Relayer. Flips to :stable at GA.
+    // Reads the real file on disk (not the mock) so a stray retag is caught.
+    test('bundled template pins the :beta channel, not :stable', () => {
+        const path = require('path');
+        const realFs = require('fs');
+        const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
+        const template = realFs.readFileSync(templatePath, 'utf8');
+
+        expect(template).toMatch(/^\s*image:\s*scprime\/xns-relayer:beta\s*$/m);
+        expect(template).not.toMatch(/image:\s*scprime\/xns-relayer:stable/);
+    });
 });

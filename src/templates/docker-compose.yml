@@ -1,5 +1,8 @@
 # Bundled by @xns/relayer-mcp — the documented released XNS Relayer install.
-# Source of truth: https://xns.tech/docs/windows-ui/ (Docker Hub scprime/xns-relayer:stable).
+# Source of truth: https://xns.tech/docs/windows-ui/ (Docker Hub scprime/xns-relayer).
+#
+# Pre-release: pinned to the :beta channel so alpha/beta testers exercise the
+# current Relayer agentically. Flip this one tag to :stable at general release.
 #
 # A first-time user no longer hand-writes this file or the .env — install_relayer
 # writes both. Differences from the hand-written docs compose, by design:
@@ -7,12 +10,12 @@
 #     C:\XNS-Relayer bind, so the same file works on Windows, macOS, and Linux.
 #   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
 #     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
-#   - pull_policy: always so `docker compose up -d` fetches the current :stable
+#   - pull_policy: always so `docker compose up -d` fetches the current :beta
 #     image without a separate `docker compose pull` step.
 services:
   xns:
     container_name: xns-relayer
-    image: scprime/xns-relayer:stable
+    image: scprime/xns-relayer:beta
     pull_policy: always
     restart: unless-stopped
     volumes:

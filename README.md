@@ -26,7 +26,7 @@ No separate install step required.
 | 1 | `check_prerequisites` | Verify Docker, ports (8888, 9000), disk, and network connectivity. |
 | 2 | `register_account` | Register an XNS account (email + password) via Console2. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Write the released `docker-compose.yml` + `.env` (Docker Hub `scprime/xns-relayer:stable`) and start the containers. The user authors nothing; `compose_url` is an optional override. |
+| 4 | `install_relayer` | Write the bundled `docker-compose.yml` + `.env` (Docker Hub `scprime/xns-relayer`, pre-release `:beta` channel) and start the containers. The user authors nothing; `compose_url` is an optional override. |
 | 5 | `check_relayer_health` | Poll UI, S3, and HostIO health (10s interval, 300s timeout). |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
@@ -66,3 +66,7 @@ Requires Node.js 20+.
 ## Note on `relayer-native` client
 
 This package uses the `relayer-native` Keycloak client ID for OIDC authentication. The same client ID is intended for reuse by a future standalone Relayer CLI (`@xns/relayer-cli`), with the OIDC module (`src/lib/oidcAuth.js`) extracted to a shared `@xns/relayer-auth` package.
+
+## License
+
+Apache-2.0 © SCP Corp. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
