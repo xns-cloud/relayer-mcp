@@ -1,5 +1,0 @@
-src/__tests__/
-*.test.js
-jest.config.js
-.git/
-agent-scratchpad/

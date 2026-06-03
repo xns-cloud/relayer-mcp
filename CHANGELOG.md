@@ -10,6 +10,12 @@
   exercise the current Relayer agentically. The image tag flips to `:stable` at
   general release — a one-line change in `src/templates/docker-compose.yml`.
   Tool params and the `compose_url` override are unchanged.
+- **Packaging:** `files` now lists the runtime subdirs explicitly
+  (`src/index.js`, `src/lib/`, `src/tools/`, `src/templates/`) instead of all of
+  `src/`, so the published tarball no longer ships the jest suite — 38 → 24
+  files, 35.2 kB → 23.8 kB packed. Removed the `.npmignore`, which was dead
+  config: a `files` allowlist overrides `.npmignore`, so it never excluded the
+  tests it listed. (0.3.0 is not yet published, so this folds into it.)
 
 ## [0.2.0] — 2026-05-30
 
