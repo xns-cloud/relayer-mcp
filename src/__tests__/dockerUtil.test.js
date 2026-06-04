@@ -10,6 +10,7 @@ describe('parseDockerEndpoint', () => {
         ['ssh://user@docker-box.lan:2222', true, 'docker-box.lan'],
         ['tcp://192.168.1.50:2376', true, '192.168.1.50'],
         ['tcp://127.0.0.1:2375', false, 'localhost'],   // loopback tcp = local
+        ['tcp://[::1]:2375', false, 'localhost'],       // IPv6 loopback = local
         ['tcp://localhost:2375', false, 'localhost'],
         ['', false, 'localhost'],
         ['not a url at all', false, 'localhost'],        // unparseable → local fallback
@@ -74,6 +75,17 @@ describe('dockerUtil.findContainer', () => {
 
         const args = execFile.mock.calls[0][1];
         expect(args).toEqual(expect.arrayContaining(['ps', '-a', '--filter', 'name=^xns-relayer$']));
+    });
+
+    // docker's name= filter is a regex — metacharacters in names must be
+    // escaped or the exact-match anchor silently widens.
+    test('escapes regex metacharacters in the name filter', async () => {
+        const { util, execFile } = utilWithPsOutput('');
+
+        await util.findContainer('foo.bar');
+
+        const args = execFile.mock.calls[0][1];
+        expect(args).toContain('name=^foo\\.bar$');
     });
 
     test('running container → running: true with status and image', async () => {

@@ -9,6 +9,28 @@ const POLL_INTERVAL_MS = 10000;   // 10s
 const POLL_TIMEOUT_MS = 300000;   // 300s (AC-13, QA-1)
 
 /**
+ * Normalize a user-supplied or detected host for URL composition: trim, strip
+ * an accidental http(s):// prefix, bracket bare IPv6. Prevents invalid probe
+ * URLs (and false unhealthy reports) from inputs like 'http://docker-box.lan'.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeHost(value) {
+    const trimmed = String(value).trim();
+    let hostname = trimmed;
+    if (/^https?:\/\//i.test(trimmed)) {
+        try {
+            hostname = new URL(trimmed).hostname; // keeps IPv6 brackets
+        } catch {
+            hostname = trimmed;
+        }
+    }
+    // Bare IPv6 → bracket it so http://${host}:${port} stays a valid URL.
+    return hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
+}
+
+/**
  * Tool 5: check_relayer_health
  * AC-13: report healthy only when ui+s3+hostio healthy; name unhealthy component; 300s timeout.
  * TP-31: hostio = null (not false) before auth — hostio health requires an authenticated
@@ -30,20 +52,20 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
         'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), and HostIO. Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Note: HostIO health status is unknown until OIDC authentication is completed.',
         {
             poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),
-            host: z.string().optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
+            host: z.string().trim().min(1).optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
             ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer UI (matches install_relayer ui_port)'),
-            minio_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (matches install_relayer minio_port)'),
+            s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (matches install_relayer s3_port)'),
         },
-        async ({ poll, host, ui_port, minio_port }) => {
+        async ({ poll, host, ui_port, s3_port }) => {
             try {
                 // R1: zod fills defaults in production; ?? guards direct calls.
                 const uiPort = ui_port ?? 8888;
-                const minioPort = minio_port ?? 9000;
+                const s3Port = s3_port ?? 9000;
                 // Resolve where the containers actually run — once per call.
-                const dockerHost = host ? { host, remote: host !== 'localhost' } : await docker.getDockerHost();
-                const target = dockerHost.host;
+                const dockerHost = host ? { host, remote: normalizeHost(host) !== 'localhost' } : await docker.getDockerHost();
+                const target = normalizeHost(dockerHost.host);
                 const uiBase = `http://${target}:${uiPort}`;
-                const s3Base = `http://${target}:${minioPort}`;
+                const s3Base = `http://${target}:${s3Port}`;
 
                 const checkOnce = async () => {
                     const components = {};
@@ -84,7 +106,7 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
 
                     const unhealthy = [];
                     if (!components.ui.healthy) unhealthy.push(`UI (${target}:${uiPort})`);
-                    if (!components.s3.healthy) unhealthy.push(`S3 gateway (${target}:${minioPort})`);
+                    if (!components.s3.healthy) unhealthy.push(`S3 gateway (${target}:${s3Port})`);
 
                     return {
                         components,

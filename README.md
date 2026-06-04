@@ -107,7 +107,7 @@ The MCP detects this automatically (it honors `DOCKER_HOST` and the active Docke
 |---|---|---|
 | MCP exits with "requires Node.js 20 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 20](#installing-nodejs-20) |
 | `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
-| Port 8888/9000 already in use | Another service on the Docker host (often MinIO on 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `minio_port` (health checks accept the same) |
+| Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same) |
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 
 ## Authentication

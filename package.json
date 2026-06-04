@@ -17,7 +17,8 @@
   },
   "scripts": {
     "test": "jest --verbose",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "mcp",

@@ -1,8 +1,18 @@
+# Changelog
+
 ## [0.4.0] — 2026-06-04
 
 Addresses homelab beta-tester feedback: Node 18 on stock Ubuntu, Claude Code on
 a jump host with a remote Docker daemon, and install collisions with an
 existing alpha-channel deployment.
+
+### Changed
+- **BREAKING (vs 0.3.0): `install_relayer` param `minio_port` is now `s3_port`**,
+  and the generated `.env` / compose interpolation var `MINIO_PORT` is now
+  `S3_PORT`. Port 9000 is served by the Relayer **S3 Gateway**; the MinIO
+  naming was legacy and is purged from the public API. MCP clients read the
+  tool schema live, so agents adapt automatically; only the unpublished-channel
+  0.3.0 signature is affected.
 
 ### Added
 - **Remote Docker host support.** The MCP now resolves WHERE the Docker daemon
@@ -11,7 +21,7 @@ existing alpha-channel deployment.
   - `check_relayer_health` and `verify_storage` probe the Docker host instead
     of hardcoded `localhost` (override with the new `host` / existing
     `endpoint` params).
-  - `check_relayer_health` gains `ui_port` / `minio_port` params matching
+  - `check_relayer_health` gains `ui_port` / `s3_port` params matching
     `install_relayer`'s custom ports.
   - `check_prerequisites` skips the local port bind-probe when the daemon is
     remote (it would test the wrong machine) and reports the checks as skipped

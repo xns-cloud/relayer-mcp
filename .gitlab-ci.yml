@@ -1,0 +1,49 @@
+# relayer-mcp CI — test on MRs/main, publish to npm on version tags.
+#
+# Ongoing release model: the ONLY publish trigger is a human pushing a vX.Y.Z
+# tag (agents never tag, never publish — see GitLab MR Boundaries). The tag
+# must match package.json's version, which lands via normal MR review.
+#
+# One-time setup (runbook: relayer-mcp-support/PUBLISHING.md):
+#   1. npm: create a granular automation token (publish scope, only
+#      @xns-cloud/relayer-mcp) under the xns-development account.
+#   2. GitLab → Settings → CI/CD → Variables: NPM_TOKEN (masked, protected).
+#   3. GitLab → Settings → Repository → Protected tags: protect `v*`
+#      (else the protected NPM_TOKEN is not exposed to tag pipelines).
+
+stages:
+  - test
+  - publish
+
+test:
+  stage: test
+  image: node:20
+  script:
+    - npm ci
+    - npm test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+publish:
+  stage: publish
+  image: node:20
+  needs: [test]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    # The tag is the release request; package.json is the release content.
+    # Refuse to publish a mismatch instead of silently shipping the wrong code.
+    - PKG_VERSION=$(node -p "require('./package.json').version")
+    - |
+      if [ "v${PKG_VERSION}" != "${CI_COMMIT_TAG}" ]; then
+        echo "Tag ${CI_COMMIT_TAG} does not match package.json version ${PKG_VERSION} — aborting."
+        exit 1
+      fi
+    - npm ci
+    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+    # prepublishOnly reruns the test suite as a last gate before the tarball ships.
+    - npm publish --access public
+    # Pre-GA policy: latest and beta move together. Drop this line at GA.
+    - npm dist-tag add "@xns-cloud/relayer-mcp@${PKG_VERSION}" beta
