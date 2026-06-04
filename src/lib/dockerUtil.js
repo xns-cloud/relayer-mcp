@@ -3,15 +3,40 @@
 const { execFile: nodeExecFile } = require('child_process');
 
 /**
+ * Parse a Docker endpoint URL into { remote, host }.
+ *
+ * unix:// and npipe:// sockets are local by definition. ssh:// and tcp://
+ * point at another machine — unless the hostname is loopback. Anything
+ * unparseable falls back to local, matching pre-context behaviour.
+ *
+ * @param {string} endpoint - e.g. 'unix:///var/run/docker.sock', 'ssh://user@host'
+ * @returns {{remote: boolean, host: string}}
+ */
+function parseDockerEndpoint(endpoint) {
+    const local = { remote: false, host: 'localhost' };
+    if (!endpoint) return local;
+    if (endpoint.startsWith('unix://') || endpoint.startsWith('npipe://')) return local;
+    try {
+        const { hostname } = new URL(endpoint);
+        if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') return local;
+        return { remote: true, host: hostname };
+    } catch {
+        return local;
+    }
+}
+
+/**
  * Docker utility — runs Docker CLI commands using execFile (no shell).
  * Security non-negotiable: NEVER use exec() or spawn({ shell: true }).
  * TP-30 enforced.
  *
  * @param {object} [options]
  * @param {function} [options.execFile] - Injected execFile (testing)
+ * @param {object} [options.env] - Injected environment (testing); defaults to process.env
  */
 function createDockerUtil(options = {}) {
     const _execFile = options.execFile || nodeExecFile;
+    const _env = options.env || process.env;
 
     /**
      * Run a docker command with args.
@@ -62,7 +87,59 @@ function createDockerUtil(options = {}) {
         }
     }
 
-    return { docker, composeUp, isContainerRunning };
+    /**
+     * Find a container by EXACT name — running or stopped. A stopped container
+     * still owns its name and still breaks `docker compose up`, so callers
+     * doing install preflight must use this, not isContainerRunning.
+     *
+     * Best-effort: if docker itself is unreachable, returns null and lets the
+     * caller's real docker command surface the error.
+     *
+     * @param {string} name - Exact container name
+     * @returns {Promise<{name: string, status: string, image: string, running: boolean}|null>}
+     */
+    async function findContainer(name) {
+        try {
+            const { stdout } = await docker([
+                'ps', '-a',
+                '--filter', `name=^${name}$`,
+                '--format', '{{.Names}}\t{{.Status}}\t{{.Image}}',
+            ]);
+            const line = stdout.trim().split('\n').filter(Boolean)[0];
+            if (!line) return null;
+            const [foundName, status = '', image = ''] = line.split('\t');
+            return { name: foundName, status, image, running: status.toLowerCase().startsWith('up') };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Resolve which machine the Docker daemon actually runs on.
+     *
+     * Claude Code may run on a management node with the Docker CLI pointed at a
+     * separate server (DOCKER_HOST or an ssh:// docker context). Tools that
+     * probe ports or hit http://localhost must target THIS host instead.
+     *
+     * Precedence mirrors the Docker CLI: DOCKER_HOST env var wins, then the
+     * active context's endpoint. Unparseable/missing → local.
+     *
+     * @returns {Promise<{remote: boolean, host: string, endpoint: string|null}>}
+     */
+    async function getDockerHost() {
+        if (_env.DOCKER_HOST) {
+            return { ...parseDockerEndpoint(_env.DOCKER_HOST), endpoint: _env.DOCKER_HOST };
+        }
+        try {
+            const { stdout } = await docker(['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}']);
+            const endpoint = stdout.trim();
+            return { ...parseDockerEndpoint(endpoint), endpoint: endpoint || null };
+        } catch {
+            return { remote: false, host: 'localhost', endpoint: null };
+        }
+    }
+
+    return { docker, composeUp, isContainerRunning, findContainer, getDockerHost };
 }
 
-module.exports = { createDockerUtil };
+module.exports = { createDockerUtil, parseDockerEndpoint };
