@@ -7,6 +7,7 @@ a jump host with a remote Docker daemon, and install collisions with an
 existing alpha-channel deployment.
 
 ### Changed
+
 - **BREAKING (vs 0.3.0): `install_relayer` param `minio_port` is now `s3_port`**,
   and the generated `.env` / compose interpolation var `MINIO_PORT` is now
   `S3_PORT`. Port 9000 is served by the Relayer **S3 Gateway**; the MinIO
@@ -15,6 +16,7 @@ existing alpha-channel deployment.
   0.3.0 signature is affected.
 
 ### Added
+
 - **Remote Docker host support.** The MCP now resolves WHERE the Docker daemon
   runs (honoring `DOCKER_HOST` and the active `docker context`, e.g.
   `ssh://user@host`) via `dockerUtil.getDockerHost()`:
@@ -42,8 +44,12 @@ existing alpha-channel deployment.
   tools (`setup_cli_credentials` was missing).
 
 ### Fixed
+
 - MCP server version reported over the protocol now reads from `package.json`
   instead of a hardcoded stale `'0.1.0'`.
+- `check_relayer_health` host input: any scheme prefix (`http://`, `tcp://`,
+  `ssh://`) is stripped before composing probe URLs, and loopback aliases
+  (`127.0.0.1`, `[::1]`) classify as local, not remote.
 
 ## [0.3.0] — 2026-06-03
 
