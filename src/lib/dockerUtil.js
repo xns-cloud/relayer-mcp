@@ -18,7 +18,8 @@ function parseDockerEndpoint(endpoint) {
     if (endpoint.startsWith('unix://') || endpoint.startsWith('npipe://')) return local;
     try {
         const { hostname } = new URL(endpoint);
-        if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') return local;
+        // URL.hostname keeps IPv6 brackets: 'tcp://[::1]:2375' → '[::1]'
+        if (!hostname || ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return local;
         return { remote: true, host: hostname };
     } catch {
         return local;
@@ -100,9 +101,12 @@ function createDockerUtil(options = {}) {
      */
     async function findContainer(name) {
         try {
+            // docker ps --filter name= treats the value as a regex — escape
+            // metacharacters (names may contain '.') so the anchor stays exact.
+            const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const { stdout } = await docker([
                 'ps', '-a',
-                '--filter', `name=^${name}$`,
+                '--filter', `name=^${escaped}$`,
                 '--format', '{{.Names}}\t{{.Status}}\t{{.Image}}',
             ]);
             const line = stdout.trim().split('\n').filter(Boolean)[0];

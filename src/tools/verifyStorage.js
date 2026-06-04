@@ -24,7 +24,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
         {
             access_key_id: z.string().describe('S3 access key ID'),
             secret_access_key: z.string().describe('S3 secret access key'),
-            endpoint: z.string().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000, where {docker-host} is auto-detected from the Docker context.'),
+            endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000, where {docker-host} is auto-detected from the Docker context.'),
         },
         async ({ access_key_id, secret_access_key, endpoint }) => {
             const testBucket = `mcp-verify-${Date.now()}`;

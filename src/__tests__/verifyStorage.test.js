@@ -175,6 +175,23 @@ describe('verify_storage', () => {
         expect(parsed.endpoint).toBe('http://docker-box.lan:9000');
     });
 
+    // Malformed endpoint is rejected at the zod boundary — never reaches S3.
+    test('malformed endpoint → schema validation rejects before S3', () => {
+        const { z } = require('zod');
+        const createS3Client = jest.fn();
+        registerWithOptions({ createS3Client });
+        const shape = server.tool.mock.calls[0][2];
+
+        const parsed = z.object(shape).safeParse({
+            access_key_id: 'k',
+            secret_access_key: 's',
+            endpoint: 'not a url',
+        });
+
+        expect(parsed.success).toBe(false);
+        expect(createS3Client).not.toHaveBeenCalled();
+    });
+
     // Explicit endpoint always wins — docker detection is not even consulted.
     test('explicit endpoint → docker host detection not consulted', async () => {
         const getDockerHost = jest.fn();
