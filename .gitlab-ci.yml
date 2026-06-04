@@ -4,12 +4,18 @@
 # tag (agents never tag, never publish — see GitLab MR Boundaries). The tag
 # must match package.json's version, which lands via normal MR review.
 #
+# Publishing uses npm TRUSTED PUBLISHING (OIDC) — no npm token exists anywhere,
+# nothing expires, nothing rotates. GitLab mints a short-lived id_token per job
+# and npm verifies it against the trusted publisher configured on the package.
+#
 # One-time setup (runbook: relayer-mcp-support/PUBLISHING.md):
-#   1. npm: create a granular automation token (publish scope, only
-#      @xns-cloud/relayer-mcp) under the xns-development account.
-#   2. GitLab → Settings → CI/CD → Variables: NPM_TOKEN (masked, protected).
-#   3. GitLab → Settings → Repository → Protected tags: protect `v*`
-#      (else the protected NPM_TOKEN is not exposed to tag pipelines).
+#   1. npmjs.com → @xns-cloud/relayer-mcp → Settings → Trusted publisher →
+#      GitLab CI/CD: namespace `scpcorp`, project `relayer-mcp`,
+#      CI file path `.gitlab-ci.yml`, allowed action `npm publish`.
+#   2. GitLab → Settings → Repository → Protected tags: protect `v*`
+#      (governance: only maintainers can trigger a release).
+# Requires GitLab.com shared runners (self-hosted runners not yet supported
+# by npm trusted publishing).
 
 stages:
   - test
@@ -17,7 +23,7 @@ stages:
 
 test:
   stage: test
-  image: node:20
+  image: node:20   # engines floor — the suite must pass on the oldest supported Node
   script:
     - npm ci
     - npm test
@@ -28,11 +34,17 @@ test:
 
 publish:
   stage: publish
-  image: node:20
+  image: node:24   # trusted publishing needs npm >= 11.5.1 / Node >= 22.14
   needs: [test]
+  id_tokens:
+    NPM_ID_TOKEN:
+      aud: "npm:registry.npmjs.org"
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
   script:
+    - node --version && npm --version
     # The tag is the release request; package.json is the release content.
     # Refuse to publish a mismatch instead of silently shipping the wrong code.
     - PKG_VERSION=$(node -p "require('./package.json').version")
@@ -42,8 +54,6 @@ publish:
         exit 1
       fi
     - npm ci
-    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
     # prepublishOnly reruns the test suite as a last gate before the tarball ships.
-    - npm publish --access public
-    # Pre-GA policy: latest and beta move together. Drop this line at GA.
-    - npm dist-tag add "@xns-cloud/relayer-mcp@${PKG_VERSION}" beta
+    # No token, no .npmrc — npm exchanges NPM_ID_TOKEN with the registry (OIDC).
+    - npm publish

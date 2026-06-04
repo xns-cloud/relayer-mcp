@@ -195,6 +195,29 @@ describe('check_relayer_health', () => {
         expect(urls).toContain('http://[fd00::7]:8888/health');
     });
 
+    // A pasted Docker endpoint (tcp://) must normalize too, and loopback
+    // aliases must classify as local — not as a remote Docker host.
+    test('tcp:// endpoint paste normalizes; 127.0.0.1 classifies local', async () => {
+        const urls = [];
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockImplementation(async (url) => { urls.push(url); return { status: 200 }; }),
+                post: jest.fn(),
+            },
+        });
+
+        let result = await handler({ poll: false, host: 'tcp://10.0.0.5:2376' });
+        let parsed = JSON.parse(result.content[0].text);
+        expect(urls).toContain('http://10.0.0.5:8888/health');
+        expect(parsed.remote_docker).toBe(true);
+
+        urls.length = 0;
+        result = await handler({ poll: false, host: '127.0.0.1' });
+        parsed = JSON.parse(result.content[0].text);
+        expect(urls).toContain('http://127.0.0.1:8888/health');
+        expect(parsed.remote_docker).toBeUndefined();
+    });
+
     // Custom ports flow into the probe URLs (matches install_relayer ports).
     test('custom ui_port/s3_port → probe URLs carry them', async () => {
         const urls = [];

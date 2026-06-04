@@ -8,10 +8,14 @@ const { pollUntil } = require('../lib/pollUntil');
 const POLL_INTERVAL_MS = 10000;   // 10s
 const POLL_TIMEOUT_MS = 300000;   // 300s (AC-13, QA-1)
 
+// Loopback aliases — all classify as "local", not a remote Docker host.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 /**
  * Normalize a user-supplied or detected host for URL composition: trim, strip
- * an accidental http(s):// prefix, bracket bare IPv6. Prevents invalid probe
- * URLs (and false unhealthy reports) from inputs like 'http://docker-box.lan'.
+ * ANY accidental scheme prefix (http://, tcp://, ssh://…), bracket bare IPv6.
+ * Prevents invalid probe URLs (and false unhealthy reports) from inputs like
+ * 'http://docker-box.lan' or a pasted Docker endpoint 'tcp://10.0.0.5:2376'.
  *
  * @param {string} value
  * @returns {string}
@@ -19,9 +23,9 @@ const POLL_TIMEOUT_MS = 300000;   // 300s (AC-13, QA-1)
 function normalizeHost(value) {
     const trimmed = String(value).trim();
     let hostname = trimmed;
-    if (/^https?:\/\//i.test(trimmed)) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
         try {
-            hostname = new URL(trimmed).hostname; // keeps IPv6 brackets
+            hostname = new URL(trimmed).hostname || trimmed; // keeps IPv6 brackets
         } catch {
             hostname = trimmed;
         }
@@ -62,7 +66,7 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                 const uiPort = ui_port ?? 8888;
                 const s3Port = s3_port ?? 9000;
                 // Resolve where the containers actually run — once per call.
-                const dockerHost = host ? { host, remote: normalizeHost(host) !== 'localhost' } : await docker.getDockerHost();
+                const dockerHost = host ? { host, remote: !LOCAL_HOSTS.has(normalizeHost(host)) } : await docker.getDockerHost();
                 const target = normalizeHost(dockerHost.host);
                 const uiBase = `http://${target}:${uiPort}`;
                 const s3Base = `http://${target}:${s3Port}`;
