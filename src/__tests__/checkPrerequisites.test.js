@@ -34,6 +34,8 @@ describe('check_prerequisites', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
@@ -60,6 +62,8 @@ describe('check_prerequisites', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 docker: jest.fn().mockRejectedValue(new Error('not found')),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: null }),
+                findContainer: jest.fn().mockRejectedValue(new Error('not found')),
             },
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
@@ -83,6 +87,8 @@ describe('check_prerequisites', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
@@ -107,6 +113,8 @@ describe('check_prerequisites', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
                 get: jest.fn().mockRejectedValue(new Error('ENOTFOUND')),
@@ -129,6 +137,8 @@ describe('check_prerequisites', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
@@ -144,5 +154,93 @@ describe('check_prerequisites', () => {
             expect(typeof check.detail).toBe('string');
             expect(check.detail.length).toBeGreaterThan(0);
         }
+    });
+
+    // --- Remote Docker host (homelab feedback: Claude Code on a jump host) ---
+
+    // The local bind-probe tests THIS machine; with a remote daemon the
+    // containers bind ports on the REMOTE host — probing here is the wrong
+    // machine. Skip with an explanation instead of reporting a false answer.
+    test('remote docker host → port checks skipped, not falsely reported', async () => {
+        const checkPort = jest.fn();
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort,
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(checkPort).not.toHaveBeenCalled();
+        const dockerCheck = parsed.checks.find((c) => c.name === 'docker');
+        expect(dockerCheck.detail).toContain('docker-box.lan');
+        for (const name of ['port_8888', 'port_9000']) {
+            const portCheck = parsed.checks.find((c) => c.name === name);
+            expect(portCheck.skipped).toBe(true);
+            expect(portCheck.detail).toContain('docker-box.lan');
+        }
+    });
+
+    // An existing xns-relayer container (any channel, running or stopped) will
+    // fail install_relayer with a name conflict — warn here, before install.
+    test('existing xns-relayer container → warning with migration remediation', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue({
+                    name: 'xns-relayer',
+                    status: 'Up 5 days',
+                    image: 'releases.scpri.me/xns-relayer:alpha-latest',
+                    running: true,
+                }),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        const existing = parsed.checks.find((c) => c.name === 'existing_install');
+        expect(existing.warning).toBe(true);
+        expect(existing.detail).toContain('alpha-latest');
+        expect(existing.remediation).toContain('fresh installs only');
+    });
+
+    // No existing container → explicit all-clear entry.
+    test('no existing container → existing_install reports ready', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        const existing = parsed.checks.find((c) => c.name === 'existing_install');
+        expect(existing.passed).toBe(true);
+        expect(existing.warning).toBeUndefined();
+        expect(existing.detail).toContain('fresh install');
     });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@xns-cloud/relayer-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server for XNS Relayer onboarding — drives a complete Relayer setup conversationally over stdio, npx-ready",
   "author": "SCP Corp",
   "license": "Apache-2.0",

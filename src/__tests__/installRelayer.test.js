@@ -30,6 +30,7 @@ describe('install_relayer', () => {
             execFile: fakeExecFile,
             dockerUtil: {
                 composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
         });
 
@@ -53,6 +54,7 @@ describe('install_relayer', () => {
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             dockerUtil: {
                 composeUp: jest.fn().mockResolvedValue({ stdout: 'ok', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
         });
 
@@ -75,6 +77,7 @@ describe('install_relayer', () => {
             }),
             dockerUtil: {
                 composeUp: jest.fn(),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
         });
 
@@ -95,6 +98,7 @@ describe('install_relayer', () => {
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             dockerUtil: {
                 composeUp: jest.fn().mockRejectedValue(new Error('compose failed')),
+                findContainer: jest.fn().mockResolvedValue(null),
             },
         });
 
@@ -128,7 +132,7 @@ describe('install_relayer', () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push(cmd); cb(null, '', ''); }),
             fs,
-            dockerUtil: { composeUp },
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
         });
 
         const result = await handler({ install_path: '/tmp/xns' });
@@ -153,7 +157,7 @@ describe('install_relayer', () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             fs,
-            dockerUtil: { composeUp },
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
         });
 
         await handler({ install_path: '/tmp/xns', ui_port: 18888, minio_port: 19000 });
@@ -165,6 +169,68 @@ describe('install_relayer', () => {
         expect(execOpts.cwd).toBe('/tmp/xns');
         expect(execOpts.env.UI_PORT).toBe('18888');
         expect(execOpts.env.MINIO_PORT).toBe('19000');
+    });
+
+    // --- Preflight: fresh installs only (homelab feedback: alpha-channel name conflict) ---
+
+    // A RUNNING xns-relayer (e.g. an existing alpha-channel deployment) must
+    // stop the install with an actionable message — not a docker name-conflict.
+    test('existing running container → friendly error, nothing installed', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn();
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
+        const handler = registerWithOptions({
+            execFile,
+            fs,
+            dockerUtil: {
+                composeUp,
+                findContainer: jest.fn().mockResolvedValue({
+                    name: 'xns-relayer',
+                    status: 'Up 3 days',
+                    image: 'releases.scpri.me/xns-relayer:alpha-latest',
+                    running: true,
+                }),
+            },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(result.isError).toBe(true);
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('fresh installs only');
+        expect(parsed.error).toContain('alpha-latest');
+        expect(parsed.remediation).toContain('docker stop xns-relayer && docker rm xns-relayer');
+        // Nothing was installed or started.
+        expect(composeUp).not.toHaveBeenCalled();
+        expect(fs.writeFile).not.toHaveBeenCalled();
+        expect(execFile).not.toHaveBeenCalled();
+    });
+
+    // A STOPPED container still owns the name and still breaks compose up —
+    // the preflight must catch it too (docker ps -a, not docker ps).
+    test('existing stopped container → still blocks the install', async () => {
+        const composeUp = jest.fn();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs: fakeFs(),
+            dockerUtil: {
+                composeUp,
+                findContainer: jest.fn().mockResolvedValue({
+                    name: 'xns-relayer',
+                    status: 'Exited (0) 2 weeks ago',
+                    image: 'scprime/xns-relayer:beta',
+                    running: false,
+                }),
+            },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(result.isError).toBe(true);
+        expect(parsed.existing_container.status).toContain('Exited');
+        expect(composeUp).not.toHaveBeenCalled();
     });
 
     // Pre-release channel lock: the bundled template ships pinned to :beta so

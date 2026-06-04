@@ -304,6 +304,9 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             pollIntervalMs: 10,
             pollTimeoutMs: 100,
             sleep: jest.fn().mockResolvedValue(undefined),
+            dockerUtil: {
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => {
                     if (url.includes(':8888/health')) return { status: 200 };
@@ -332,6 +335,9 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             pollIntervalMs: 10,
             pollTimeoutMs: 100,
             sleep: jest.fn().mockResolvedValue(undefined),
+            dockerUtil: {
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => {
                     if (url.includes(':8888/health')) return { status: 200 };
@@ -349,6 +355,6 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
 
         expect(parsed.success).toBe(false);
         expect(parsed.components.s3.healthy).toBe(false);
-        expect(parsed.unhealthy).toContain('S3 gateway (port 9000)');
+        expect(parsed.unhealthy).toContain('S3 gateway (localhost:9000)');
     });
 });

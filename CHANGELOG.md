@@ -1,3 +1,40 @@
+## [0.4.0] — 2026-06-04
+
+Addresses homelab beta-tester feedback: Node 18 on stock Ubuntu, Claude Code on
+a jump host with a remote Docker daemon, and install collisions with an
+existing alpha-channel deployment.
+
+### Added
+- **Remote Docker host support.** The MCP now resolves WHERE the Docker daemon
+  runs (honoring `DOCKER_HOST` and the active `docker context`, e.g.
+  `ssh://user@host`) via `dockerUtil.getDockerHost()`:
+  - `check_relayer_health` and `verify_storage` probe the Docker host instead
+    of hardcoded `localhost` (override with the new `host` / existing
+    `endpoint` params).
+  - `check_relayer_health` gains `ui_port` / `minio_port` params matching
+    `install_relayer`'s custom ports.
+  - `check_prerequisites` skips the local port bind-probe when the daemon is
+    remote (it would test the wrong machine) and reports the checks as skipped
+    with instructions, and names the remote host in the docker check.
+- **Fresh-install preflight.** `install_relayer` now detects an existing
+  `xns-relayer` container — running or stopped, any channel (including alpha
+  installs from `releases.scpri.me`) — via `dockerUtil.findContainer()`
+  (`docker ps -a`, exact name) and fails fast with migration steps instead of a
+  docker name-conflict error. `check_prerequisites` surfaces the same
+  condition early as an `existing_install` warning.
+- **Node version guard.** `src/index.js` checks `process.versions.node` before
+  loading the SDK; on Node < 20 it exits with nvm/NodeSource install guidance
+  (Ubuntu's default apt repo ships Node 18) instead of a dependency stack
+  trace.
+- README: Requirements section with Node 20 install one-liners, Remote Docker
+  hosts guide (`docker context create --docker "host=ssh://..."`), fresh-vs-
+  existing-deployment guide, troubleshooting table; tool table now lists all 11
+  tools (`setup_cli_credentials` was missing).
+
+### Fixed
+- MCP server version reported over the protocol now reads from `package.json`
+  instead of a hardcoded stale `'0.1.0'`.
+
 ## [0.3.0] — 2026-06-03
 
 ### Changed

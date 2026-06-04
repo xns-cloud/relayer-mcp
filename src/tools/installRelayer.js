@@ -8,6 +8,11 @@ const { createDockerUtil } = require('../lib/dockerUtil');
 // `files: ["src/"]` covers it). This is the documented xns.tech install.
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
 
+// container_name in the bundled compose. Docker container names are unique
+// per daemon, so ANY existing container with this name — running or stopped,
+// alpha channel or beta — makes `docker compose up` fail with a name conflict.
+const CONTAINER_NAME = 'xns-relayer';
+
 /**
  * Tool 4: install_relayer
  * AC-12: confirms "containers starting"; no manual shell.
@@ -41,6 +46,26 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 const execFileFn = _execFile || nodeExecFile;
                 const composePath = path.join(install_path, 'docker-compose.yml');
                 const envPath = path.join(install_path, '.env');
+
+                // Preflight: install_relayer is for FRESH installs only — it does
+                // not upgrade an existing deployment in place. An existing
+                // container (running or stopped, any channel) owns the name and
+                // would make compose up fail with a confusing name conflict.
+                const existing = await docker.findContainer(CONTAINER_NAME);
+                if (existing) {
+                    return {
+                        content: [{
+                            type: 'text',
+                            text: JSON.stringify({
+                                success: false,
+                                error: `An existing '${CONTAINER_NAME}' container was found (status: ${existing.status}; image: ${existing.image}). install_relayer performs fresh installs only — it does not upgrade an existing deployment in place.`,
+                                existing_container: existing,
+                                remediation: `To replace it with this install: 1) stop and remove the existing container — docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME} (this does NOT delete its data directory); 2) run install_relayer again. To keep the existing deployment instead, skip install_relayer and continue with check_relayer_health against it.`,
+                            }, null, 2),
+                        }],
+                        isError: true,
+                    };
+                }
 
                 // Create install directory (execFile, no shell)
                 await new Promise((resolve, reject) => {

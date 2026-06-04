@@ -9,7 +9,13 @@ describe('verify_storage', () => {
 
     function registerWithOptions(opts) {
         const register = require('../tools/verifyStorage');
-        register(server, opts);
+        register(server, {
+            // Default dockerUtil fake: local daemon. Tests never exec the real docker CLI.
+            dockerUtil: {
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            },
+            ...opts,
+        });
         return server.tool.mock.calls[0][3];
     }
 
@@ -138,5 +144,59 @@ describe('verify_storage', () => {
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('Compare');
+    });
+
+    // --- Remote Docker host (homelab feedback: Claude Code on a jump host) ---
+
+    // No endpoint given → default targets port 9000 on the machine the Docker
+    // daemon runs on, not blindly localhost.
+    test('no endpoint + remote docker → defaults to remote host:9000', async () => {
+        let capturedEndpoint;
+        let capturedContent;
+        const handler = registerWithOptions({
+            dockerUtil: {
+                getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+            },
+            createS3Client: (cfg) => {
+                capturedEndpoint = cfg.endpoint;
+                return {
+                    createBucket: jest.fn().mockResolvedValue(undefined),
+                    putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
+                    getObject: jest.fn().mockImplementation(async () => capturedContent),
+                };
+            },
+        });
+
+        const result = await handler({ access_key_id: 'k', secret_access_key: 's' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(capturedEndpoint).toBe('http://docker-box.lan:9000');
+        expect(parsed.endpoint).toBe('http://docker-box.lan:9000');
+    });
+
+    // Explicit endpoint always wins — docker detection is not even consulted.
+    test('explicit endpoint → docker host detection not consulted', async () => {
+        const getDockerHost = jest.fn();
+        let capturedContent;
+        const handler = registerWithOptions({
+            dockerUtil: { getDockerHost },
+            createS3Client: () => ({
+                createBucket: jest.fn().mockResolvedValue(undefined),
+                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
+                getObject: jest.fn().mockImplementation(async () => capturedContent),
+            }),
+        });
+
+        const result = await handler({
+            access_key_id: 'k',
+            secret_access_key: 's',
+            endpoint: 'http://10.0.0.7:19000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.endpoint).toBe('http://10.0.0.7:19000');
+        expect(getDockerHost).not.toHaveBeenCalled();
     });
 });
