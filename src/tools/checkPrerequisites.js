@@ -133,6 +133,9 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             const connectivityChecks = [
                 { url: 'https://console.xns.tech/health', name: 'connectivity_console', host: 'console.xns.tech' },
                 { url: 'https://auth.xns.tech/auth/realms/scprime/.well-known/openid-configuration', name: 'connectivity_auth', host: 'auth.xns.tech' },
+                // The registry install_relayer pulls from (beta channel, anonymous).
+                // /v2/ is the registry version probe — 200 without credentials.
+                { url: 'https://releases.scpri.me/v2/', name: 'connectivity_registry', host: 'releases.scpri.me' },
             ];
             for (const { url, name, host } of connectivityChecks) {
                 try {

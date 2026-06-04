@@ -233,16 +233,34 @@ describe('install_relayer', () => {
         expect(composeUp).not.toHaveBeenCalled();
     });
 
-    // Pre-release channel lock: the bundled template ships pinned to :beta so
-    // alpha/beta testers exercise the current Relayer. Flips to :stable at GA.
-    // Reads the real file on disk (not the mock) so a stray retag is caught.
-    test('bundled template pins the :beta channel, not :stable', () => {
+    // Release-channel lock: the bundled template ships pinned to the canonical
+    // beta channel on the XNS releases registry (anonymous pull). Flips to
+    // :stable-latest at GA. Reads the real file on disk (not the mock) so a
+    // stray retag is caught.
+    test('bundled template pins the releases-registry beta channel', () => {
         const path = require('path');
         const realFs = require('fs');
         const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
         const template = realFs.readFileSync(templatePath, 'utf8');
 
-        expect(template).toMatch(/^\s*image:\s*scprime\/xns-relayer:beta\s*$/m);
-        expect(template).not.toMatch(/image:\s*scprime\/xns-relayer:stable/);
+        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/xns-relayer:beta-latest\s*$/m);
+        expect(template).not.toMatch(/^\s*image:.*:stable/m);
+    });
+
+    // Fleet-safety regression: Docker Hub scprime/* tags are production FLEET
+    // artifacts, not a release channel — the 0.3.0 template pointed there and
+    // installed a 10-month-stale image. A Hub (or any non-releases-registry)
+    // image reference must never return to the bundled install.
+    test('bundled template never references Docker Hub or fleet images', () => {
+        const path = require('path');
+        const realFs = require('fs');
+        const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
+        const template = realFs.readFileSync(templatePath, 'utf8');
+
+        const imageLines = template.split('\n').filter((l) => /^\s*image:/.test(l));
+        expect(imageLines).toHaveLength(1);
+        expect(imageLines[0]).toContain('releases.scpri.me/');
+        expect(imageLines[0]).not.toContain('scprime/');
+        expect(template).not.toMatch(/image:.*docker\.io/);
     });
 });

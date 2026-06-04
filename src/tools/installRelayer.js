@@ -20,8 +20,10 @@ const CONTAINER_NAME = 'xns-relayer';
  *
  * A first-time user has never heard of a Relayer and cannot supply a compose
  * file or a .env. So by default this tool WRITES both for them — the bundled
- * released compose (Docker Hub scprime/xns-relayer, pre-release :beta channel,
- * per https://xns.tech/docs/windows-ui/) plus a .env carrying the two ports.
+ * released compose (releases.scpri.me/xns-relayer:beta-latest, the pre-release
+ * beta channel; anonymous pull, no docker login) plus a .env carrying the two
+ * ports. The full channel bundle (relayer + monitoring stack) is published at
+ * https://releases.scpri.me/relayer/beta/docker-compose.yml for compose_url.
  *
  * `compose_url` stays as an optional override for internal/custom installs;
  * when given, the old download-a-URL behaviour is preserved.
@@ -33,7 +35,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
 
     server.tool(
         'install_relayer',
-        'Install and start the XNS Relayer. By default writes the bundled docker-compose.yml (Docker Hub scprime/xns-relayer, pre-release :beta channel) and a .env, then runs docker compose up -d — the user does NOT need to author any file. Pass compose_url only to override with a custom compose.',
+        'Install and start the XNS Relayer. By default writes the bundled docker-compose.yml (releases.scpri.me/xns-relayer:beta-latest — the pre-release beta channel, anonymous pull) and a .env, then runs docker compose up -d — the user does NOT need to author any file. Pass compose_url only to override with a custom compose (e.g. the full channel bundle with monitoring at https://releases.scpri.me/relayer/beta/docker-compose.yml).',
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
             ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
