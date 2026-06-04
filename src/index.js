@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 'use strict';
 
+// Node 20+ guard — runs BEFORE the SDK loads so users on older runtimes get a
+// remediation message instead of a SyntaxError from a dependency.
+const { checkNodeVersion } = require('./lib/nodeVersion');
+const nodeCheck = checkNodeVersion(process.versions.node);
+if (!nodeCheck.ok) {
+    process.stderr.write(nodeCheck.message);
+    process.exit(1);
+}
+
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 
 const server = new McpServer({
     name: 'relayer-mcp',
-    version: '0.1.0',
+    version: require('../package.json').version,
 });
 
 // Register all 11 tools
