@@ -1,21 +1,27 @@
-# Bundled by @xns-cloud/relayer-mcp — the documented released XNS Relayer install.
-# Source of truth: https://xns.tech/docs/windows-ui/ (Docker Hub scprime/xns-relayer).
+# Bundled by @xns-cloud/relayer-mcp — the released XNS Relayer install.
+# Source of truth: the beta release channel on the XNS releases registry
+# (releases.scpri.me — anonymous pull, no docker login). The full channel bundle
+# (relayer + monitoring stack) lives at
+# https://releases.scpri.me/relayer/beta/docker-compose.yml; this bundled file is
+# the minimal relayer-only install. NEVER point this at Docker Hub scprime/* —
+# those are production fleet tags and are not a release channel.
 #
-# Pre-release: pinned to the :beta channel so alpha/beta testers exercise the
-# current Relayer agentically. Flip this one tag to :stable at general release.
+# Pre-release: pinned to :beta-latest so beta testers exercise the current
+# Relayer agentically. Flip this one tag to :stable-latest at general release.
 #
 # A first-time user no longer hand-writes this file or the .env — install_relayer
-# writes both. Differences from the hand-written docs compose, by design:
-#   - data lives in ./data (relative to this file) instead of a Windows-only
-#     C:\XNS-Relayer bind, so the same file works on Windows, macOS, and Linux.
+# writes both. Differences from the channel compose, by design:
+#   - data lives in ./data (relative to this file) instead of a named volume,
+#     so the same file works on Windows, macOS, and Linux and the data is easy
+#     to find next to the compose.
 #   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
 #     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
-#   - pull_policy: always so `docker compose up -d` fetches the current :beta
+#   - pull_policy: always so `docker compose up -d` fetches the current beta
 #     image without a separate `docker compose pull` step.
 services:
   xns:
     container_name: xns-relayer
-    image: scprime/xns-relayer:beta
+    image: releases.scpri.me/xns-relayer:beta-latest
     pull_policy: always
     restart: unless-stopped
     volumes:

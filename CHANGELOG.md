@@ -8,6 +8,18 @@ existing alpha-channel deployment.
 
 ### Changed
 
+- **`install_relayer` now targets the canonical beta release channel on the XNS
+  releases registry: `releases.scpri.me/xns-relayer:beta-latest`** (anonymous
+  pull, no `docker login`) — replacing Docker Hub `scprime/xns-relayer:beta`.
+  The Hub tag is a production *fleet* registry artifact, not a release channel;
+  it had not been refreshed since 2025-08 and installs through it shipped a
+  10-month-old Relayer. `compose_url` can point at the full channel bundle
+  (relayer + monitoring) at
+  `https://releases.scpri.me/relayer/beta/docker-compose.yml`. A regression
+  test pins the bundled template to the releases registry so a Hub reference
+  can never silently return. `check_prerequisites` now also probes
+  `releases.scpri.me` (the registry the install pulls from) alongside
+  console/auth connectivity.
 - **BREAKING (vs 0.3.0): `install_relayer` param `minio_port` is now `s3_port`**,
   and the generated `.env` / compose interpolation var `MINIO_PORT` is now
   `S3_PORT`. Port 9000 is served by the Relayer **S3 Gateway**; the MinIO

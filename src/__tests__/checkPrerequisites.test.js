@@ -132,6 +132,32 @@ describe('check_prerequisites', () => {
         expect(consoleCheck.remediation).toContain('HTTPS');
     });
 
+    // The registry install_relayer pulls from is part of connectivity: a host
+    // that can reach console/auth but not releases.scpri.me would pass checks
+    // and then fail mid-install on the image pull.
+    test('probes the releases registry the install pulls from', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: '{}' }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        const registryCheck = parsed.checks.find((c) => c.name === 'connectivity_registry');
+        expect(registryCheck).toBeDefined();
+        expect(registryCheck.passed).toBe(true);
+        expect(registryCheck.detail).toContain('releases.scpri.me');
+    });
+
     // AC-3: plain English descriptions
     test('all checks have human-readable detail strings', async () => {
         const handler = registerWithOptions({
