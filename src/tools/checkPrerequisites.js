@@ -35,7 +35,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
 
     server.tool(
         'check_prerequisites',
-        'Check system prerequisites for XNS Relayer installation: Docker availability, required ports (8888, 9000), disk space, and network connectivity to console.xns.tech and auth.xns.tech. Run this first before any other relayer tool.',
+        'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Run this first before any other relayer tool.',
         {
             /* no parameters */
         },
@@ -43,26 +43,48 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             const checks = [];
             let allPassed = true;
 
-            // 1. Docker available
+            // 1. Docker available — and WHERE it runs. With DOCKER_HOST or an
+            // ssh:// context (e.g. Claude Code on a jump host), the daemon is
+            // on another machine and the local checks below must adapt.
+            let dockerHost = { remote: false, host: 'localhost', endpoint: null };
             try {
                 await docker.docker(['info', '--format', '{{.ServerVersion}}']);
-                checks.push({ name: 'docker', passed: true, detail: 'Docker is running' });
+                dockerHost = await docker.getDockerHost();
+                checks.push({
+                    name: 'docker',
+                    passed: true,
+                    detail: dockerHost.remote
+                        ? `Docker is running on a remote host (${dockerHost.host}, via ${dockerHost.endpoint})`
+                        : 'Docker is running',
+                });
             } catch (err) {
                 allPassed = false;
                 checks.push({
                     name: 'docker',
                     passed: false,
                     detail: 'Docker is not available or not running',
-                    remediation: 'Install Docker Engine (https://docs.docker.com/engine/install/) and ensure the Docker daemon is running. On Linux: sudo systemctl start docker',
+                    remediation: 'Install Docker Engine (https://docs.docker.com/engine/install/) and ensure the Docker daemon is running. On Linux: sudo systemctl start docker. Remote daemon: create an SSH context — docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
                 });
             }
 
-            // 2-3. Required ports
+            // 2-3. Required ports. The bind-probe runs on THIS machine — when
+            // the Docker daemon is remote, the containers (and their port
+            // bindings) live on the remote host, so a local probe would test
+            // the wrong machine. Report skipped instead of a false answer.
             const requiredPorts = [
-                { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port or choose a different host.' },
-                { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: MinIO or another S3-compatible service).' },
+                { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port, or install with a different port via install_relayer ui_port.' },
+                { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: MinIO or another S3-compatible service), or install with a different port via install_relayer minio_port.' },
             ];
             for (const { port, name, inUseRemediation } of requiredPorts) {
+                if (dockerHost.remote) {
+                    checks.push({
+                        name,
+                        passed: true,
+                        skipped: true,
+                        detail: `Port ${port} check skipped — the Docker daemon runs on ${dockerHost.host}, so port availability must be checked there (e.g. ss -tlnp | grep ${port} on that host).`,
+                    });
+                    continue;
+                }
                 try {
                     const available = await _checkPort(port);
                     if (available) {
@@ -75,6 +97,26 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     allPassed = false;
                     checks.push({ name, passed: false, detail: `Could not check port ${port}`, remediation: 'Ensure you have permission to bind ports. On Linux, non-root users may need to use ports above 1024.' });
                 }
+            }
+
+            // 3b. Existing installation. install_relayer is fresh-install only;
+            // an existing xns-relayer container (running or stopped, any
+            // channel) would fail it with a name conflict. Warn early, here.
+            try {
+                const existing = await docker.findContainer('xns-relayer');
+                if (existing) {
+                    checks.push({
+                        name: 'existing_install',
+                        passed: true,
+                        warning: true,
+                        detail: `An existing 'xns-relayer' container was found (status: ${existing.status}; image: ${existing.image}).`,
+                        remediation: 'install_relayer performs fresh installs only. To replace the existing deployment: docker stop xns-relayer && docker rm xns-relayer (data directory is preserved), then install. To keep it, skip install_relayer and continue onboarding against the running deployment.',
+                    });
+                } else {
+                    checks.push({ name: 'existing_install', passed: true, detail: 'No existing xns-relayer container — ready for a fresh install' });
+                }
+            } catch {
+                checks.push({ name: 'existing_install', passed: true, detail: 'Existing-install check skipped (Docker not reachable)' });
             }
 
             // 4. Disk space (need at least 10 GB free — basic docker images + data)
