@@ -1,10 +1,30 @@
 # @xns-cloud/relayer-mcp
 
-MCP server for XNS Relayer onboarding. Provides 10 tools that let an AI agent drive the complete Relayer setup conversationally over stdio transport.
+MCP server for XNS Relayer onboarding. Provides 11 tools that let an AI agent drive the complete Relayer setup conversationally over stdio transport.
 
-## Claude Desktop Configuration
+## Requirements
 
-Add to your Claude Desktop `claude_desktop_config.json`:
+- **Node.js 20+** — see [Installing Node.js 20](#installing-nodejs-20) if your distro ships an older version.
+- **Docker Engine** — on the same machine, or on a remote host via a Docker context (see [Remote Docker hosts](#remote-docker-hosts)).
+
+### Installing Node.js 20
+
+Ubuntu's default apt repository only ships Node 18, which is too old. Two ways to get Node 20:
+
+**nvm** (recommended — no root required):
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+\. "$HOME/.nvm/nvm.sh" && nvm install 20
+```
+
+**NodeSource** (system-wide): follow <https://github.com/nodesource/distributions#installation-instructions>.
+
+If you start the MCP on an older Node, it exits immediately with this same guidance instead of a dependency stack trace.
+
+## Claude Desktop / Claude Code Configuration
+
+Add to your `claude_desktop_config.json` (or `claude mcp add relayer -- npx @xns-cloud/relayer-mcp@latest` for Claude Code):
 
 ```json
 {
@@ -23,16 +43,17 @@ No separate install step required.
 
 | # | Tool | Purpose |
 |---|------|---------|
-| 1 | `check_prerequisites` | Verify Docker, ports (8888, 9000), disk, and network connectivity. |
+| 1 | `check_prerequisites` | Verify Docker (local or remote), ports (8888, 9000), an existing installation, disk, and network connectivity. |
 | 2 | `register_account` | Register an XNS account (email + password) via Console2. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Write the bundled `docker-compose.yml` + `.env` (Docker Hub `scprime/xns-relayer`, pre-release `:beta` channel) and start the containers. The user authors nothing; `compose_url` is an optional override. |
-| 5 | `check_relayer_health` | Poll UI, S3, and HostIO health (10s interval, 300s timeout). |
+| 4 | `install_relayer` | Write the bundled `docker-compose.yml` + `.env` (Docker Hub `scprime/xns-relayer`, pre-release `:beta` channel) and start the containers. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override. |
+| 5 | `check_relayer_health` | Poll UI, S3, and HostIO health (10s interval, 300s timeout). Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration. |
 | 9 | `configure_vpd` | Set data/parity host selection via CEL expressions. |
-| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) at localhost:9000. |
+| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway on port 9000. |
+| 11 | `setup_cli_credentials` | Provision S3 IAM credentials and write `~/.xns/credentials` so the XNS CLI works without further configuration. |
 
 ## Onboarding Flow
 
@@ -45,8 +66,49 @@ No separate install step required.
 6. Agent initiates claim; user opens claim URL in browser (Tools 6 + 7).
 7. Agent signs in via OIDC to configure host preferences (Tools 8 + 9).
 8. Agent verifies S3 storage is working (Tool 10).
+9. Optionally, agent provisions CLI credentials (Tool 11).
 
 The operator's only required actions are: clicking one email link, completing one browser sign-in, and confirming one claim.
+
+## Fresh installs vs. existing deployments
+
+`install_relayer` performs **fresh installs only** — it does not upgrade an existing deployment in place. Docker container names are unique per daemon, so any existing `xns-relayer` container (running **or stopped**, any channel — including an alpha-channel install from `releases.scpri.me`) blocks the install. Both `check_prerequisites` and `install_relayer` detect this and tell you before anything breaks.
+
+To replace an existing deployment:
+
+```bash
+docker stop xns-relayer && docker rm xns-relayer   # does NOT delete the data directory
+```
+
+then run `install_relayer` again. To keep the existing deployment, skip `install_relayer` and continue onboarding against it (`check_relayer_health` onwards).
+
+## Remote Docker hosts
+
+Claude Code doesn't have to run on the Docker machine. If you run it on a management node or jump host, point the Docker CLI at the remote server with an SSH context:
+
+```bash
+docker context create relayer --docker "host=ssh://user@docker-box"
+docker context use relayer
+```
+
+(Requires the `docker` CLI on the management node — the [static binary](https://docs.docker.com/engine/install/binaries/) is enough — and SSH key access to the Docker host.)
+
+The MCP detects this automatically (it honors `DOCKER_HOST` and the active Docker context):
+
+- `install_relayer` runs `docker compose` against the remote daemon.
+- `check_relayer_health` and `verify_storage` probe the **remote host's** ports 8888/9000 instead of localhost — make sure those are reachable from the management node.
+- `check_prerequisites` skips the local port-availability probes (the containers bind ports on the remote host) and reports them as skipped with instructions.
+
+`check_relayer_health` accepts a `host` override, and `verify_storage` an `endpoint` override, for setups the auto-detection can't see (port forwards, NAT).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| MCP exits with "requires Node.js 20 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 20](#installing-nodejs-20) |
+| `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
+| Port 8888/9000 already in use | Another service on the Docker host (often MinIO on 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `minio_port` (health checks accept the same) |
+| Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 
 ## Authentication
 
