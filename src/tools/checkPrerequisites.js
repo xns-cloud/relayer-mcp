@@ -73,7 +73,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             // the wrong machine. Report skipped instead of a false answer.
             const requiredPorts = [
                 { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port, or install with a different port via install_relayer ui_port.' },
-                { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: MinIO or another S3-compatible service), or install with a different port via install_relayer minio_port.' },
+                { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: another S3-compatible service), or install with a different port via install_relayer s3_port.' },
             ];
             for (const { port, name, inUseRemediation } of requiredPorts) {
                 if (dockerHost.remote) {

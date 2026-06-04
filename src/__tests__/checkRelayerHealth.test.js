@@ -176,8 +176,9 @@ describe('check_relayer_health', () => {
         expect(urls).toContain('http://192.168.1.50:8888/health');
     });
 
-    // Custom ports flow into the probe URLs (matches install_relayer ports).
-    test('custom ui_port/minio_port → probe URLs carry them', async () => {
+    // Host inputs arrive messy — an accidental scheme prefix or bare IPv6 must
+    // still produce valid probe URLs, not false unhealthy reports.
+    test('host with scheme prefix or bare IPv6 → normalized probe URLs', async () => {
         const urls = [];
         const handler = registerWithOptions({
             httpClient: {
@@ -186,7 +187,25 @@ describe('check_relayer_health', () => {
             },
         });
 
-        await handler({ poll: false, ui_port: 18888, minio_port: 19000 });
+        await handler({ poll: false, host: 'http://docker-box.lan' });
+        expect(urls).toContain('http://docker-box.lan:8888/health');
+
+        urls.length = 0;
+        await handler({ poll: false, host: 'fd00::7' });
+        expect(urls).toContain('http://[fd00::7]:8888/health');
+    });
+
+    // Custom ports flow into the probe URLs (matches install_relayer ports).
+    test('custom ui_port/s3_port → probe URLs carry them', async () => {
+        const urls = [];
+        const handler = registerWithOptions({
+            httpClient: {
+                get: jest.fn().mockImplementation(async (url) => { urls.push(url); return { status: 200 }; }),
+                post: jest.fn(),
+            },
+        });
+
+        await handler({ poll: false, ui_port: 18888, s3_port: 19000 });
 
         expect(urls).toContain('http://localhost:18888/health');
         expect(urls).toContain('http://localhost:19000/');

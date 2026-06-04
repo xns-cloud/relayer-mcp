@@ -37,10 +37,10 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
             ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
-            minio_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (container 9000)'),
+            s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (container 9000)'),
             compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install.'),
         },
-        async ({ install_path, ui_port, minio_port, compose_url }) => {
+        async ({ install_path, ui_port, s3_port, compose_url }) => {
             try {
                 const { execFile: nodeExecFile } = require('child_process');
                 const execFileFn = _execFile || nodeExecFile;
@@ -87,15 +87,15 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     // Default path: write the bundled released compose + .env for the user.
                     const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');
                     await fsp.writeFile(composePath, template);
-                    await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nMINIO_PORT=${minio_port}\n`);
+                    await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\n`);
                 }
 
-                // Run docker compose up -d. cwd + env so ${UI_PORT}/${MINIO_PORT}
+                // Run docker compose up -d. cwd + env so ${UI_PORT}/${S3_PORT}
                 // interpolation and the ./data bind resolve in the install dir,
                 // regardless of where the MCP process was launched.
                 await docker.composeUp(composePath, {
                     cwd: install_path,
-                    env: { ...process.env, UI_PORT: String(ui_port), MINIO_PORT: String(minio_port) },
+                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port) },
                 });
 
                 return {

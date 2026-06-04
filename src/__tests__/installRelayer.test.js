@@ -147,7 +147,7 @@ describe('install_relayer', () => {
         expect(fs.readFile).toHaveBeenCalled();
         expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
         // .env written with default ports.
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nMINIO_PORT=9000\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\n');
     });
 
     // Custom ports flow into .env AND into the compose env (interpolation).
@@ -160,15 +160,15 @@ describe('install_relayer', () => {
             dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
         });
 
-        await handler({ install_path: '/tmp/xns', ui_port: 18888, minio_port: 19000 });
+        await handler({ install_path: '/tmp/xns', ui_port: 18888, s3_port: 19000 });
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nMINIO_PORT=19000\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nS3_PORT=19000\n');
         // composeUp runs in the install dir with the ports in env.
         const [composePath, execOpts] = composeUp.mock.calls[0];
         expect(composePath).toBe('/tmp/xns/docker-compose.yml');
         expect(execOpts.cwd).toBe('/tmp/xns');
         expect(execOpts.env.UI_PORT).toBe('18888');
-        expect(execOpts.env.MINIO_PORT).toBe('19000');
+        expect(execOpts.env.S3_PORT).toBe('19000');
     });
 
     // --- Preflight: fresh installs only (homelab feedback: alpha-channel name conflict) ---
