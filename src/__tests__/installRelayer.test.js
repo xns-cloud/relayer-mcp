@@ -297,6 +297,53 @@ describe('install_relayer', () => {
         expect(template).not.toMatch(/^\s*image:.*:stable/m);
     });
 
+    // --- W3-AC4: channelComposeUrl injectable seam ---
+
+    // Override is honored: a custom channelComposeUrl replaces the default channel URL.
+    test('channelComposeUrl override is honored (custom URL used, not default)', async () => {
+        const execFileCalls = [];
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push({ cmd, args }); cb(null, '', ''); }),
+            fs,
+            channelComposeUrl: 'https://custom.example.com/my-compose.yml',
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const curl = execFileCalls.find((c) => c.cmd === 'curl');
+        expect(curl.args).toContain('https://custom.example.com/my-compose.yml');
+        expect(curl.args).not.toContain(CHANNEL_COMPOSE_URL);
+    });
+
+    // No override: production uses the default channel URL — byte-identical behavior.
+    test('no channelComposeUrl override → default channel URL used', async () => {
+        const execFileCalls = [];
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push({ cmd, args }); cb(null, '', ''); }),
+            fs,
+            // No channelComposeUrl in options — should fall through to module default.
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const curl = execFileCalls.find((c) => c.cmd === 'curl');
+        expect(curl.args).toContain(CHANNEL_COMPOSE_URL);
+    });
+
     // Fleet-safety regression: Docker Hub scprime/* tags are production FLEET
     // artifacts, not a release channel — the 0.3.0 template pointed there and
     // installed a 10-month-stale image. A Hub (or any non-releases-registry)

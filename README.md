@@ -52,7 +52,7 @@ No separate install step required.
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration. |
 | 9 | `configure_vpd` | Set data/parity host selection via CEL expressions. |
-| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway on port 9000. |
+| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway on port 9000. **Requires fullaccess credentials** (admin key pair from the Relayer UI IAM page — not a read-only or bucket-scoped key). Test bucket is cleaned up automatically. If auto-detection cannot reach the host, pass `endpoint` with an explicit IP (e.g. `http://192.168.1.100:9000`). |
 | 11 | `setup_cli_credentials` | Provision S3 IAM credentials and write `~/.xns/credentials` so the XNS CLI works without further configuration. |
 
 ## Onboarding Flow

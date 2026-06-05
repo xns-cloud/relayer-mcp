@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.5.1] — 2026-06-04
+
+### Fixed
+
+- **`verify_storage` self-cleanup (W3-AC1):** The tool now removes its `mcp-verify-*`
+  test bucket and object in a `finally`-style block — whether the verification passes
+  or fails. A cleanup failure is non-fatal: it is noted in the response as
+  `cleanup_warning` and never flips a passing result to a failure.
+- **`verify_storage` fullaccess credential requirement (W3-AC2):** The tool
+  description now explicitly states that fullaccess credentials (the admin key pair
+  from the Relayer UI IAM page) are required. Credential-error responses include a
+  `credential_requirement` field repeating the requirement.
+- **`verify_storage` explicit-IP guidance (W3-AC3):** When the endpoint was
+  auto-detected from the Docker context, both success and failure responses include
+  guidance on passing an explicit `endpoint` IP (e.g. `http://<ip>:9000`) when
+  auto-detection cannot reach the host.
+- **`install_relayer` injectable channel URL seam (W3-AC4):** The channel compose
+  URL (`https://releases.scpri.me/relayer/beta/docker-compose.yml`) is now
+  injectable via `options.channelComposeUrl` — no override produces byte-identical
+  production behavior; tests can inject a custom URL without network access.
+- **`s3Client` delete wrappers:** Added `deleteObject` and `deleteBucket` thin
+  wrappers (using `DeleteObjectCommand` / `DeleteBucketCommand` from the AWS SDK)
+  so the cleanup path in `verify_storage` can operate through the same injectable
+  client interface used for create/put/get.
+
 ## [0.5.0] — 2026-06-04
 
 ### Fixed
