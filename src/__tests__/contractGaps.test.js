@@ -306,6 +306,7 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             sleep: jest.fn().mockResolvedValue(undefined),
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                isContainerRunning: jest.fn().mockResolvedValue(true),
             },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => {
@@ -337,6 +338,7 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             sleep: jest.fn().mockResolvedValue(undefined),
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                isContainerRunning: jest.fn().mockResolvedValue(true),
             },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => {

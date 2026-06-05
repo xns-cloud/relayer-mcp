@@ -7,10 +7,12 @@ describe('check_relayer_health', () => {
         server = { tool: jest.fn() };
     });
 
-    // Default dockerUtil fake: local daemon. Tests never exec the real docker CLI.
+    // Default dockerUtil fake: local daemon, monitoring sidecars running.
+    // Tests never exec the real docker CLI.
     function localDockerUtil() {
         return {
             getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            isContainerRunning: jest.fn().mockResolvedValue(true),
         };
     }
 
@@ -137,6 +139,7 @@ describe('check_relayer_health', () => {
         const handler = registerWithOptions({
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+                isContainerRunning: jest.fn().mockResolvedValue(true),
             },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => { urls.push(url); return { status: 200 }; }),
@@ -160,7 +163,7 @@ describe('check_relayer_health', () => {
         const urls = [];
         const getDockerHost = jest.fn();
         const handler = registerWithOptions({
-            dockerUtil: { getDockerHost },
+            dockerUtil: { getDockerHost, isContainerRunning: jest.fn().mockResolvedValue(true) },
             httpClient: {
                 get: jest.fn().mockImplementation(async (url) => { urls.push(url); return { status: 200 }; }),
                 post: jest.fn(),
@@ -216,6 +219,58 @@ describe('check_relayer_health', () => {
         parsed = JSON.parse(result.content[0].text);
         expect(urls).toContain('http://127.0.0.1:8888/health');
         expect(parsed.remote_docker).toBeUndefined();
+    });
+
+    // --- Monitoring sidecars (channel bundle: prometheus + grafana) ----------
+
+    // The channel bundle ships prometheus + grafana — without them the UI's
+    // Monitoring section is dead. Their absence must be SURFACED as degraded,
+    // not silently reported healthy (the gap that let relayer-only MCP installs
+    // pass health checks).
+    test('monitoring containers absent → degraded, named in note, core still healthy', async () => {
+        const docker = localDockerUtil();
+        docker.isContainerRunning = jest.fn().mockResolvedValue(false);
+        const handler = registerWithOptions({
+            dockerUtil: docker,
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200 }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ poll: false });
+        const parsed = JSON.parse(result.content[0].text);
+
+        // Core flow is NOT blocked — monitoring absence degrades, never fails.
+        expect(parsed.success).toBe(true);
+        expect(parsed.degraded).toBe(true);
+        expect(parsed.components.monitoring.healthy).toBe(false);
+        expect(parsed.components.monitoring.prometheus).toBe(false);
+        expect(parsed.components.monitoring.grafana).toBe(false);
+        expect(parsed.components.monitoring.note).toMatch(/Monitoring/);
+        expect(parsed.message).toMatch(/monitoring/i);
+    });
+
+    test('monitoring containers running → monitoring healthy, not degraded', async () => {
+        const docker = localDockerUtil();
+        const handler = registerWithOptions({
+            dockerUtil: docker,
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200 }),
+                post: jest.fn(),
+            },
+        });
+
+        const result = await handler({ poll: false });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.degraded).toBeUndefined();
+        expect(parsed.components.monitoring.healthy).toBe(true);
+        // Probed both sidecars by container name.
+        const probed = docker.isContainerRunning.mock.calls.map((c) => c[0]);
+        expect(probed).toContain('prometheus');
+        expect(probed).toContain('grafana');
     });
 
     // Custom ports flow into the probe URLs (matches install_relayer ports).

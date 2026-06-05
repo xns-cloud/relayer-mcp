@@ -4,8 +4,14 @@ const { z } = require('zod');
 const path = require('path');
 const { createDockerUtil } = require('../lib/dockerUtil');
 
-// Bundled released-install template (ships in the npm package; package.json
-// `files: ["src/"]` covers it). This is the documented xns.tech install.
+// Canonical released install — the full beta channel bundle (relayer +
+// monitoring stack). Versioned in the deploy repo, shipped to web01 by
+// `deploy.py promote`, served login-free. THE default install source.
+const CHANNEL_COMPOSE_URL = 'https://releases.scpri.me/relayer/beta/docker-compose.yml';
+
+// Bundled OFFLINE FALLBACK template (ships in the npm package; package.json
+// `files: ["src/"]` covers it). Written only when the channel fetch fails;
+// kept service-parity with the channel bundle by the jest contract tests.
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
 
 // container_name in the bundled compose. Docker container names are unique
@@ -19,11 +25,12 @@ const CONTAINER_NAME = 'xns-relayer';
  * TP-30: uses execFile, no shell (security non-negotiable).
  *
  * A first-time user has never heard of a Relayer and cannot supply a compose
- * file or a .env. So by default this tool WRITES both for them — the bundled
- * released compose (releases.scpri.me/xns-relayer:beta-latest, the pre-release
- * beta channel; anonymous pull, no docker login) plus a .env carrying the two
- * ports. The full channel bundle (relayer + monitoring stack) is published at
- * https://releases.scpri.me/relayer/beta/docker-compose.yml for compose_url.
+ * file or a .env. So by default this tool authors both for them: it fetches
+ * the CANONICAL channel bundle (relayer + Prometheus + Grafana + node-exporter
+ * — the monitoring stack powers the dashboards under Monitoring in the web UI)
+ * and writes a .env carrying the two ports. If the fetch fails (offline,
+ * registry hiccup), the bundled service-parity template is the fallback — the
+ * install still completes and the response says it fell back.
  *
  * `compose_url` stays as an optional override for internal/custom installs;
  * when given, the old download-a-URL behaviour is preserved.
@@ -35,7 +42,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
 
     server.tool(
         'install_relayer',
-        'Install and start the XNS Relayer. By default writes the bundled docker-compose.yml (releases.scpri.me/xns-relayer:beta-latest — the pre-release beta channel, anonymous pull) and a .env, then runs docker compose up -d — the user does NOT need to author any file. Pass compose_url only to override with a custom compose (e.g. the full channel bundle with monitoring at https://releases.scpri.me/relayer/beta/docker-compose.yml).',
+        'Install and start the XNS Relayer. By default fetches the canonical beta channel bundle — relayer + the Prometheus/Grafana monitoring stack — from releases.scpri.me (anonymous pull) and writes a .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if the fetch fails. Pass compose_url only to override with a custom compose.',
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
             ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
@@ -77,18 +84,33 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     });
                 });
 
+                const fetchCompose = (url) => new Promise((resolve, reject) => {
+                    execFileFn('curl', ['-fsSL', '-o', composePath, url], { timeout: 60000 }, (err) => {
+                        if (err) return reject(new Error(`Failed to download compose file: ${err.message}`));
+                        resolve();
+                    });
+                });
+
+                let source;
+                let note;
                 if (compose_url) {
                     // Override path: download a custom compose (execFile, no shell).
-                    await new Promise((resolve, reject) => {
-                        execFileFn('curl', ['-fsSL', '-o', composePath, compose_url], { timeout: 60000 }, (err) => {
-                            if (err) return reject(new Error(`Failed to download compose file: ${err.message}`));
-                            resolve();
-                        });
-                    });
+                    await fetchCompose(compose_url);
+                    source = 'compose_url';
                 } else {
-                    // Default path: write the bundled released compose + .env for the user.
-                    const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');
-                    await fsp.writeFile(composePath, template);
+                    // Default path: fetch the canonical channel bundle (relayer +
+                    // monitoring stack); fall back to the bundled service-parity
+                    // template only when the fetch fails. Either way, author the
+                    // .env so the user never writes a file.
+                    try {
+                        await fetchCompose(CHANNEL_COMPOSE_URL);
+                        source = 'channel';
+                    } catch (fetchErr) {
+                        const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');
+                        await fsp.writeFile(composePath, template);
+                        source = 'bundled-fallback';
+                        note = `Channel bundle fetch failed (${fetchErr.message}) — fell back to the bundled compose. Same services; re-running install later is not required.`;
+                    }
                     await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\n`);
                 }
 
@@ -108,7 +130,8 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             message: 'XNS Relayer containers are starting. Use check_relayer_health to monitor when all services are ready.',
                             compose_path: composePath,
                             install_path,
-                            source: compose_url ? 'compose_url' : 'bundled',
+                            source,
+                            ...(note ? { note } : {}),
                         }, null, 2),
                     }],
                 };

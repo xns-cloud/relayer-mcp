@@ -112,7 +112,9 @@ describe('install_relayer', () => {
         expect(result.isError).toBe(true);
     });
 
-    // --- Default path: bundled released compose, user authors nothing ---------
+    // --- Default path: fetch the channel bundle, user authors nothing ---------
+
+    const CHANNEL_COMPOSE_URL = 'https://releases.scpri.me/relayer/beta/docker-compose.yml';
 
     function fakeFs() {
         const writes = {};
@@ -123,14 +125,17 @@ describe('install_relayer', () => {
         };
     }
 
-    // The whole point: a first-time user supplies no compose_url, and the tool
-    // writes BOTH docker-compose.yml and .env for them — no curl.
-    test('no compose_url → writes bundled compose + .env, never curls', async () => {
+    // The released install IS the channel bundle (relayer + monitoring stack).
+    // A first-time user supplies no compose_url; the tool fetches the canonical
+    // beta channel compose and writes the .env for them. Guards the live gap
+    // where the bundled relayer-only template installed no prometheus/grafana
+    // and the UI's Monitoring section was dead.
+    test('no compose_url → fetches the channel bundle + writes .env', async () => {
         const execFileCalls = [];
         const fs = fakeFs();
         const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
         const handler = registerWithOptions({
-            execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push(cmd); cb(null, '', ''); }),
+            execFile: jest.fn((cmd, args, opts, cb) => { execFileCalls.push({ cmd, args }); cb(null, '', ''); }),
             fs,
             dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
         });
@@ -139,15 +144,41 @@ describe('install_relayer', () => {
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(true);
-        expect(parsed.source).toBe('bundled');
-        // No curl in the default path — only mkdir.
-        expect(execFileCalls).toContain('mkdir');
-        expect(execFileCalls).not.toContain('curl');
-        // Bundled template written to docker-compose.yml.
-        expect(fs.readFile).toHaveBeenCalled();
-        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
+        expect(parsed.source).toBe('channel');
+        // curl fetched the canonical channel compose into the install dir.
+        const curl = execFileCalls.find((c) => c.cmd === 'curl');
+        expect(curl.args).toContain(CHANNEL_COMPOSE_URL);
+        expect(curl.args).toContain('/tmp/xns/docker-compose.yml');
+        // The bundled template is NOT read on the happy path.
+        expect(fs.readFile).not.toHaveBeenCalled();
         // .env written with default ports.
         expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\n');
+    });
+
+    // Offline resilience: if the channel fetch fails, the bundled template is
+    // the fallback — the install still completes and SAYS it fell back.
+    test('channel fetch failure → falls back to bundled template', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => {
+                if (cmd === 'curl') return cb(new Error('could not resolve host'));
+                cb(null, '', '');
+            }),
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.source).toBe('bundled-fallback');
+        expect(parsed.note).toMatch(/fell back|fall.?back/i);
+        // Bundled template written to docker-compose.yml; .env still written.
+        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\n');
+        expect(composeUp).toHaveBeenCalled();
     });
 
     // Custom ports flow into .env AND into the compose env (interpolation).
@@ -233,34 +264,57 @@ describe('install_relayer', () => {
         expect(composeUp).not.toHaveBeenCalled();
     });
 
-    // Release-channel lock: the bundled template ships pinned to the canonical
-    // beta channel on the XNS releases registry (anonymous pull). Flips to
-    // :stable-latest at GA. Reads the real file on disk (not the mock) so a
-    // stray retag is caught.
-    test('bundled template pins the releases-registry beta channel', () => {
+    // --- Bundled fallback template — contract with the channel bundle ---------
+    // The default install fetches the channel bundle; this file is the OFFLINE
+    // FALLBACK and must keep SERVICE PARITY with it. Guards the live gap where
+    // the template was relayer-only: MCP installs shipped no prometheus/grafana
+    // and the UI's Monitoring section was dead. Reads the real file on disk
+    // (not the mock) so any drift is caught in CI.
+
+    function readTemplate() {
         const path = require('path');
         const realFs = require('fs');
-        const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
-        const template = realFs.readFileSync(templatePath, 'utf8');
+        return realFs.readFileSync(path.join(__dirname, '..', 'templates', 'docker-compose.yml'), 'utf8');
+    }
 
-        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/xns-relayer:beta-latest\s*$/m);
+    test('fallback template keeps service parity with the channel bundle', () => {
+        const template = readTemplate();
+        // Full bundle: relayer + the monitoring stack that powers the UI's
+        // Monitoring section. A missing service here = a degraded install.
+        for (const service of ['xns:', 'prometheus:', 'grafana:', 'node-exporter:']) {
+            expect(template).toMatch(new RegExp(`^\\s{2}${service}\\s*$`, 'm'));
+        }
+        // privileged matches the channel compose (samba / fuse / disk management).
+        expect(template).toMatch(/^\s*privileged:\s*true/m);
+    });
+
+    test('fallback template pins the releases-registry beta channel', () => {
+        const template = readTemplate();
+
+        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/xns-relayer:beta-latest\s*(#.*)?$/m);
+        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/relayer-prometheus:beta-latest\s*(#.*)?$/m);
+        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/relayer-grafana:beta-latest\s*(#.*)?$/m);
         expect(template).not.toMatch(/^\s*image:.*:stable/m);
     });
 
     // Fleet-safety regression: Docker Hub scprime/* tags are production FLEET
     // artifacts, not a release channel — the 0.3.0 template pointed there and
     // installed a 10-month-stale image. A Hub (or any non-releases-registry)
-    // image reference must never return to the bundled install.
-    test('bundled template never references Docker Hub or fleet images', () => {
-        const path = require('path');
-        const realFs = require('fs');
-        const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
-        const template = realFs.readFileSync(templatePath, 'utf8');
+    // image reference must never return to the bundled install. The ONE allowed
+    // upstream image is prom/node-exporter (public multi-arch, matches the
+    // channel bundle — deploy.py: "node-exporter is upstream multi-arch,
+    // nothing to build").
+    test('fallback template never references Docker Hub or fleet images', () => {
+        const template = readTemplate();
 
         const imageLines = template.split('\n').filter((l) => /^\s*image:/.test(l));
-        expect(imageLines).toHaveLength(1);
-        expect(imageLines[0]).toContain('releases.scpri.me/');
-        expect(imageLines[0]).not.toContain('scprime/');
-        expect(template).not.toMatch(/image:.*docker\.io/);
+        expect(imageLines).toHaveLength(4);
+        for (const line of imageLines) {
+            expect(line).not.toContain('scprime/');
+            expect(line).not.toContain('docker.io');
+            expect(line).toMatch(/releases\.scpri\.me\/|image:\s*prom\/node-exporter:v[\d.]+/);
+        }
+        // node-exporter stays version-pinned, not :latest.
+        expect(template).not.toMatch(/node-exporter:latest/);
     });
 });

@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`install_relayer` now installs the full channel bundle — monitoring stack
+  included.** Beta-tester report: MCP installs shipped no Prometheus/Grafana,
+  leaving the dashboards under Monitoring in the web UI dead. The default path
+  now fetches the canonical beta channel compose
+  (`https://releases.scpri.me/relayer/beta/docker-compose.yml` — relayer +
+  Prometheus + Grafana + node-exporter, versioned in the deploy repo and
+  shipped by `deploy.py promote`) instead of writing a relayer-only bundled
+  template. The bundled template remains as an **offline fallback** only, is
+  reconciled to service parity with the channel bundle (monitoring stack +
+  `privileged: true`), and jest contract tests now enforce that parity so the
+  relayer-only drift cannot silently return. Fallback installs say so in the
+  response (`source: "bundled-fallback"` + note).
+
+### Changed
+
+- **`check_relayer_health` now checks the monitoring sidecars.** A missing
+  Prometheus or Grafana container reports `degraded: true` with a named
+  `components.monitoring` entry and a message suffix — surfaced, never
+  swallowed — without blocking the core install/claim flow.
+
 ## [0.4.0] — 2026-06-04
 
 Addresses homelab beta-tester feedback: Node 18 on stock Ubuntu, Claude Code on
