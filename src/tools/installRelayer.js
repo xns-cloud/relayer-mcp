@@ -39,6 +39,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
     const docker = options.dockerUtil || createDockerUtil(options);
     const _execFile = options.execFile;
     const fsp = options.fs || require('fs').promises;
+    const channelComposeUrl = options.channelComposeUrl || CHANNEL_COMPOSE_URL;
 
     server.tool(
         'install_relayer',
@@ -103,7 +104,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     // template only when the fetch fails. Either way, author the
                     // .env so the user never writes a file.
                     try {
-                        await fetchCompose(CHANNEL_COMPOSE_URL);
+                        await fetchCompose(channelComposeUrl);
                         source = 'channel';
                     } catch (fetchErr) {
                         const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');

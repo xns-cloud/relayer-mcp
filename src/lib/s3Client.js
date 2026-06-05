@@ -5,6 +5,8 @@ const {
     CreateBucketCommand,
     PutObjectCommand,
     GetObjectCommand,
+    DeleteObjectCommand,
+    DeleteBucketCommand,
 } = require('@aws-sdk/client-s3');
 
 /**
@@ -63,6 +65,23 @@ function createS3Client(options = {}) {
                 Key: key,
             }));
             return resp.Body.transformToString();
+        },
+
+        /**
+         * @param {string} bucket
+         * @param {string} key
+         * @returns {Promise<void>}
+         */
+        async deleteObject(bucket, key) {
+            await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        },
+
+        /**
+         * @param {string} bucket
+         * @returns {Promise<void>}
+         */
+        async deleteBucket(bucket) {
+            await client.send(new DeleteBucketCommand({ Bucket: bucket }));
         },
 
         /** Expose the raw client for advanced use */
