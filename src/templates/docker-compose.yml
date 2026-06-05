@@ -1,29 +1,38 @@
-# Bundled by @xns-cloud/relayer-mcp — the released XNS Relayer install.
-# Source of truth: the beta release channel on the XNS releases registry
-# (releases.scpri.me — anonymous pull, no docker login). The full channel bundle
-# (relayer + monitoring stack) lives at
-# https://releases.scpri.me/relayer/beta/docker-compose.yml; this bundled file is
-# the minimal relayer-only install. NEVER point this at Docker Hub scprime/* —
-# those are production fleet tags and are not a release channel.
+# Bundled by @xns-cloud/relayer-mcp — OFFLINE FALLBACK for the released install.
+# Source of truth: the beta channel bundle on the XNS releases registry —
+# https://releases.scpri.me/relayer/beta/docker-compose.yml (versioned in the
+# deploy repo, shipped by `deploy.py promote`). install_relayer fetches that URL
+# by default and only writes this copy when the fetch fails, so this file MUST
+# keep service parity with the channel bundle: relayer + the monitoring stack
+# (Prometheus + Grafana + node-exporter) that powers the dashboards under
+# Monitoring in the web UI. The jest contract tests enforce the parity.
+#
+# NEVER point an image at Docker Hub scprime/* — those are production fleet
+# tags, not a release channel. The one allowed upstream image is
+# prom/node-exporter (public, multi-arch, version-pinned — matches the channel
+# bundle; nothing to rebuild).
 #
 # Pre-release: pinned to :beta-latest so beta testers exercise the current
-# Relayer agentically. Flip this one tag to :stable-latest at general release.
+# Relayer agentically. Flip these tags to :stable-latest at general release.
 #
-# A first-time user no longer hand-writes this file or the .env — install_relayer
+# A first-time user never hand-writes this file or the .env — install_relayer
 # writes both. Differences from the channel compose, by design:
-#   - data lives in ./data (relative to this file) instead of a named volume,
-#     so the same file works on Windows, macOS, and Linux and the data is easy
-#     to find next to the compose.
+#   - relayer data lives in ./data (relative to this file) instead of a named
+#     volume, so the same file works on Windows, macOS, and Linux and the data
+#     is easy to find next to the compose.
 #   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
 #     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
 #   - pull_policy: always so `docker compose up -d` fetches the current beta
-#     image without a separate `docker compose pull` step.
+#     images without a separate `docker compose pull` step.
 services:
   xns:
+    # container_name is load-bearing: the baked-in prometheus.yml scrapes the
+    # relayer by this name, and the install preflight keys on it.
     container_name: xns-relayer
     image: releases.scpri.me/xns-relayer:beta-latest
     pull_policy: always
     restart: unless-stopped
+    privileged: true            # samba / fuse / disk management (matches channel compose)
     volumes:
       - ./data:/relayer
     ports:
@@ -31,3 +40,38 @@ services:
       - ${S3_PORT:-9000}:9000
     env_file:
       - .env
+
+  # Monitoring stack — powers the dashboards under Monitoring in the web UI.
+  # Not host-exposed: Grafana is reached only through the relayer's /grafana
+  # reverse proxy and the in-network Prometheus scrape.
+  prometheus:
+    image: releases.scpri.me/relayer-prometheus:beta-latest
+    pull_policy: always
+    restart: unless-stopped
+    volumes:
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: releases.scpri.me/relayer-grafana:beta-latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  node-exporter:
+    image: prom/node-exporter:v1.11.1
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro            # read-only host metrics for the Node Health page
+
+volumes:
+  prometheus_data:
+  grafana_data:

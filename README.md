@@ -46,8 +46,8 @@ No separate install step required.
 | 1 | `check_prerequisites` | Verify Docker (local or remote), ports (8888, 9000), an existing installation, disk, and network connectivity. |
 | 2 | `register_account` | Register an XNS account (email + password) via Console2. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Write the bundled `docker-compose.yml` + `.env` (`releases.scpri.me/xns-relayer:beta-latest` — the pre-release beta channel, anonymous pull, no `docker login`) and start the containers. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override (e.g. the full channel bundle with monitoring: `https://releases.scpri.me/relayer/beta/docker-compose.yml`). |
-| 5 | `check_relayer_health` | Poll UI, S3, and HostIO health (10s interval, 300s timeout). Targets the Docker host automatically. |
+| 4 | `install_relayer` | Fetch the canonical beta channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.scpri.me/relayer/beta/docker-compose.yml`, anonymous pull, no `docker login`) — write the `.env`, and start the containers. Falls back to a bundled service-parity copy if the fetch fails. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
+| 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration. |
