@@ -1,6 +1,23 @@
 # Changelog
 
-## [0.5.1] — 2026-06-04
+## [0.5.2] — 2026-06-09
+
+### Fixed
+
+- **`install_relayer` offline fallback no longer orphans data (tacom beta bug #2).**
+  The bundled `src/templates/docker-compose.yml` used a bind mount (`./data:/relayer`)
+  while the channel bundle uses the named volume `relayer_data`. Because the default
+  install fetches the channel bundle and only writes this template when that fetch
+  fails, an online-vs-offline install silently switched the mount target and the
+  user's S3 buckets appeared to vanish (data orphaned in the unmounted volume). The
+  fallback now uses the same `relayer_data` named volume as the channel bundle. A new
+  storage-strategy parity test asserts the named volume + `pull_policy: always` so the
+  two composes can never drift on storage again.
+  - Migration note: an EXISTING offline-fallback install that already has data in a
+    `./data` bind mount must not be silently switched — the install preflight already
+    refuses an in-place reinstall while the container exists. To migrate, copy the
+    `./data` contents into the `relayer_data` volume, or keep the old layout via a
+    custom `compose_url`.
 
 ### Fixed
 

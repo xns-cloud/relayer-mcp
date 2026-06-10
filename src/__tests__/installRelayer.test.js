@@ -297,6 +297,34 @@ describe('install_relayer', () => {
         expect(template).not.toMatch(/^\s*image:.*:stable/m);
     });
 
+    // STORAGE-STRATEGY PARITY (beta-tester report 2026-06-09, tacom, bug #2):
+    // the fallback MUST use the SAME volume strategy as the channel bundle —
+    // the named volume `relayer_data:/relayer`. When the two diverged (channel =
+    // named volume, fallback = bind mount ./data), an online-vs-offline install
+    // silently switched the mount target and the user's buckets "vanished" (data
+    // orphaned in the other volume). A bind mount here is the bug. Keep in sync
+    // with deploy/relayer-beta/docker-compose.yml.
+    test('fallback template uses the named relayer_data volume (NOT a bind mount)', () => {
+        const template = readTemplate();
+
+        // relayer service mounts the named volume...
+        expect(template).toMatch(/^\s*-\s*relayer_data:\/relayer\s*(#.*)?$/m);
+        // ...declared in the top-level volumes block.
+        expect(template).toMatch(/^volumes:/m);
+        expect(template).toMatch(/^\s{2}relayer_data:\s*$/m);
+        // and NEVER the bind mount that caused the data-orphaning flip.
+        expect(template).not.toMatch(/^\s*-\s*\.\/data:\/relayer/m);
+    });
+
+    // PULL PARITY (tacom bug #1): `docker compose up -d` (the only command
+    // install_relayer runs) must fetch the current :beta-latest image, not a
+    // stale local cache. pull_policy: always makes that declarative — the same
+    // line is required on the channel bundle.
+    test('fallback template sets pull_policy: always on the relayer service', () => {
+        const template = readTemplate();
+        expect(template).toMatch(/^\s*pull_policy:\s*always\s*$/m);
+    });
+
     // --- W3-AC4: channelComposeUrl injectable seam ---
 
     // Override is honored: a custom channelComposeUrl replaces the default channel URL.
