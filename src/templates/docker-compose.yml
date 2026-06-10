@@ -16,10 +16,18 @@
 # Relayer agentically. Flip these tags to :stable-latest at general release.
 #
 # A first-time user never hand-writes this file or the .env — install_relayer
-# writes both. Differences from the channel compose, by design:
-#   - relayer data lives in ./data (relative to this file) instead of a named
-#     volume, so the same file works on Windows, macOS, and Linux and the data
-#     is easy to find next to the compose.
+# writes both.
+#
+# STORAGE STRATEGY — MUST match the channel bundle (named volume relayer_data).
+# This file is written only when the channel fetch fails; if the two used
+# DIFFERENT volume strategies, an online-vs-offline install would silently switch
+# the mount target and the user's buckets would appear to vanish (data orphaned
+# in the unmounted volume). That was tacom beta bug #2 (2026-06-09): this file
+# used a bind mount `./data` while the channel used `relayer_data`. Both now use
+# the named volume. The storage-strategy parity test in installRelayer.test.js
+# enforces it — do NOT reintroduce a bind mount here.
+#
+# Other differences from the channel compose, by design:
 #   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
 #     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
 #   - pull_policy: always so `docker compose up -d` fetches the current beta
@@ -34,7 +42,7 @@ services:
     restart: unless-stopped
     privileged: true            # samba / fuse / disk management (matches channel compose)
     volumes:
-      - ./data:/relayer
+      - relayer_data:/relayer     # named volume — MUST match the channel bundle (bug #2)
     ports:
       - ${UI_PORT:-8888}:8888
       - ${S3_PORT:-9000}:9000
@@ -73,5 +81,6 @@ services:
       - /:/host:ro            # read-only host metrics for the Node Health page
 
 volumes:
+  relayer_data:
   prometheus_data:
   grafana_data:
