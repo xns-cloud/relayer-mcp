@@ -1,0 +1,213 @@
+# relayer-mcp — Node.js CommonJS MCP server (@modelcontextprotocol/sdk, stdio transport),
+# single package, jest tests in src/__tests__/, npm OIDC tag-publish CI.
+# Overrides the org dashboard for this repo — carries the org baseline forward.
+# CLI picks this up at git root.
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+early_access: true
+language: "en-US"
+
+tone_instructions: >-
+  Node CommonJS MCP server. Prioritize token/secret handling, error-message
+  leakage to MCP clients, Zod validation at external boundaries (ports 1-65535,
+  URL checks), and null guards on external data. Flag any new identifier
+  containing 'minio'.
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: warning
+      requirements: >-
+        Format: type(scope): summary. type in
+        feat|fix|chore|refactor|test|revert|sec|release. scope = epic ID
+        (EP-X.Y), bug ID (BUG-###), or repo area. Imperative, no period,
+        <=60 chars.
+    description:
+      mode: warning
+    issue_assessment:
+      mode: "off"
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  path_instructions:
+    # --- Org baseline: test categories (carried forward; layout matches src/__tests__/) ---
+    - path: "**/__tests__/**"
+      instructions: |
+        This organization uses two test categories:
+
+        **T1 data contract / structural tests:**
+        - Validate fixture shapes against HANDOFF-defined data contracts
+        - May read source files with fs.readFileSync and assert on string
+          patterns (toContain, toMatch) rather than executing the code
+        - Intentionally do NOT mount Vue SFCs — no shallowMount/mount
+        - Fixtures represent the enriched shape at the component boundary,
+          not the raw server payload. Parent views may decorate server data
+          before passing to children.
+        - Assertions target field presence, types, edge cases, and source
+          patterns — not DOM output or component behavior
+        - Risk documentation via inline comments is intentional, not a gap
+
+        **Standard unit/integration tests:**
+        - Test business logic via DI fakes, not mocks
+        - Constructor injection: production uses defaults, tests inject fakes
+        - Vitest CJS mocking limitations are known — simpler assertion
+          patterns (plain toContain vs regex) are an accepted tradeoff
+
+        Do not flag T1 / structural tests for lacking component mounting,
+        SFC imports, DOM assertions, or for using source-read patterns.
+        These are separate test categories with different goals.
+
+        Repo-specific: jest 30 (not vitest), test dir is src/__tests__/,
+        pattern **/src/__tests__/**/*.test.js, run via `npm test`
+        (forceExit: true is intentional config, not a smell).
+
+    # --- Org baseline (js-only form: this repo has no Vue) ---
+    - path: "**/*.js"
+      instructions: |
+        For all repositories, assume external data (Hasura, WooCommerce,
+        Keycloak, socket responses, lsblk, Docker API) may be null,
+        undefined, or partially populated. Do not treat 0 as falsy for
+        numeric fields; prefer nullish coalescing (value ?? 0) over
+        (value || 0).
+        For async flows, disable triggering controls while a request is
+        in flight, guard against double-clicks, capture identifiers
+        before awaiting, and reset state when context changes (route,
+        selected entity, unmount).
+        Do not expose raw error messages or stacks to clients. Log full
+        details on the server, return generic messages in responses.
+        On the server, use constructor-injected dependencies instead of
+        module-level imports for external services.
+        Validate and normalize all external inputs at the boundary.
+
+    # --- Repo-wide hard rules and conventions ---
+    - path: "**"
+      instructions: |
+        HARD RULE — MinIO naming purge: flag ANY new identifier containing
+        "minio" in any case (param name, env var, port name, variable,
+        function, doc string, compose key). This repo purged
+        minio_port→s3_port and MINIO_PORT→S3_PORT in 0.4.0. The S3 port
+        belongs to the S3 Gateway, not MinIO. MinIO is a frozen fork being
+        demolished — never reintroduce the name. Applies everywhere:
+        src/tools/, src/lib/, src/templates/, package.json, CI, docs.
+
+        Repo conventions:
+        - CommonJS only (require/module.exports). No ESM, no TypeScript.
+          Do not suggest migrating module systems.
+        - Node >= 20 floor (version guard in src/index.js + CI node:20).
+        - Single package.json — versions STAMP in the shipping MR: bump
+          package.json AND add a CHANGELOG.md entry in the same MR.
+          CHANGELOG.md keeps its top-level "# Changelog" H1 and blank
+          lines around headings (MD041/MD022).
+        - Every new tool or lib change needs a co-located
+          src/__tests__/*.test.js in the same commit.
+        - release(...) commits stay focused on version + changelog only —
+          flag unrelated formatting or code changes mixed into a release
+          stamp.
+
+    # --- MCP tool modules: the three recurring themes live here ---
+    - path: "src/tools/**"
+      instructions: |
+        MCP tool modules — one file per tool. The tool response payload is
+        client-facing output. Enforce strictly:
+
+        1. Error-message leakage (recurring Major — MR3, MR5, MR17, MR19):
+           never include err.message, err.stack, or any caught error text
+           in the MCP tool response payload. Log full details server-side;
+           return a generic failure string to the client. Flag every catch
+           block that interpolates a caught error into the response.
+
+        2. Zod validation at every external boundary (recurring — MR5,
+           MR6, MR13): every tool input is validated by a Zod schema.
+           URLs must use .url(). External data that may be explicitly
+           null needs .nullable(), not just .optional().default().
+           Outputs of external calls (docker.getDockerHost(), HTTP
+           response bodies, S3 responses) need null/shape guards before
+           property access — a missing host must not produce
+           http://undefined:9000. Normalize hosts before composing probe
+           URLs (scheme-prefixed input, bare IPv6).
+
+        3. Port range validation — OPEN finding (MR5, unresolved): port
+           params (ui_port, s3_port, and any new port) currently use
+           z.number().int().positive(), so 70000 passes validation and
+           fails at compose/runtime. Keep flagging until schemas use
+           .int().min(1).max(65535). Do not treat this as accepted.
+
+        UNRESOLVED Critical (MR3) — keep flagging until fixed:
+        setup_cli_credentials forwards muse_token (keycloaktoken header)
+        to a caller-supplied relayer_ui_url, enabling token exfiltration
+        to arbitrary hosts. Flag any code path that forwards auth tokens
+        or secrets to a caller-supplied URL; the fix is an allowlist or a
+        server-side configured base URL. Not an accepted state.
+
+        Cleanup guards: verify_storage-style multi-step tools must run
+        cleanup for every step that may have partially succeeded
+        server-side (e.g. bucket created before a client-side error) —
+        only the 'init' step may skip cleanup. (Pattern fixed in 0.5.2;
+        hold new tools to it.)
+
+    # --- Shared libs: boundary + secret discipline ---
+    - path: "src/lib/**"
+      instructions: |
+        Shared libs (httpClient, pollUntil, dockerUtil, s3Client,
+        oidcAuth) sit on external boundaries. Validate and normalize
+        inputs at entry; never assume HTTP/Docker/S3 responses are
+        well-shaped objects. Never log tokens, keys, or credentials.
+        Polling loops must be bounded (max attempts/timeout) — no
+        infinite retry. Errors thrown here surface in tool responses:
+        keep messages generic, free of secrets and internal paths.
+
+    # --- Bundled compose template: accepted Grafana state ---
+    - path: "src/templates/**"
+      instructions: |
+        Bundled docker-compose.yml fallback template.
+
+        Known accepted state (MR17, deliberate): Grafana ships with
+        GF_AUTH_ANONYMOUS_ENABLED=true and GF_AUTH_ANONYMOUS_ORG_ROLE=Admin.
+        The relayer reverse-proxies Grafana, mitigating direct external
+        exposure. Do not re-flag these existing lines on unrelated diffs.
+        DO flag any change that widens exposure: publishing Grafana's port
+        directly to the host, extending anonymous access to other
+        services, or removing the reverse-proxy assumption.
+
+        Flag any new "minio"-named service, env var, or port key (HARD
+        RULE above). Port values in the template must stay within 1-65535.
+
+    # --- CI: OIDC trusted publishing, human-only release tags ---
+    - path: ".gitlab-ci.yml"
+      instructions: |
+        Publish uses npm OIDC trusted publishing — no npm token is stored.
+        Flag any introduction of a stored npm token, NPM_TOKEN variable,
+        or .npmrc credential. Publish triggers only on human-pushed
+        vX.Y.Z tags, gated on PKG_VERSION matching CI_COMMIT_TAG, with
+        prepublishOnly rerunning tests — flag changes that weaken the
+        version-match gate, skip tests before publish, or let agents
+        tag/publish. Test job runs on node:20 (the runtime floor); do not
+        suggest lowering it.
+
+knowledge_base:
+  learnings:
+    scope: auto
+  code_guidelines:
+    enabled: true
+
+chat:
+  art: false
+  integrations:
+    jira:
+      usage: disabled
+    linear:
+      usage: disabled
