@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.6.0] — 2026-06-11
+
+### Added
+
+- **Day-2 management tools (12-15).** `describe_settings` / `update_settings` — a
+  curated, whitelist-enforced settings surface (worker/concurrency tuning, backup
+  schedule, cost center/CCID) over `GET`/`PUT /api/v1/config`; the full advanced
+  catalog is deliberately not exposed, and unknown or protected keys are rejected
+  with the allowed list. `restart_service` — per-service or full restart via
+  `GET /api/v1/system/restart[/:service]`, standalone because it is disruptive and
+  separately confirmable. `manage_backups` — list/start/restore/delete over the
+  backup API, with selective-component restore (`db`, `conf`, `hostio`, `samba`).
+  `update_settings` requires relayer-ui >= 3.43.3 (the `[REDACTED]` database-password
+  round-trip guard).
+- **`configure_vpd` `dry_run`.** Routes to HostIO's read-only evaluate endpoint
+  (the VPD evaluation single-source-of-truth) and returns matched data/parity host
+  counts without applying. Relayer builds that predate the endpoint report
+  `preview_supported: false` instead of erroring; no MCP update is needed once the
+  endpoint ships.
+- **`get_host_tags` read-back.** Now also returns the currently applied VPD
+  expressions (`current` with an `is_default` flag) via HostIO `getexpressions`,
+  degrading to tags-only if the read-back is unavailable.
+
+### Fixed
+
+- **Both VPD tools were broken in <= 0.5.2 — wrong proxy path.** The tools called
+  `/api/v1/proxy/hostio/v1/hostio/...`, but the relayer-ui proxy prepends
+  `/v1/hostio/` to the wildcard, producing `/v1/hostio/v1/hostio/...` → HostIO 404
+  (verified live). The proxy wraps that failure as HTTP 200
+  `{success:false, state}`, which `get_host_tags` then returned as if it were the
+  tag list. Paths corrected; proxy-wrapped failures are now detected and reported
+  as errors on every HostIO call.
+- **`configure_vpd` silently discarded every custom selection — wrong wire keys.**
+  The payload used `{data_expression, parity_expression}`, but HostIO's
+  `SetExpressionsRequest` decodes `{data, parity}`; both fields arrived empty and
+  HostIO substituted the all-hosts default while the tool reported success. The
+  wire payload now matches the HostIO contract (tool parameter names unchanged).
+
 ## [0.5.2] — 2026-06-09
 
 ### Fixed

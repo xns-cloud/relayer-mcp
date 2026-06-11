@@ -39,6 +39,27 @@ function createHttpClient(options = {}) {
             const resp = await instance.post(url, body, config);
             return { status: resp.status, data: resp.data };
         },
+
+        /**
+         * @param {string} url
+         * @param {*} body
+         * @param {object} [config]
+         * @returns {Promise<{status: number, data: *}>}
+         */
+        async put(url, body, config = {}) {
+            const resp = await instance.put(url, body, config);
+            return { status: resp.status, data: resp.data };
+        },
+
+        /**
+         * @param {string} url
+         * @param {object} [config] - axios config; pass `data` here for a body
+         * @returns {Promise<{status: number, data: *}>}
+         */
+        async del(url, config = {}) {
+            const resp = await instance.delete(url, config);
+            return { status: resp.status, data: resp.data };
+        },
     };
 }
 

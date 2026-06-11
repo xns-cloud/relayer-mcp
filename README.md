@@ -1,6 +1,6 @@
 # @xns-cloud/relayer-mcp
 
-MCP server for XNS Relayer onboarding. Provides 11 tools that let an AI agent drive the complete Relayer setup conversationally over stdio transport.
+MCP server for XNS Relayer onboarding and day-2 management. Provides 15 tools that let an AI agent drive the complete Relayer setup — and afterward adjust settings, manage backups, and tune the VPD — conversationally over stdio transport.
 
 ## Requirements
 
@@ -50,10 +50,14 @@ No separate install step required.
 | 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
-| 8 | `get_host_tags` | Retrieve available host tags for VPD configuration. |
-| 9 | `configure_vpd` | Set data/parity host selection via CEL expressions. |
+| 8 | `get_host_tags` | Retrieve available host tags for VPD configuration, plus the currently applied data/parity selection (read-back with an `is_default` flag). |
+| 9 | `configure_vpd` | Set data/parity host selection via CEL expressions. `dry_run: true` previews the matched host counts without applying (requires a Relayer build with the HostIO evaluate endpoint; older builds report `preview_supported: false`). |
 | 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway on port 9000. **Requires fullaccess credentials** (admin key pair from the Relayer UI IAM page — not a read-only or bucket-scoped key). Test bucket is cleaned up automatically. If auto-detection cannot reach the host, pass `endpoint` with an explicit IP (e.g. `http://192.168.1.100:9000`). |
 | 11 | `setup_cli_credentials` | Provision S3 IAM credentials and write `~/.xns/credentials` so the XNS CLI works without further configuration. |
+| 12 | `describe_settings` | List the adjustable settings — worker/concurrency tuning, backup schedule, cost center (CCID) — with current values, defaults, and guidance. The MCP deliberately exposes only this curated set, never the full advanced catalog. |
+| 13 | `update_settings` | Apply a map of setting changes (whitelist-enforced). Returns `require_restart`. **Requires relayer-ui >= 3.43.3** — older servers can clobber the database password on config round-trips. |
+| 14 | `restart_service` | Restart `hostio`, `gateway`, `s3gateway`, `database`, or all services. Disruptive; pairs with `check_relayer_health` to verify recovery. |
+| 15 | `manage_backups` | List / start / restore / delete configuration backups. Restore is destructive and supports selective components (`db`, `conf`, `hostio`, `samba`). |
 
 ## Onboarding Flow
 
@@ -69,6 +73,10 @@ No separate install step required.
 9. Optionally, agent provisions CLI credentials (Tool 11).
 
 The operator's only required actions are: clicking one email link, completing one browser sign-in, and confirming one claim.
+
+## Day-2 Management
+
+After onboarding, tools 12-15 cover routine adjustments: `describe_settings` → `update_settings` → `restart_service` for tuning (workers, concurrency, backup schedule, cost center), and `manage_backups` for the backup lifecycle. All four use the same OIDC session as tools 8-9. Destructive operations (restore, restart, changing the cost center) are agent-confirmed with the operator before execution — the tool descriptions and responses carry the warnings.
 
 ## Fresh installs vs. existing deployments
 
@@ -112,7 +120,7 @@ The MCP detects this automatically (it honors `DOCKER_HOST` and the active Docke
 
 ## Authentication
 
-Tools 8 and 9 require an OIDC token to access the HostIO proxy. The MCP acquires one automatically using Authorization Code + PKCE (S256) flow against the `scprime` Keycloak realm with the `relayer-native` public client. The user completes a browser sign-in; the MCP captures the code on a local `127.0.0.1` loopback listener and exchanges it for a token.
+Tools 8-9 and 12-15 require an OIDC token to access the Relayer API and HostIO proxy. The MCP acquires one automatically using Authorization Code + PKCE (S256) flow against the `scprime` Keycloak realm with the `relayer-native` public client. The user completes a browser sign-in; the MCP captures the code on a local `127.0.0.1` loopback listener and exchanges it for a token.
 
 **Prerequisite:** The `relayer-native` public client must be registered on the Keycloak `scprime` realm (PKCE S256, redirect `http://127.0.0.1:*`).
 

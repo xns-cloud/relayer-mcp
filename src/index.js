@@ -18,7 +18,7 @@ const server = new McpServer({
     version: require('../package.json').version,
 });
 
-// Register all 11 tools
+// Register all 15 tools
 require('./tools/checkPrerequisites')(server);
 require('./tools/registerAccount')(server);
 require('./tools/checkEmailVerified')(server);
@@ -30,6 +30,10 @@ require('./tools/getHostTags')(server);
 require('./tools/configureVpd')(server);
 require('./tools/verifyStorage')(server);
 require('./tools/setupCliCredentials')(server);
+require('./tools/describeSettings')(server);
+require('./tools/updateSettings')(server);
+require('./tools/restartService')(server);
+require('./tools/manageBackups')(server);
 
 async function main() {
     const transport = new StdioServerTransport();
