@@ -2,11 +2,11 @@
 
 /**
  * R2-TEST-1: Entrypoint regression test.
- * Verifies index.js registers exactly 11 tools with the correct names.
+ * Verifies index.js registers exactly 15 tools with the correct names.
  */
 
 describe('index.js entrypoint', () => {
-    test('registers exactly 11 tools with expected names', () => {
+    test('registers exactly 15 tools with expected names', () => {
         const { server } = require('../index');
 
         const expectedTools = [
@@ -21,12 +21,16 @@ describe('index.js entrypoint', () => {
             'configure_vpd',
             'verify_storage',
             'setup_cli_credentials',
+            'describe_settings',
+            'update_settings',
+            'restart_service',
+            'manage_backups',
         ];
 
         // Access the internal tool registry
         const registeredNames = Object.keys(server._registeredTools);
 
-        expect(registeredNames).toHaveLength(11);
+        expect(registeredNames).toHaveLength(15);
         expect(registeredNames.sort()).toEqual(expectedTools.sort());
     });
 });
