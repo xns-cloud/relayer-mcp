@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "tech.xns/relayer",
+  "description": "Conversationally set up & manage an XNS Relayer over stdio: install, claim, VPD, S3, backups.",
+  "repository": {
+    "url": "https://gitlab.com/scpcorp/relayer-mcp",
+    "source": "gitlab"
+  },
+  "version": "0.6.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@xns-cloud/relayer-mcp",
+      "version": "0.6.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
