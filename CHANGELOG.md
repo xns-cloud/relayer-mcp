@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1] — 2026-06-17
+
+### Added
+
+- **`mcpName` field (`tech.xns/relayer`).** Enables ownership verification for the
+  official MCP Registry (`registry.modelcontextprotocol.io`); the registry matches
+  this against the `server.json` `name`. npm versions are immutable, so this required
+  a new release before the first registry publish.
+
 ## [0.6.0] — 2026-06-11
 
 ### Added
