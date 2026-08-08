@@ -181,9 +181,9 @@ describe('install_relayer', () => {
 
     // PRD §7 two-statement rule (AC-12): what the process asserts is kept apart
     // from what is only CONFIGURED. This process cannot see the host's actual
-    // Docker publication, so it must say so and point at the preflight rather
+    // Docker publication, so it must say so and point at the host-side check rather
     // than asserting reachability it cannot verify.
-    test('binding labels reachability as configured-not-verified and points at preflight', async () => {
+    test('binding labels reachability as configured-not-verified and points at docker port', async () => {
         const fs = fakeFs();
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
@@ -198,7 +198,7 @@ describe('install_relayer', () => {
 
         expect(parsed.binding.reachability).toMatch(/configured/i);
         expect(parsed.binding.reachability).toMatch(/not verified/i);
-        expect(parsed.binding.reachability).toContain('preflight');
+        expect(parsed.binding.reachability).toContain('docker port');
         // No merged claim: the asserted half never says "reachable".
         expect(parsed.binding.composed_from).not.toMatch(/reachable/i);
     });

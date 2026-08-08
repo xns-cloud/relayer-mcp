@@ -57,7 +57,7 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
         expect(parsed.binding.ui).toEqual({ host_port: 8888, container_port: 8888 });
         expect(parsed.binding.s3).toEqual({ host_port: 9000, container_port: 9000 });
         expect(parsed.binding.composed_from).toContain('UI_PORT=8888');
-        expect(parsed.binding.reachability).toContain('preflight');
+        expect(parsed.binding.reachability).toContain('docker port');
     });
 
     test('the stated binding matches what was handed to docker compose', async () => {

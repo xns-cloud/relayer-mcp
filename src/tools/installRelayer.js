@@ -134,17 +134,18 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             source,
                             // D5/W5: state the binding at install time, out-of-band, so a
                             // refused connection is explainable later. Two statements, never
-                            // merged (PRD §7): `published` is what this installer asserts it
-                            // composed; `reachability` is only CONFIGURED — this process
+                            // merged (PRD §7): `composed_from` is what this installer asserts
+                            // it composed; `reachability` is only CONFIGURED — this process
                             // cannot verify the host actually published it, so it says so and
-                            // points at the preflight instead of guessing.
+                            // points at `docker port` (the host-side source of truth) instead
+                            // of guessing.
                             binding: {
                                 ui: { host_port: ui_port, container_port: 8888 },
                                 s3: { host_port: s3_port, container_port: 9000 },
                                 composed_from: compose_url
                                     ? `UI_PORT=${ui_port}, S3_PORT=${s3_port} passed to docker compose (no .env written on the compose_url override path)`
                                     : `UI_PORT=${ui_port}, S3_PORT=${s3_port} written to ${envPath}`,
-                                reachability: 'configured — not verified from this process; run scripts/preflight.sh on the host to report actual Docker publication',
+                                reachability: 'configured — not verified from this process; run `docker port xns-relayer` on the host to see actual Docker publication',
                             },
                             ...(note ? { note } : {}),
                         }, null, 2),
