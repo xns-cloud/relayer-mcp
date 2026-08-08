@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`install_relayer` states the binding it composed.** The success JSON now carries a
+  `binding` block: the UI and S3 host→container port pairs, where those values were
+  written, and an explicitly labelled `reachability` note. The installer is one of the
+  three out-of-band channels an operator can consult when a connection is refused, so
+  it now says what it published instead of staying silent. Reachability is labelled
+  *configured — not verified from this process* and points at the host preflight,
+  rather than asserting a publication this process cannot see.
+
 ## [0.6.1] — 2026-06-17
 
 ### Added
