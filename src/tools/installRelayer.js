@@ -95,6 +95,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     });
                 });
 
+                const bindPrefix = bind_address ? `${bind_address}:` : '';
                 let source;
                 let note;
                 if (compose_url) {
@@ -115,7 +116,6 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         source = 'bundled-fallback';
                         note = `Channel bundle fetch failed (${fetchErr.message}) — fell back to the bundled compose. Same services; re-running install later is not required.`;
                     }
-                    const bindPrefix = bind_address ? `${bind_address}:` : '';
                     await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\nBIND_ADDRESS=${bindPrefix}\n`);
                 }
 
@@ -124,7 +124,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // regardless of where the MCP process was launched.
                 await docker.composeUp(composePath, {
                     cwd: install_path,
-                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bind_address ? `${bind_address}:` : '' },
+                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bindPrefix },
                 });
 
                 return {
@@ -156,8 +156,8 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                                 ui: { host_port: ui_port, container_port: compose_url ? null : 8888 },
                                 s3: { host_port: s3_port, container_port: compose_url ? null : 9000 },
                                 composed_from: compose_url
-                                    ? `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bind_address ? `${bind_address}:` : ''} passed to docker compose (no .env written on the compose_url override path)`
-                                    : `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bind_address ? `${bind_address}:` : ''} written to ${envPath}`,
+                                    ? `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bindPrefix} passed to docker compose (no .env written on the compose_url override path)`
+                                    : `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bindPrefix} written to ${envPath}`,
                                 reachability: 'configured — not verified from this process; run `docker port xns-relayer` on the host to see actual Docker publication',
                             },
                             tls: {
