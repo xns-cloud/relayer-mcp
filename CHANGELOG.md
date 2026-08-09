@@ -20,27 +20,16 @@
   The description also discloses that the prerequisite check binds `0.0.0.0` regardless
   of `bind_address`, because it does.
 
-- **`bind_address` reports whether it was actually applied.** The value is always
-  written to the `.env`, but it only takes effect if the compose in use references
+- **`bind_address` reports whether it was actually applied.** The value is written to
+  the `.env` on the channel and bundled-fallback paths; the `compose_url` override path
+  writes no `.env` and passes `BIND_ADDRESS` in the Docker Compose process environment
+  only. Either way it takes effect only if the compose in use references
   `BIND_ADDRESS` in its port declarations. The bundled fallback compose does; the
   channel compose and any `compose_url` override are fetched remotely and are never read
   by this process. The success JSON's new `bind_address_applied` field therefore says
   `yes` on the bundled path and `unknown` on the others, instead of asserting a
   restriction that may not exist. An operator who sets `127.0.0.1` and is not actually
   bound to loopback needs to be told that, not reassured.
-
-- **`install_relayer` states the binding it composed.** The success JSON now carries a
-  `binding` block: the UI and S3 host→container port pairs, where those values were
-  written, and an explicitly labelled `reachability` note. The installer is one of the
-  three out-of-band channels an operator can consult when a connection is refused, so
-  it now says what it published instead of staying silent. Reachability is labelled
-  *configured — not verified from this process* and points at `docker port xns-relayer`
-  on the host, rather than asserting a publication this process cannot see.
-  Container ports are reported only where they are known: on the normal install they
-  come from the channel compose this installer fetches, but a caller-supplied
-  `compose_url` may remap them and is never read here, so those values are `null` and
-  no `.env` is written on that path — the ports are passed to `docker compose` at
-  runtime instead.
 
 - **`install_relayer` states the binding it composed.** The success JSON now carries a
   `binding` block: the UI and S3 host→container port pairs, where those values were

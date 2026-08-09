@@ -311,7 +311,7 @@ describe('install_relayer', () => {
         // before the handler is ever entered — so this throws rather than rejecting.
         expect(() =>
             handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1\nUI_PORT=1\nEXTRA=malicious' }),
-        ).toThrow(/bind_address must be an IP address or hostname/);
+        ).toThrow(/bind_address must be empty \(all interfaces\)/);
 
         // Nothing was written and nothing was started.
         expect(fs.writes['/tmp/xns/.env']).toBeUndefined();
@@ -328,9 +328,44 @@ describe('install_relayer', () => {
             },
         });
 
-        for (const addr of ['127.0.0.1', '192.168.1.221', '[::1]', 'localhost', '']) {
+        for (const addr of ['127.0.0.1', '192.168.1.221', '[::1]', '[2001:db8::1]', 'localhost', 'relayer.example.com', '']) {
             await expect(handler({ install_path: '/tmp/xns', bind_address: addr })).resolves.toBeDefined();
         }
+    });
+
+    // A charset-only guard let these through: each is an address form Docker
+    // cannot bind, so it would surface as an invalid port mapping at `compose up`
+    // rather than as a clear rejection here.
+    test('bind_address rejects malformed address forms', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const malformed = [
+            '[',                    // unterminated bracket
+            '[::1',                 // unclosed bracketed IPv6
+            '[not:an:ipv6]',        // bracketed but not a valid IPv6 body
+            '::1',                  // raw IPv6 — Docker requires brackets
+            '999.999.999.999',      // out-of-range IPv4 octets
+            '127.0.0.1:',           // trailing port separator
+            '127.0.0.1:8888',       // address:port, not an address
+            '1.2.3',                // truncated IPv4
+            '-relayer.example.com', // label starts with a hyphen
+            'relayer..example.com', // empty label
+            'relayer-.example.com', // label ends with a hyphen
+        ];
+
+        for (const addr of malformed) {
+            expect(() => handler({ install_path: '/tmp/xns', bind_address: addr }))
+                .toThrow(/bind_address must be empty \(all interfaces\)/);
+        }
+
+        expect(fs.writes['/tmp/xns/.env']).toBeUndefined();
+        expect(composeUp).not.toHaveBeenCalled();
     });
 
     test('bind_address default (empty) → success JSON says all interfaces', async () => {
