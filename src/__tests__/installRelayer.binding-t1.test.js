@@ -37,7 +37,7 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
         return (args) => handler(z.object(shape).parse(args));
     }
 
-    function run(composeUp) {
+    function run(composeUp, extraArgs = {}) {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             dockerUtil: {
@@ -45,7 +45,7 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
                 findContainer: jest.fn().mockResolvedValue(null),
             },
         });
-        return handler({ install_path: installPath });
+        return handler({ install_path: installPath, ...extraArgs });
     }
 
     test('default install (no port arguments) still states the binding', async () => {
@@ -68,5 +68,21 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
         const passedEnv = composeUp.mock.calls[0][1].env;
         expect(passedEnv.UI_PORT).toBe(String(parsed.binding.ui.host_port));
         expect(passedEnv.S3_PORT).toBe(String(parsed.binding.s3.host_port));
+    });
+
+    test('a caller-supplied compose_url leaves container_port absent, not guessed', async () => {
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const result = await run(composeUp, {
+            compose_url: 'https://example.invalid/custom-compose.yml',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        // This process never reads the caller's compose, so it cannot know the
+        // container ports. Absent beats a restated 8888/9000 it cannot stand behind.
+        expect(parsed.binding.ui.container_port).toBeNull();
+        expect(parsed.binding.s3.container_port).toBeNull();
+        // The host side is still known — it is what we handed to docker compose.
+        expect(parsed.binding.ui.host_port).toBe(8888);
+        expect(parsed.binding.s3.host_port).toBe(9000);
     });
 });

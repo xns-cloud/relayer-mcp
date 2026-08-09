@@ -139,9 +139,14 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             // cannot verify the host actually published it, so it says so and
                             // points at `docker port` (the host-side source of truth) instead
                             // of guessing.
+                            // The container ports are known only for the channel compose
+                            // this installer fetches. A caller-supplied compose_url may
+                            // remap them, and this process never reads that file — so it
+                            // says null rather than restating 8888/9000 it cannot stand
+                            // behind (correct-or-absent, same rule as the port readout).
                             binding: {
-                                ui: { host_port: ui_port, container_port: 8888 },
-                                s3: { host_port: s3_port, container_port: 9000 },
+                                ui: { host_port: ui_port, container_port: compose_url ? null : 8888 },
+                                s3: { host_port: s3_port, container_port: compose_url ? null : 9000 },
                                 composed_from: compose_url
                                     ? `UI_PORT=${ui_port}, S3_PORT=${s3_port} passed to docker compose (no .env written on the compose_url override path)`
                                     : `UI_PORT=${ui_port}, S3_PORT=${s3_port} written to ${envPath}`,
