@@ -1,5 +1,9 @@
 # @xns-cloud/relayer-mcp
 
+[![npm version](https://img.shields.io/npm/v/@xns-cloud/relayer-mcp)](https://www.npmjs.com/package/@xns-cloud/relayer-mcp)
+[![license](https://img.shields.io/npm/l/@xns-cloud/relayer-mcp)](./LICENSE)
+[![node](https://img.shields.io/node/v/@xns-cloud/relayer-mcp)](https://nodejs.org/)
+
 MCP server for XNS Relayer onboarding and day-2 management. Provides 15 tools that let an AI agent drive the complete Relayer setup — and afterward adjust settings, manage backups, and tune the VPD — conversationally over stdio transport.
 
 ## Requirements
@@ -22,9 +26,15 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 
 If you start the MCP on an older Node, it exits immediately with this same guidance instead of a dependency stack trace.
 
-## Claude Desktop / Claude Code Configuration
+## Install
 
-Add to your `claude_desktop_config.json` (or `claude mcp add relayer -- npx @xns-cloud/relayer-mcp@latest` for Claude Code):
+**Claude Code** (one command):
+
+```bash
+claude mcp add relayer -- npx @xns-cloud/relayer-mcp@latest
+```
+
+**Claude Desktop / any MCP client** — add to your `claude_desktop_config.json` (or equivalent):
 
 ```json
 {
@@ -37,7 +47,7 @@ Add to your `claude_desktop_config.json` (or `claude mcp add relayer -- npx @xns
 }
 ```
 
-No separate install step required.
+No separate install step required — npx fetches the package on demand.
 
 ## Tools
 

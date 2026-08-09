@@ -23,9 +23,19 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "relayer",
     "xns",
-    "onboarding"
+    "s3",
+    "object-storage",
+    "onboarding",
+    "ai-agent",
+    "stdio",
+    "docker",
+    "self-hosted",
+    "storage",
+    "backup"
   ],
   "engines": {
     "node": ">=20"
