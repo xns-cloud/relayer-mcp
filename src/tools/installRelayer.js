@@ -46,8 +46,11 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         'Install and start the XNS Relayer. By default fetches the canonical beta channel bundle — relayer + the Prometheus/Grafana monitoring stack — from releases.scpri.me (anonymous pull) and writes a .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if the fetch fails. Pass compose_url only to override with a custom compose.',
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
-            ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
-            s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (container 9000)'),
+            // Bounded to the real TCP port range: .positive() alone accepts 65536+,
+            // which reaches docker compose and fails there with a message about
+            // ports rather than about the number the caller supplied.
+            ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
+            s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000)'),
             compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install.'),
         },
         async ({ install_path, ui_port, s3_port, compose_url }) => {
