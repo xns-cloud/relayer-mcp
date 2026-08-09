@@ -70,16 +70,23 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
         expect(passedEnv.S3_PORT).toBe(String(parsed.binding.s3.host_port));
     });
 
-    test('a port outside the TCP range is refused at the schema, not by docker', async () => {
+    test('a port outside the TCP range is refused before docker is touched', async () => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
         const handler = registerWithOptions({
-            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
-            dockerUtil: {
-                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
-                findContainer: jest.fn().mockResolvedValue(null),
-            },
+            execFile,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
         });
-        expect(() => handler({ install_path: installPath, ui_port: 65536 })).toThrow();
-        expect(() => handler({ install_path: installPath, s3_port: 0 })).toThrow();
+
+        // The point is not merely that it throws — it is that nothing ran. A
+        // bad port must never reach docker compose, which would fail with a
+        // message about ports rather than about the value supplied.
+        expect(() => handler({ install_path: installPath, ui_port: 65536 }))
+            .toThrow(/ui_port/);
+        expect(() => handler({ install_path: installPath, s3_port: 0 }))
+            .toThrow(/s3_port/);
+        expect(composeUp).not.toHaveBeenCalled();
+        expect(execFile).not.toHaveBeenCalled();
     });
 
     test('a caller-supplied compose_url leaves container_port absent, not guessed', async () => {
