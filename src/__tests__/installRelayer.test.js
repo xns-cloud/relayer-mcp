@@ -309,6 +309,65 @@ describe('install_relayer', () => {
         expect(parsed.binding.composed_from).toContain('BIND_ADDRESS=');
     });
 
+    // --- E-A3 / W12: bind_address_applied honesty per source path ---
+
+    test('channel path → bind_address_applied says unknown', async () => {
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
+
+        expect(parsed.source).toBe('channel');
+        expect(parsed.binding.bind_address_applied).toMatch(/unknown/);
+        expect(parsed.binding.bind_address_applied).toMatch(/does not read the fetched file/);
+    });
+
+    test('bundled-fallback path → bind_address_applied says yes', async () => {
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => {
+                if (cmd === 'curl') return cb(new Error('offline'));
+                cb(null, '', '');
+            }),
+            fs,
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
+
+        expect(parsed.source).toBe('bundled-fallback');
+        expect(parsed.binding.bind_address_applied).toMatch(/^yes/);
+    });
+
+    test('compose_url path → bind_address_applied says unknown', async () => {
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({
+            install_path: '/tmp/xns',
+            bind_address: '10.0.0.1',
+            compose_url: 'https://example.com/custom.yml',
+        })).content[0].text);
+
+        expect(parsed.source).toBe('compose_url');
+        expect(parsed.binding.bind_address_applied).toMatch(/unknown/);
+    });
+
     // --- E-A3 / W12: TLS switches in success JSON ---
 
     test('TLS switches default to off in success JSON', async () => {
