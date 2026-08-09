@@ -5,34 +5,30 @@ const path = require('path');
 const net = require('net');
 const { createDockerUtil } = require('../lib/dockerUtil');
 
-// A DNS hostname: 1-253 chars, dot-separated labels of 1-63 chars, each
-// starting and ending alphanumeric.
-const HOSTNAME_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-
-const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address, a bracketed IPv6 address (e.g. "[::1]"), or a hostname';
+const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address (e.g. "127.0.0.1"), or a bracketed IPv6 address (e.g. "[::1]") — the Compose ports host component is an IP address, not a hostname';
 
 // R5 input boundary: this value is written verbatim into the .env the installer
 // authors, and Compose auto-loads that file. An unvalidated newline injects
 // further KEY=VALUE lines — including a second UI_PORT, which wins last-value
 // and silently republishes on a port this tool then misreports in its own
 // success JSON. A charset-only guard stops that but still accepts values Docker
-// cannot bind (`[`, `999.999.999.999`, `127.0.0.1:`, raw IPv6), which produce an
-// invalid port mapping at `compose up` instead of a clear error here. So each
-// documented form is validated whole.
+// cannot bind (`[`, `999.999.999.999`, `127.0.0.1:`, raw IPv6, hostnames), which
+// produce an invalid port mapping at `compose up` instead of a clear error here.
+// So each documented form is validated whole.
+//
+// Hostnames are NOT accepted: the Compose ports short syntax defines the host
+// component as an IP address (docs.docker.com/reference/compose-file/services).
+// "localhost:8888:8888" is not a resolvable-then-bound mapping — it is a
+// malformed one. Rejecting here is a clear error instead of a compose failure.
 function isValidBindAddress(value) {
     if (value === '') return true;                 // default: all interfaces
     if (net.isIPv4(value)) return true;
+    // Raw (unbracketed) IPv6 is ambiguous against the host:container port
+    // separator — Docker requires brackets.
     if (value.startsWith('[') && value.endsWith(']')) {
         return net.isIPv6(value.slice(1, -1));
     }
-    // Raw (unbracketed) IPv6 is ambiguous against the host:container port
-    // separator — Docker requires brackets, so reject it here with the help text.
-    if (value.includes(':')) return false;
-    // A digits-and-dots value is a malformed IPv4 (net.isIPv4 already said no),
-    // not a hostname — the hostname grammar would otherwise accept
-    // "999.999.999.999" and "1.2.3".
-    if (/^[0-9.]+$/.test(value)) return false;
-    return HOSTNAME_RE.test(value);
+    return false;
 }
 
 // Canonical released install — the full beta channel bundle (relayer +
@@ -82,7 +78,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
             compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
             // R5 input boundary — see isValidBindAddress above for why each
             // documented address form is validated whole rather than by charset.
-            bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, a bracketed IPv6 address (e.g. "[::1]"), or a hostname. This value is passed to docker compose via env, and on the channel and bundled-fallback paths it is also written into the .env this installer authors (the compose_url override path writes no .env). It is honored in the bundled fallback compose (which uses BIND_ADDRESS in its port declarations). On the default channel path and on the compose_url path, the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
+            bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, or a bracketed IPv6 address (e.g. "[::1]"). Hostnames are rejected — the Compose ports host component is an IP address. This value is passed to docker compose via env, and on the channel and bundled-fallback paths it is also written into the .env this installer authors (the compose_url override path writes no .env). It is honored in the bundled fallback compose (which uses BIND_ADDRESS in its port declarations). On the default channel path and on the compose_url path, the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
             ui_tls_enabled: z.boolean().optional().default(false).describe('Whether the admin UI should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.'),
             s3_tls_enabled: z.boolean().optional().default(false).describe('Whether the S3 gateway should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.'),
         },

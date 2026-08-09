@@ -318,7 +318,7 @@ describe('install_relayer', () => {
         expect(composeUp).not.toHaveBeenCalled();
     });
 
-    test('bind_address accepts ordinary IPv4, bracketed IPv6 and hostnames', async () => {
+    test('bind_address accepts ordinary IPv4 and bracketed IPv6', async () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             fs: fakeFs(),
@@ -328,7 +328,7 @@ describe('install_relayer', () => {
             },
         });
 
-        for (const addr of ['127.0.0.1', '192.168.1.221', '[::1]', '[2001:db8::1]', 'localhost', 'relayer.example.com', '']) {
+        for (const addr of ['127.0.0.1', '192.168.1.221', '0.0.0.0', '[::1]', '[2001:db8::1]', '']) {
             await expect(handler({ install_path: '/tmp/xns', bind_address: addr })).resolves.toBeDefined();
         }
     });
@@ -346,17 +346,18 @@ describe('install_relayer', () => {
         });
 
         const malformed = [
-            '[',                    // unterminated bracket
-            '[::1',                 // unclosed bracketed IPv6
-            '[not:an:ipv6]',        // bracketed but not a valid IPv6 body
-            '::1',                  // raw IPv6 — Docker requires brackets
-            '999.999.999.999',      // out-of-range IPv4 octets
-            '127.0.0.1:',           // trailing port separator
-            '127.0.0.1:8888',       // address:port, not an address
-            '1.2.3',                // truncated IPv4
-            '-relayer.example.com', // label starts with a hyphen
-            'relayer..example.com', // empty label
-            'relayer-.example.com', // label ends with a hyphen
+            '[',                   // unterminated bracket
+            '[::1',                // unclosed bracketed IPv6
+            '[not:an:ipv6]',       // bracketed but not a valid IPv6 body
+            '::1',                 // raw IPv6 — Docker requires brackets
+            '999.999.999.999',     // out-of-range IPv4 octets
+            '127.0.0.1:',          // trailing port separator
+            '127.0.0.1:8888',      // address:port, not an address
+            '1.2.3',               // truncated IPv4
+            // Hostnames: the Compose ports host component is an IP address, so
+            // "localhost:8888:8888" is a malformed mapping, not a resolved one.
+            'localhost',
+            'relayer.example.com',
         ];
 
         for (const addr of malformed) {
