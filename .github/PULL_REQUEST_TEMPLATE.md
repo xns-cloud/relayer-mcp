@@ -13,4 +13,5 @@
 
 **This repository is a read-only mirror.** Please open your merge request on
 [GitLab](https://gitlab.com/scpcorp/relayer-mcp) instead — see
-[CONTRIBUTING.md](../CONTRIBUTING.md) for details.
+[CONTRIBUTING.md](https://github.com/xns-cloud/relayer-mcp/blob/main/CONTRIBUTING.md)
+for details.
