@@ -9,8 +9,13 @@
   written, and an explicitly labelled `reachability` note. The installer is one of the
   three out-of-band channels an operator can consult when a connection is refused, so
   it now says what it published instead of staying silent. Reachability is labelled
-  *configured — not verified from this process* and points at the host preflight,
-  rather than asserting a publication this process cannot see.
+  *configured — not verified from this process* and points at `docker port xns-relayer`
+  on the host, rather than asserting a publication this process cannot see.
+  Container ports are reported only where they are known: on the normal install they
+  come from the channel compose this installer fetches, but a caller-supplied
+  `compose_url` may remap them and is never read here, so those values are `null` and
+  no `.env` is written on that path — the ports are passed to `docker compose` at
+  runtime instead.
 
 ## [0.6.1] — 2026-06-17
 
