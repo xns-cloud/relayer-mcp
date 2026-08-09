@@ -294,6 +294,45 @@ describe('install_relayer', () => {
         expect(parsed.binding.bind_address).toBe('127.0.0.1');
     });
 
+    // Pre-push R5 (input boundaries): the .env this installer authors is auto-loaded
+    // by Compose, so a newline in bind_address injects further KEY=VALUE lines. The
+    // dangerous one is a second UI_PORT — last value wins, so the box republishes on
+    // a port the success JSON still reports as 8888.
+    test('bind_address containing a newline is rejected before it reaches the .env', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        // The schema rejects at parse time, which the harness runs synchronously
+        // before the handler is ever entered — so this throws rather than rejecting.
+        expect(() =>
+            handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1\nUI_PORT=1\nEXTRA=malicious' }),
+        ).toThrow(/bind_address must be an IP address or hostname/);
+
+        // Nothing was written and nothing was started.
+        expect(fs.writes['/tmp/xns/.env']).toBeUndefined();
+        expect(composeUp).not.toHaveBeenCalled();
+    });
+
+    test('bind_address accepts ordinary IPv4, bracketed IPv6 and hostnames', async () => {
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs: fakeFs(),
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        for (const addr of ['127.0.0.1', '192.168.1.221', '[::1]', 'localhost', '']) {
+            await expect(handler({ install_path: '/tmp/xns', bind_address: addr })).resolves.toBeDefined();
+        }
+    });
+
     test('bind_address default (empty) → success JSON says all interfaces', async () => {
         const fs = fakeFs();
         const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
