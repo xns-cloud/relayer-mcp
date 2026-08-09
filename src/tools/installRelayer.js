@@ -46,8 +46,11 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         'Install and start the XNS Relayer. By default fetches the canonical beta channel bundle — relayer + the Prometheus/Grafana monitoring stack — from releases.scpri.me (anonymous pull) and writes a .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if the fetch fails. Pass compose_url only to override with a custom compose.',
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
-            ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
-            s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (container 9000)'),
+            // Bounded to the real TCP port range: .positive() alone accepts 65536+,
+            // which reaches docker compose and fails there with a message about
+            // ports rather than about the number the caller supplied.
+            ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
+            s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000)'),
             compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install.'),
         },
         async ({ install_path, ui_port, s3_port, compose_url }) => {
@@ -132,6 +135,26 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             compose_path: composePath,
                             install_path,
                             source,
+                            // D5/W5: state the binding at install time, out-of-band, so a
+                            // refused connection is explainable later. Two statements, never
+                            // merged (PRD §7): `composed_from` is what this installer asserts
+                            // it composed; `reachability` is only CONFIGURED — this process
+                            // cannot verify the host actually published it, so it says so and
+                            // points at `docker port` (the host-side source of truth) instead
+                            // of guessing.
+                            // The container ports are known only for the channel compose
+                            // this installer fetches. A caller-supplied compose_url may
+                            // remap them, and this process never reads that file — so it
+                            // says null rather than restating 8888/9000 it cannot stand
+                            // behind (correct-or-absent, same rule as the port readout).
+                            binding: {
+                                ui: { host_port: ui_port, container_port: compose_url ? null : 8888 },
+                                s3: { host_port: s3_port, container_port: compose_url ? null : 9000 },
+                                composed_from: compose_url
+                                    ? `UI_PORT=${ui_port}, S3_PORT=${s3_port} passed to docker compose (no .env written on the compose_url override path)`
+                                    : `UI_PORT=${ui_port}, S3_PORT=${s3_port} written to ${envPath}`,
+                                reachability: 'configured — not verified from this process; run `docker port xns-relayer` on the host to see actual Docker publication',
+                            },
                             ...(note ? { note } : {}),
                         }, null, 2),
                     }],
