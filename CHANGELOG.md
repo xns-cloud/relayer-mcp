@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] — 2026-08-08
 
 ### Added
 
@@ -16,6 +16,28 @@
   `compose_url` may remap them and is never read here, so those values are `null` and
   no `.env` is written on that path — the ports are passed to `docker compose` at
   runtime instead.
+- **Discovery metadata for agentic clients.** npm keywords expanded from four to
+  fourteen (`mcp-server`, `model-context-protocol`, `object-storage`, `s3`,
+  `self-hosted`, `ai-agent`, `stdio` and others), aligned with the README, the
+  official MCP Registry entry, and the xns.tech machine surfaces. The package was
+  live in the registry but effectively invisible in the directories agents actually
+  search.
+- **README badges and a one-command install.** npm version, license, and supported
+  Node badges render from live npm data (so they cannot drift), plus a
+  `claude mcp add` snippet alongside the existing `claude_desktop_config.json` block.
+- **`CONTRIBUTING.md` and `.github/PULL_REQUEST_TEMPLATE.md`.** A stranger arriving
+  at the GitHub mirror is told plainly that the mirror is read-only, that
+  development happens on GitLab, and where to file issues and merge requests.
+- **Identity contract tests** (`src/__tests__/registryIdentity.test.js`). Thirteen
+  tests hold `mcpName`, package name, version, and repository host in agreement
+  across `package.json` and `server.json`, and guard the README's tool count and
+  keyword invariants against drift.
+
+The four discovery/documentation entries above change no runtime behavior. The
+repository URLs stay on GitLab in both `package.json` and `server.json` — that was a
+deliberate call, so the registry's ownership verification is unaffected. `server.json`
+does carry the new version number, because the registry manifest and the package must
+agree; publishing 0.7.0 to npm therefore also needs the registry entry republished.
 
 ## [0.6.1] — 2026-06-17
 
