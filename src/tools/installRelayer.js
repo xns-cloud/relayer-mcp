@@ -43,17 +43,17 @@ module.exports = function registerInstallRelayer(server, options = {}) {
 
     server.tool(
         'install_relayer',
-        'Install and start the XNS Relayer. By default fetches the canonical beta channel bundle — relayer + the Prometheus/Grafana monitoring stack — from releases.scpri.me (anonymous pull) and writes a .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if the fetch fails. Pass compose_url only to override with a custom compose.',
+        'Install and start the XNS Relayer. By default fetches the canonical beta channel bundle — relayer + the Prometheus/Grafana monitoring stack — from releases.scpri.me (anonymous pull) and writes a .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if the fetch fails. Pass compose_url only to override with a custom compose.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
         {
             install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
-            // Bounded to the real TCP port range: .positive() alone accepts 65536+,
-            // which reaches docker compose and fails there with a message about
-            // ports rather than about the number the caller supplied.
-            ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888)'),
-            s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000)'),
-            compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install.'),
+            ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888). Docker publishes this port on the interface chosen by bind_address.'),
+            s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000). Docker publishes this port on the interface chosen by bind_address.'),
+            compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
+            bind_address: z.string().optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. This value is written into the .env and composed into the port declarations of the docker-compose.yml this installer writes.'),
+            ui_tls_enabled: z.boolean().optional().default(false).describe('Whether the admin UI should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.'),
+            s3_tls_enabled: z.boolean().optional().default(false).describe('Whether the S3 gateway should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.'),
         },
-        async ({ install_path, ui_port, s3_port, compose_url }) => {
+        async ({ install_path, ui_port, s3_port, compose_url, bind_address, ui_tls_enabled, s3_tls_enabled }) => {
             try {
                 const { execFile: nodeExecFile } = require('child_process');
                 const execFileFn = _execFile || nodeExecFile;
@@ -115,7 +115,8 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         source = 'bundled-fallback';
                         note = `Channel bundle fetch failed (${fetchErr.message}) — fell back to the bundled compose. Same services; re-running install later is not required.`;
                     }
-                    await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\n`);
+                    const bindPrefix = bind_address ? `${bind_address}:` : '';
+                    await fsp.writeFile(envPath, `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\nBIND_ADDRESS=${bindPrefix}\n`);
                 }
 
                 // Run docker compose up -d. cwd + env so ${UI_PORT}/${S3_PORT}
@@ -123,7 +124,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // regardless of where the MCP process was launched.
                 await docker.composeUp(composePath, {
                     cwd: install_path,
-                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port) },
+                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bind_address ? `${bind_address}:` : '' },
                 });
 
                 return {
@@ -148,12 +149,17 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             // says null rather than restating 8888/9000 it cannot stand
                             // behind (correct-or-absent, same rule as the port readout).
                             binding: {
+                                bind_address: bind_address || '0.0.0.0 (all interfaces)',
                                 ui: { host_port: ui_port, container_port: compose_url ? null : 8888 },
                                 s3: { host_port: s3_port, container_port: compose_url ? null : 9000 },
                                 composed_from: compose_url
-                                    ? `UI_PORT=${ui_port}, S3_PORT=${s3_port} passed to docker compose (no .env written on the compose_url override path)`
-                                    : `UI_PORT=${ui_port}, S3_PORT=${s3_port} written to ${envPath}`,
+                                    ? `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bind_address ? `${bind_address}:` : ''} passed to docker compose (no .env written on the compose_url override path)`
+                                    : `UI_PORT=${ui_port}, S3_PORT=${s3_port}, BIND_ADDRESS=${bind_address ? `${bind_address}:` : ''} written to ${envPath}`,
                                 reachability: 'configured — not verified from this process; run `docker port xns-relayer` on the host to see actual Docker publication',
+                            },
+                            tls: {
+                                ui_tls_enabled: { requested: ui_tls_enabled, effective: false, note: ui_tls_enabled ? 'Accepted but not wired in this version — no effect until a future release ships the TLS listener.' : 'Off (HTTP only).' },
+                                s3_tls_enabled: { requested: s3_tls_enabled, effective: false, note: s3_tls_enabled ? 'Accepted but not wired in this version — no effect until a future release ships the TLS listener.' : 'Off (HTTP only).' },
                             },
                             ...(note ? { note } : {}),
                         }, null, 2),

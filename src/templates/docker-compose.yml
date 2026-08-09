@@ -44,8 +44,8 @@ services:
     volumes:
       - relayer_data:/relayer     # named volume — MUST match the channel bundle (bug #2)
     ports:
-      - ${UI_PORT:-8888}:8888
-      - ${S3_PORT:-9000}:9000
+      - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888
+      - ${BIND_ADDRESS:-}${S3_PORT:-9000}:9000
     env_file:
       - .env
 

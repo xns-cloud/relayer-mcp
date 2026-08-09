@@ -152,7 +152,7 @@ describe('install_relayer', () => {
         // The bundled template is NOT read on the happy path.
         expect(fs.readFile).not.toHaveBeenCalled();
         // .env written with default ports.
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
     });
 
     // --- E-A2 / D5 / AC-8: the installer states the binding at install time ---
@@ -249,7 +249,7 @@ describe('install_relayer', () => {
         expect(parsed.note).toMatch(/fell back|fall.?back/i);
         // Bundled template written to docker-compose.yml; .env still written.
         expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
         expect(composeUp).toHaveBeenCalled();
     });
 
@@ -265,13 +265,94 @@ describe('install_relayer', () => {
 
         await handler({ install_path: '/tmp/xns', ui_port: 18888, s3_port: 19000 });
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nS3_PORT=19000\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nS3_PORT=19000\nBIND_ADDRESS=\n');
         // composeUp runs in the install dir with the ports in env.
         const [composePath, execOpts] = composeUp.mock.calls[0];
         expect(composePath).toBe('/tmp/xns/docker-compose.yml');
         expect(execOpts.cwd).toBe('/tmp/xns');
         expect(execOpts.env.UI_PORT).toBe('18888');
         expect(execOpts.env.S3_PORT).toBe('19000');
+    });
+
+    // --- E-A3 / W12: bind_address flows into .env + composeUp env + success JSON ---
+
+    test('bind_address=127.0.0.1 → .env + composeUp env carry the prefix', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const result = await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
+        const [, execOpts] = composeUp.mock.calls[0];
+        expect(execOpts.env.BIND_ADDRESS).toBe('127.0.0.1:');
+        expect(parsed.binding.bind_address).toBe('127.0.0.1');
+    });
+
+    test('bind_address default (empty) → success JSON says all interfaces', async () => {
+        const fs = fakeFs();
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
+
+        expect(parsed.binding.bind_address).toBe('0.0.0.0 (all interfaces)');
+        expect(parsed.binding.composed_from).toContain('BIND_ADDRESS=');
+    });
+
+    // --- E-A3 / W12: TLS switches in success JSON ---
+
+    test('TLS switches default to off in success JSON', async () => {
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
+
+        expect(parsed.tls.ui_tls_enabled.requested).toBe(false);
+        expect(parsed.tls.ui_tls_enabled.effective).toBe(false);
+        expect(parsed.tls.s3_tls_enabled.requested).toBe(false);
+        expect(parsed.tls.s3_tls_enabled.effective).toBe(false);
+    });
+
+    test('TLS switches requested=true → effective still false (not wired)', async () => {
+        const fs = fakeFs();
+        const handler = registerWithOptions({
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs,
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({
+            install_path: '/tmp/xns',
+            ui_tls_enabled: true,
+            s3_tls_enabled: true,
+        })).content[0].text);
+
+        expect(parsed.tls.ui_tls_enabled.requested).toBe(true);
+        expect(parsed.tls.ui_tls_enabled.effective).toBe(false);
+        expect(parsed.tls.ui_tls_enabled.note).toMatch(/not wired/i);
+        expect(parsed.tls.s3_tls_enabled.requested).toBe(true);
+        expect(parsed.tls.s3_tls_enabled.effective).toBe(false);
+        expect(parsed.tls.s3_tls_enabled.note).toMatch(/not wired/i);
     });
 
     // --- Preflight: fresh installs only (homelab feedback: alpha-channel name conflict) ---
