@@ -33,9 +33,11 @@
   across `package.json` and `server.json`, and guard the README's tool count and
   keyword invariants against drift.
 
-The four discovery/documentation entries above change no runtime behavior, and
-`server.json` is deliberately untouched — the repository URLs stay on GitLab, so
-the MCP registry entry needs no republish.
+The four discovery/documentation entries above change no runtime behavior. The
+repository URLs stay on GitLab in both `package.json` and `server.json` — that was a
+deliberate call, so the registry's ownership verification is unaffected. `server.json`
+does carry the new version number, because the registry manifest and the package must
+agree; publishing 0.7.0 to npm therefore also needs the registry entry republished.
 
 ## [0.6.1] — 2026-06-17
 
