@@ -18,6 +18,7 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const readJson = (p) => JSON.parse(fs.readFileSync(path.join(repoRoot, p), 'utf8'));
+const hostOf = (url) => new URL(String(url).replace(/^git\+/, '')).host;
 
 const pkg = readJson('package.json');
 const serverJson = readJson('server.json');
@@ -53,19 +54,16 @@ describe('E-B1 identity contract: npm ↔ MCP registry', () => {
     // repository + bugs AND server.json repository must move in the same commit.
     // This test doesn't care WHICH host — only that all four agree.
     test('DC7: repository host agrees across package.json (repository + bugs) and server.json', () => {
-        const host = (u) => new URL(String(u).replace(/^git\+/, '')).host;
+        const pkgRepoHost = hostOf(pkg.repository.url);
 
-        const pkgRepoHost = host(pkg.repository.url);
-        const pkgBugsHost = host(pkg.bugs.url);
-        const serverRepoHost = host(serverJson.repository.url);
-
-        expect(pkgBugsHost).toBe(pkgRepoHost);
-        expect(serverRepoHost).toBe(pkgRepoHost);
+        expect(hostOf(pkg.bugs.url)).toBe(pkgRepoHost);
+        expect(hostOf(serverJson.repository.url)).toBe(pkgRepoHost);
     });
 
     test('server.json repository.source matches the repository host', () => {
-        const host = new URL(serverJson.repository.url).host;
-        const expectedSource = host.includes('github') ? 'github' : 'gitlab';
+        const expectedSource = hostOf(serverJson.repository.url).includes('github')
+            ? 'github'
+            : 'gitlab';
         expect(serverJson.repository.source).toBe(expectedSource);
     });
 });
@@ -95,10 +93,10 @@ describe('E-B1 keyword contract (AC1a)', () => {
 });
 
 describe('E-B1 README drift contract (AC2a)', () => {
-    const toolCount = require('../index').server._registeredTools;
+    const registeredTools = require('../index').server._registeredTools;
 
     test('README tool count matches the number of tools index.js registers', () => {
-        const registered = Object.keys(toolCount).length;
+        const registered = Object.keys(registeredTools).length;
 
         const prose = readme.match(/Provides (\d+) tools/);
         expect(prose).not.toBeNull();
@@ -148,7 +146,7 @@ describe('E-B1 GitHub presence contract (AC11)', () => {
     // Contribution entry points must agree with the canonical repository host that
     // package.json/server.json declare — otherwise the mirror sends people nowhere.
     test('contribution docs point at the same host package.json declares', () => {
-        const pkgHost = new URL(pkg.repository.url.replace(/^git\+/, '')).host;
+        const pkgHost = hostOf(pkg.repository.url);
         expect(contributing).toContain(pkgHost);
         expect(prTemplate).toContain(pkgHost);
     });
