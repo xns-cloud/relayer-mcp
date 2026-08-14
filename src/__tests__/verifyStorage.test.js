@@ -321,20 +321,29 @@ describe('verify_storage', () => {
         expect(parsed.success).toBe(true);
     });
 
-    // --- Missing muse_token ---
+    // --- Missing muse_token → BUG-366: falls back to OIDC session, no init error ---
 
-    test('missing muse_token without keys reports init error', async () => {
+    test('missing muse_token without keys falls back to OIDC sign-in (BUG-366)', async () => {
+        const acquireMock = jest.fn().mockResolvedValue({
+            access_token: 'fallback-jwt',
+            refresh_token: 'ref',
+            expires_at: Date.now() + 600000,
+        });
         const handler = registerWithOptions({
             httpClient: createMintingHttpMock(),
             createS3Client: () => createPassingS3Mock(),
+            _tokenStateModule: (() => {
+                let state = null;
+                return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+            })(),
+            acquireToken: acquireMock,
         });
 
         const result = await handler({ endpoint: 'http://localhost:9000' });
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(parsed.success).toBe(false);
-        expect(parsed.failing_step).toBe('init');
-        expect(result.isError).toBe(true);
+        expect(parsed.success).toBe(true);
+        expect(acquireMock).toHaveBeenCalled();
     });
 
     // --- Remote Docker host ---
@@ -789,5 +798,199 @@ describe('verify_storage', () => {
 
         expect(parsed.success).toBe(false);
         expect(parsed.cleanup_warning).toBeUndefined();
+    });
+
+    // --- BUG-366: session fallback + definitive-failure cleanup + safe errors ---
+
+    function createIsolatedTokenState(initial) {
+        let state = initial;
+        return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+    }
+
+    test('BUG-366: no muse_token, no keys → reuses shared OIDC session for mint', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+            _tokenStateModule: createIsolatedTokenState({
+                access_token: 'session-jwt',
+                refresh_token: 'ref',
+                expires_at: Date.now() + 600000,
+            }),
+            acquireToken: jest.fn(),
+        });
+
+        const result = await handler({ endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/user'));
+        expect(mintCall[2].headers.keycloaktoken).toBe('session-jwt');
+    });
+
+    test('BUG-366: no session at all → starts browser sign-in via acquireToken', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const acquireMock = jest.fn().mockResolvedValue({
+            access_token: 'fresh-jwt',
+            refresh_token: 'ref',
+            expires_at: Date.now() + 600000,
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+            _tokenStateModule: createIsolatedTokenState(null),
+            acquireToken: acquireMock,
+        });
+
+        const result = await handler({ endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(acquireMock).toHaveBeenCalled();
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/user'));
+        expect(mintCall[2].headers.keycloaktoken).toBe('fresh-jwt');
+    });
+
+    test('BUG-366: sign-in failure → failing_step SignIn with authored guidance, no cleanup', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => { throw new Error('must not reach S3'); },
+            _tokenStateModule: createIsolatedTokenState(null),
+            acquireToken: jest.fn().mockRejectedValue(new Error('Token exchange failed (HTTP 400): {"error":"provider text"}')),
+        });
+
+        const result = await handler({ endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('SignIn');
+        expect(parsed.error).toContain('Run get_host_tags first');
+        expect(parsed.error).not.toContain('provider text');
+        expect(parsed.cleanup_warning).toBeUndefined();
+        expect(httpMock.del).not.toHaveBeenCalled();
+    });
+
+    test('BUG-366: definitive mint refusal (HTTP 401) → no cleanup attempt, no warning', async () => {
+        const httpMock = createMintingHttpMock({ mint: { status: 401, data: { success: false, message: 'Unauthorized' } } });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => { throw new Error('must not reach S3'); },
+        });
+
+        const result = await handler({ muse_token: 'bad-jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('MintUser');
+        expect(parsed.cleanup_warning).toBeUndefined();
+        expect(httpMock.del).not.toHaveBeenCalled();
+    });
+
+    test('BUG-366: mint network error (no response) → cleanup still attempted', async () => {
+        const httpMock = createMintingHttpMock();
+        httpMock.post.mockImplementation(async (url) => {
+            if (url.endsWith('/mc/user')) throw new Error('socket hang up');
+            return { status: 404, data: {} };
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => { throw new Error('must not reach S3'); },
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        const delUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
+        expect(delUserCall).toBeDefined();
+    });
+
+    test('CR MR29: session fallback refused for a caller-selected relayer_ui_url', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => { throw new Error('must not reach S3'); },
+            _tokenStateModule: (() => {
+                let state = { access_token: 'session-jwt', refresh_token: 'r', expires_at: Date.now() + 600000 };
+                return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+            })(),
+            acquireToken: jest.fn(),
+        });
+
+        const result = await handler({
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('init');
+        expect(parsed.error).toContain('server-configured Relayer UI base');
+        // The session token must never have left the process
+        expect(httpMock.post).not.toHaveBeenCalled();
+    });
+
+    test('CR MR29: session fallback honors a server-configured relayerUiBase', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+            relayerUiBase: 'http://192.168.1.50:8888',
+            _tokenStateModule: (() => {
+                let state = { access_token: 'session-jwt', refresh_token: 'r', expires_at: Date.now() + 600000 };
+                return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+            })(),
+            acquireToken: jest.fn(),
+        });
+
+        const result = await handler({
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.includes('/mc/user'));
+        expect(mintCall[0]).toContain('http://192.168.1.50:8888');
+    });
+
+    test('CR MR29: explicit muse_token still works against a custom (allowlisted) relayer_ui_url', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+        });
+
+        const result = await handler({
+            muse_token: 'explicit-jwt',
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
+    test('BUG-366: allowlist rejection message reaches the client (self-authored)', async () => {
+        const handler = registerWithOptions({
+            httpClient: createMintingHttpMock(),
+            createS3Client: () => { throw new Error('must not reach S3'); },
+        });
+
+        const result = await handler({
+            muse_token: 'jwt',
+            relayer_ui_url: 'https://evil.example.com',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('init');
+        expect(parsed.error).toContain('not a loopback');
     });
 });
