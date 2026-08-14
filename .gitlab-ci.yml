@@ -1,8 +1,10 @@
-# relayer-mcp CI — test on MRs/main, publish to npm on version tags.
+# relayer-mcp CI — test on MRs/main, publish to npm AND the official MCP
+# Registry on version tags.
 #
 # Ongoing release model: the ONLY publish trigger is a human pushing a vX.Y.Z
 # tag (agents never tag, never publish — see GitLab MR Boundaries). The tag
 # must match package.json's version, which lands via normal MR review.
+# One tag ships both registries; there is no manual follow-up step.
 #
 # Publishing uses npm TRUSTED PUBLISHING (OIDC) — no npm token exists anywhere,
 # nothing expires, nothing rotates. GitLab mints a short-lived id_token per job
@@ -14,12 +16,20 @@
 #      CI file path `.gitlab-ci.yml`, allowed action `npm publish`.
 #   2. GitLab → Settings → Repository → Protected tags: protect `v*`
 #      (governance: only maintainers can trigger a release).
+#   3. GitLab → Settings → CI/CD → Variables: add `MCP_REGISTRY_KEY`
+#      (Masked + Protected). See PUBLISHING.md for how to derive its value.
 # Requires GitLab.com shared runners (self-hosted runners not yet supported
 # by npm trusted publishing).
+#
+# The MCP Registry has no OIDC path for domain namespaces — `tech.xns` is a
+# reverse-DNS name, so it authenticates by signing a challenge with the private
+# key whose public half is served at https://xns.tech/.well-known/mcp-registry-auth.
+# That is why this one job needs a stored secret and the npm job does not.
 
 stages:
   - test
   - publish
+  - registry
 
 test:
   stage: test
@@ -57,3 +67,38 @@ publish:
     # prepublishOnly reruns the test suite as a last gate before the tarball ships.
     # No token, no .npmrc — npm exchanges NPM_ID_TOKEN with the registry (OIDC).
     - npm publish
+
+# Publishes the server.json manifest to registry.modelcontextprotocol.io, which is
+# what MCP clients and directory aggregators read. Runs AFTER npm: the manifest
+# advertises an npm version, so that version must already exist on npm.
+# A failure here leaves npm correct and the registry one release behind — visible
+# as a red pipeline, recoverable by re-running this job alone.
+mcp-registry:
+  stage: registry
+  image: node:24
+  needs: [publish]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    # server.json carries its own version and must agree with the tag. A unit test
+    # already pins server.json to package.json; this keeps the job self-contained
+    # when it is retried on its own.
+    - SRV_VERSION=$(node -p "require('./server.json').version")
+    - |
+      if [ "v${SRV_VERSION}" != "${CI_COMMIT_TAG}" ]; then
+        echo "Tag ${CI_COMMIT_TAG} does not match server.json version ${SRV_VERSION} — aborting."
+        exit 1
+      fi
+    - |
+      if [ -z "${MCP_REGISTRY_KEY}" ]; then
+        echo "MCP_REGISTRY_KEY is not set — see PUBLISHING.md. Aborting."
+        exit 1
+      fi
+    # Pinned, not `latest`: a release is the wrong moment to discover a CLI change.
+    - curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+    # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
+    # verifies it against the public key served at the .well-known URL on xns.tech.
+    - ./mcp-publisher login http --domain=xns.tech --private-key="${MCP_REGISTRY_KEY}"
+    - ./mcp-publisher publish
+  variables:
+    MCP_PUBLISHER_VERSION: "1.8.1"
