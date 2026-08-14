@@ -42,6 +42,8 @@ module.exports = function registerVerifyStorage(server, options = {}) {
             let mintedUser = null;
             let mintedPolicyName = null;
             let bucketCreated = false;
+            let policyCreated = false;
+            let policyAttached = false;
             let effectiveAK = access_key_id;
             let effectiveSK = secret_access_key;
             let result;
@@ -110,6 +112,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         const detail = policyData?.message || policyData?.error || JSON.stringify(policyData);
                         throw new Error(`Create policy failed: ${detail}`);
                     }
+                    policyCreated = true;
 
                     currentStep = 'AttachPolicy';
                     const { data: attachData } = await http.post(
@@ -122,6 +125,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         const detail = attachData?.message || attachData?.error || JSON.stringify(attachData);
                         throw new Error(`Attach policy failed: ${detail}`);
                     }
+                    policyAttached = true;
                 }
 
                 const s3 = _createS3Client({
@@ -189,13 +193,17 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     }
                 }
 
-                if (mintedUser && mintedPolicyName) {
+                if (policyAttached) {
                     try {
-                        await http.post(
+                        const { data: detachData } = await http.post(
                             `${relayer_ui_url}/api/v1/mc/policy-detach`,
                             { name: mintedUser, policy: mintedPolicyName },
                             { headers: { keycloaktoken: muse_token } }
                         );
+                        if (detachData?.status !== 'detached') {
+                            const detail = detachData?.message || JSON.stringify(detachData);
+                            warnings.push(`Policy detach failed: ${detail}`);
+                        }
                     } catch (e) {
                         warnings.push(`Policy detach failed: ${e.message}`);
                     }
@@ -203,21 +211,29 @@ module.exports = function registerVerifyStorage(server, options = {}) {
 
                 if (mintedUser) {
                     try {
-                        await http.del(
+                        const { data: delUserData } = await http.del(
                             `${relayer_ui_url}/api/v1/mc/user/${mintedUser}`,
                             { headers: { keycloaktoken: muse_token } }
                         );
+                        if (delUserData?.success === false) {
+                            const detail = delUserData?.message || JSON.stringify(delUserData);
+                            warnings.push(`User cleanup failed: ${detail}`);
+                        }
                     } catch (e) {
                         warnings.push(`User cleanup failed: ${e.message}`);
                     }
                 }
 
-                if (mintedPolicyName) {
+                if (policyCreated) {
                     try {
-                        await http.del(
+                        const { data: delPolicyData } = await http.del(
                             `${relayer_ui_url}/api/v1/mc/policy/${mintedPolicyName}`,
                             { headers: { keycloaktoken: muse_token } }
                         );
+                        if (delPolicyData?.status !== 'deleted') {
+                            const detail = delPolicyData?.message || JSON.stringify(delPolicyData);
+                            warnings.push(`Policy cleanup failed: ${detail}`);
+                        }
                     } catch (e) {
                         warnings.push(`Policy cleanup failed: ${e.message}`);
                     }
