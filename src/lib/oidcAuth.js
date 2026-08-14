@@ -253,4 +253,4 @@ function defaultOpenBrowser(url) {
     });
 }
 
-module.exports = { acquireToken, refreshToken, generateVerifier, generateChallenge };
+module.exports = { acquireToken, refreshToken, generateVerifier, generateChallenge, DEFAULT_KEYCLOAK_URL, DEFAULT_REALM, DEFAULT_CLIENT_ID };

@@ -78,6 +78,36 @@ describe('start_registration', () => {
         expect(description.toLowerCase()).not.toContain('password');
     });
 
+    test('registration URL includes ported loopback redirect_uri', async () => {
+        const handler = registerWithOptions();
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+        const url = new URL(parsed.registration_url);
+
+        const redirectUri = url.searchParams.get('redirect_uri');
+        expect(redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    });
+
+    test('registration URL includes code_challenge with method S256', async () => {
+        const handler = registerWithOptions();
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+        const url = new URL(parsed.registration_url);
+
+        expect(url.searchParams.get('code_challenge')).toBeTruthy();
+        expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    });
+
+    test('two calls produce different code_challenge values', async () => {
+        const handler = registerWithOptions();
+        const result1 = await handler({});
+        const result2 = await handler({});
+        const url1 = new URL(JSON.parse(result1.content[0].text).registration_url);
+        const url2 = new URL(JSON.parse(result2.content[0].text).registration_url);
+
+        expect(url1.searchParams.get('code_challenge')).not.toBe(url2.searchParams.get('code_challenge'));
+    });
+
     test('custom Keycloak options are respected', async () => {
         const handler = registerWithOptions({
             keycloakUrl: 'https://custom-auth.example.com/auth',
