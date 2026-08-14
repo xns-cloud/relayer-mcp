@@ -11,7 +11,7 @@ describe('index.js entrypoint', () => {
 
         const expectedTools = [
             'check_prerequisites',
-            'register_account',
+            'start_registration',
             'check_email_verified',
             'install_relayer',
             'check_relayer_health',

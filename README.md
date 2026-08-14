@@ -4,7 +4,13 @@
 [![license](https://img.shields.io/npm/l/@xns-cloud/relayer-mcp)](./LICENSE)
 [![node](https://img.shields.io/node/v/@xns-cloud/relayer-mcp)](https://nodejs.org/)
 
-MCP server for XNS Relayer onboarding and day-2 management. Provides 15 tools that let an AI agent drive the complete Relayer setup — and afterward adjust settings, manage backups, and tune the VPD — conversationally over stdio transport.
+MCP server for [XNS Relayer](https://xns.tech) — S3-compatible decentralized object storage. Provides 15 tools that let an AI agent drive the complete Relayer setup and day-2 management conversationally over stdio transport.
+
+```bash
+npx @xns-cloud/relayer-mcp@latest
+```
+
+**Pricing:** [$4.99/TB-mo](https://xns.tech) storage, [$0 egress uncapped](https://xns.tech), [no minimum retention](https://xns.tech).
 
 ## Requirements
 
@@ -25,6 +31,19 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 **NodeSource** (system-wide): follow <https://github.com/nodesource/distributions#installation-instructions>.
 
 If you start the MCP on an older Node, it exits immediately with this same guidance instead of a dependency stack trace.
+
+## Environment
+
+The Relayer runs as a Docker container and persists its data in a Docker volume. If the MCP is running inside an ephemeral environment (a sandbox container, a CI runner, or a throwaway VM), any installation performed there will be lost when that environment exits. `check_prerequisites` detects this automatically and reports it as a warning with a concrete next step — it never blocks the flow.
+
+**If your environment is ephemeral**, install on a persistent Docker host instead. The easiest path from an ephemeral sandbox is an SSH Docker context:
+
+```bash
+docker context create relayer --docker "host=ssh://user@persistent-host"
+docker context use relayer
+```
+
+The MCP then drives the install on the persistent host through the SSH context. Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
 
 ## Install
 
@@ -54,7 +73,7 @@ No separate install step required — npx fetches the package on demand.
 | # | Tool | Purpose |
 |---|------|---------|
 | 1 | `check_prerequisites` | Verify Docker (local or remote), ports (8888, 9000), an existing installation, disk, and network connectivity. |
-| 2 | `register_account` | Register an XNS account (email + password) via Console2. |
+| 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
 | 4 | `install_relayer` | Fetch the canonical beta channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.scpri.me/relayer/beta/docker-compose.yml`, anonymous pull, no `docker login`) — write the `.env`, and start the containers. Falls back to a bundled service-parity copy if the fetch fails. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
 | 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
@@ -62,7 +81,7 @@ No separate install step required — npx fetches the package on demand.
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration, plus the currently applied data/parity selection (read-back with an `is_default` flag). |
 | 9 | `configure_vpd` | Set data/parity host selection via CEL expressions. `dry_run: true` previews the matched host counts without applying (requires a Relayer build with the HostIO evaluate endpoint; older builds report `preview_supported: false`). |
-| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway on port 9000. **Requires fullaccess credentials** (admin key pair from the Relayer UI IAM page — not a read-only or bucket-scoped key). Test bucket is cleaned up automatically. If auto-detection cannot reach the host, pass `endpoint` with an explicit IP (e.g. `http://192.168.1.100:9000`). |
+| 10 | `verify_storage` | Round-trip S3 test (create bucket, put object, get object) against the S3 gateway. Provisions a temporary scoped IAM credential automatically from your OIDC session — no manual key management needed. The tool attempts to remove test data and the throwaway credential after the test; a `cleanup_warning` is reported if any resource could not be removed. `relayer_ui_url` must point at a loopback or private-network host. |
 | 11 | `setup_cli_credentials` | Provision S3 IAM credentials and write `~/.xns/credentials` so the XNS CLI works without further configuration. |
 | 12 | `describe_settings` | List the adjustable settings — worker/concurrency tuning, backup schedule, cost center (CCID) — with current values, defaults, and guidance. The MCP deliberately exposes only this curated set, never the full advanced catalog. |
 | 13 | `update_settings` | Apply a map of setting changes (whitelist-enforced). Returns `require_restart`. **Requires relayer-ui >= 3.43.3** — older servers can clobber the database password on config round-trips. |
@@ -72,7 +91,7 @@ No separate install step required — npx fetches the package on demand.
 ## Onboarding Flow
 
 1. Agent checks prerequisites (Tool 1).
-2. Agent registers account or skips if existing (Tool 2).
+2. Agent gets the browser sign-up URL; user creates an account in the browser (Tool 2).
 3. User clicks email verification link; agent polls (Tool 3).
 4. Agent installs and starts Relayer containers (Tool 4) — it writes the
    released compose + `.env` itself; the user is never asked for a compose URL.

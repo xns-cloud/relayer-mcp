@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.8.0] — 2026-08-13
+
+### Changed
+
+- **`verify_storage` provisions its own credential — you are never asked for keys.**
+  Called with just your OIDC session (`muse_token`), the tool mints a throwaway IAM
+  user with a policy scoped to `mcp-verify-*` test buckets, runs the round-trip, and
+  deletes the user, the policy, and the test bucket afterwards — pass or fail. A
+  cleanup step that cannot complete says so in a `cleanup_warning` (including
+  failures the server reports in a response body, not just network errors) and
+  never turns a passing verification into a failure. Intent-flagged resources are
+  always cleaned up even when the response was lost (timeout, socket reset);
+  cleanup suppresses warnings only when the server confirms the resource does not
+  exist. All token-carrying requests disable HTTP redirects (`maxRedirects: 0`) to
+  prevent an allowlisted host from redirecting the token to a public endpoint.
+  Operators who genuinely hold keys can
+  still pass `access_key_id`/`secret_access_key` to skip provisioning entirely. The
+  word "fullaccess" no longer appears anywhere in the tool surface, and a regression
+  test keeps it that way.
+
+- **Mint and provisioning failures name the failing step; full detail goes to the
+  server log** rather than the tool response (agent-context hygiene — no provider
+  error text is returned to the MCP client). Cleanup warnings use the same pattern.
+
+- **`relayer_ui_url` must point at a loopback or private-network host** (localhost,
+  127.0.0.0/8, ::1, 10/8, 172.16/12, 192.168/16, or *.local) and is URL-validated
+  at the Zod schema boundary. A public-internet URL is rejected before any request
+  carrying the token.
+
+### Added
+
+- **`start_registration` replaces `register_account`.** Sign-up now happens in your
+  browser on the Keycloak page — the agent hands over a URL and never sees, asks for,
+  or transmits a password; no tool in this package accepts one (also regression-tested).
+  `check_email_verified` remains the completion signal. Two honest notes: the final
+  browser redirect after sign-up may show a connection error (expected — nothing
+  listens on the loopback callback), and registrations made this way do not carry an
+  affiliate referral code (the old Console2 path did; accepted for this release).
+
+- **`check_prerequisites` now recognises an environment that cannot keep your
+  install.** Inside an ephemeral container (sandbox, CI runner) it reports the
+  environment as ephemeral — as a warning with a concrete next step (point Docker at
+  a persistent host over an SSH context, or hand the install to an operator), never
+  as a failure. The same guidance is in the README above the install section.
+
+### Removed
+
+- `register_account`, its password parameter, and its broken call against the
+  current registration API (it had been failing with a 400 since 2026-05
+  independently of this release).
+
 ## [0.7.0] — 2026-08-08
 
 ### Added

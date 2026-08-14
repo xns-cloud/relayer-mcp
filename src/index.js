@@ -20,7 +20,7 @@ const server = new McpServer({
 
 // Register all 15 tools
 require('./tools/checkPrerequisites')(server);
-require('./tools/registerAccount')(server);
+require('./tools/startRegistration')(server);
 require('./tools/checkEmailVerified')(server);
 require('./tools/installRelayer')(server);
 require('./tools/checkRelayerHealth')(server);

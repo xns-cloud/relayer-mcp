@@ -1,7 +1,7 @@
 {
   "name": "@xns-cloud/relayer-mcp",
   "mcpName": "tech.xns/relayer",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "MCP server for XNS Relayer onboarding and day-2 management — drives Relayer setup, settings, and backups conversationally over stdio, npx-ready",
   "author": "SCP Corp",
   "license": "Apache-2.0",
@@ -35,7 +35,9 @@
     "docker",
     "self-hosted",
     "storage",
-    "backup"
+    "backup",
+    "s3-compatible",
+    "claude"
   ],
   "engines": {
     "node": ">=20"

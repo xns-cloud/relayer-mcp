@@ -79,7 +79,7 @@ describe('check_email_verified', () => {
         expect(parsed.success).toBe(false);
         expect(parsed.verified).toBe(false);
         expect(parsed.exists).toBe(false);
-        expect(parsed.message).toContain('register_account');
+        expect(parsed.message).toContain('start_registration');
     });
 
     // TP-16: 404 → no account
