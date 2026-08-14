@@ -288,31 +288,45 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
     });
 });
 
-describe('T1 Contract-Gap: cross-tool fullaccess regression (TP-5)', () => {
-    test('no tool description matches /fullaccess/i', () => {
-        const server = { tool: jest.fn() };
-        const toolModules = [
-            '../tools/checkPrerequisites',
-            '../tools/registerAccount',
-            '../tools/checkEmailVerified',
-            '../tools/installRelayer',
-            '../tools/checkRelayerHealth',
-            '../tools/startClaim',
-            '../tools/checkClaimStatus',
-            '../tools/getHostTags',
-            '../tools/configureVpd',
-            '../tools/verifyStorage',
-            '../tools/setupCliCredentials',
-            '../tools/describeSettings',
-            '../tools/updateSettings',
-            '../tools/restartService',
-            '../tools/manageBackups',
-        ];
-        for (const mod of toolModules) {
-            require(mod)(server);
+describe('T1 Contract-Gap: cross-tool invariants', () => {
+    const ALL_TOOL_MODULES = [
+        '../tools/checkPrerequisites',
+        '../tools/startRegistration',
+        '../tools/checkEmailVerified',
+        '../tools/installRelayer',
+        '../tools/checkRelayerHealth',
+        '../tools/startClaim',
+        '../tools/checkClaimStatus',
+        '../tools/getHostTags',
+        '../tools/configureVpd',
+        '../tools/verifyStorage',
+        '../tools/setupCliCredentials',
+        '../tools/describeSettings',
+        '../tools/updateSettings',
+        '../tools/restartService',
+        '../tools/manageBackups',
+    ];
+
+    function registerAllTools() {
+        const srv = { tool: jest.fn() };
+        for (const mod of ALL_TOOL_MODULES) {
+            require(mod)(srv);
         }
-        for (const [name, description] of server.tool.mock.calls) {
+        return srv;
+    }
+
+    test('TP-5: no tool description matches /fullaccess/i', () => {
+        const srv = registerAllTools();
+        for (const [name, description] of srv.tool.mock.calls) {
             expect(description.toLowerCase()).not.toContain('fullaccess');
+        }
+    });
+
+    test('TP-4: no tool schema accepts a password key', () => {
+        const srv = registerAllTools();
+        for (const [name, , schema] of srv.tool.mock.calls) {
+            const keys = Object.keys(schema || {});
+            expect(keys).not.toContain('password');
         }
     });
 });
