@@ -81,7 +81,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
         'verify_storage',
         'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
         {
-            muse_token: z.string().optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
+            muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
             access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
             secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
             relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
@@ -131,6 +131,14 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         // established (shared token state), or start a browser sign-in.
                         // No tool emits the token, so requiring it as a parameter
                         // dead-ended every agent on the no-keys path.
+                        //
+                        // The session token is server-held — never forward it to a
+                        // caller-selected origin. The fallback only targets the
+                        // server-owned base, matching restart_service/manage_backups.
+                        const serverOwnedBase = (options.relayerUiBase || 'http://localhost:8888').replace(/\/+$/, '');
+                        if (baseUrl !== serverOwnedBase) {
+                            throw safeError('The OIDC session fallback only targets the server-configured Relayer UI base (default http://localhost:8888). Pass muse_token or access_key_id/secret_access_key explicitly when targeting a custom relayer_ui_url.');
+                        }
                         currentStep = 'SignIn';
                         try {
                             muse_token = await tokenMgr.ensureToken();

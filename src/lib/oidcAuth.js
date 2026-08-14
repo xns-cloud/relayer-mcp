@@ -212,19 +212,24 @@ function captureAuthCode(opts) {
 
             const authorizeUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth?${params}`;
 
+            // Arm the timeout BEFORE opening the browser — a synchronous
+            // openBrowser can resolve the flow first, and a timer created
+            // after that would never be cleared, pinning the process open.
+            // 5 minutes proved too short for a human who gets interrupted
+            // (FT-1, 2026-08-14); invalid overrides fall back to the default.
+            const timeoutMs = (Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0)
+                ? opts.timeoutMs
+                : DEFAULT_SIGNIN_TIMEOUT_MS;
+            timeoutHandle = setTimeout(() => {
+                srv.close();
+                reject(new Error(`OIDC sign-in timed out after ${Math.round(timeoutMs / 60000)} minutes. Please try again.`));
+            }, timeoutMs);
+
             // Open browser or return URL for the agent to present
             openBrowser(authorizeUrl).catch(() => {
                 // If browser open fails, the authorize_url is still available
             });
         });
-
-        // Timeout for the user to complete browser sign-in. 5 minutes proved
-        // too short for a human who gets interrupted (FT-1, 2026-08-14).
-        const timeoutMs = opts.timeoutMs ?? DEFAULT_SIGNIN_TIMEOUT_MS;
-        timeoutHandle = setTimeout(() => {
-            srv.close();
-            reject(new Error(`OIDC sign-in timed out after ${Math.round(timeoutMs / 60000)} minutes. Please try again.`));
-        }, timeoutMs);
     });
 }
 

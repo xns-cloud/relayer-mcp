@@ -177,4 +177,14 @@ describe('verify_storage — contract gaps', () => {
         expect(httpMock.post).not.toHaveBeenCalled();
         expect(httpMock.del).not.toHaveBeenCalled();
     });
+
+    // --- CR MR29: blank muse_token override must not skip the session path ---
+
+    test('schema rejects a whitespace-only muse_token override', () => {
+        registerWithOptions({ httpClient: createMintingHttpMock(), createS3Client: () => createPassingS3Mock() });
+        const schema = server.tool.mock.calls[0][2];
+        expect(schema.muse_token.safeParse('   ').success).toBe(false);
+        expect(schema.muse_token.safeParse('real-token').success).toBe(true);
+        expect(schema.muse_token.safeParse(undefined).success).toBe(true);
+    });
 });

@@ -908,6 +908,74 @@ describe('verify_storage', () => {
         expect(delUserCall).toBeDefined();
     });
 
+    test('CR MR29: session fallback refused for a caller-selected relayer_ui_url', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => { throw new Error('must not reach S3'); },
+            _tokenStateModule: (() => {
+                let state = { access_token: 'session-jwt', refresh_token: 'r', expires_at: Date.now() + 600000 };
+                return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+            })(),
+            acquireToken: jest.fn(),
+        });
+
+        const result = await handler({
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('init');
+        expect(parsed.error).toContain('server-configured Relayer UI base');
+        // The session token must never have left the process
+        expect(httpMock.post).not.toHaveBeenCalled();
+    });
+
+    test('CR MR29: session fallback honors a server-configured relayerUiBase', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+            relayerUiBase: 'http://192.168.1.50:8888',
+            _tokenStateModule: (() => {
+                let state = { access_token: 'session-jwt', refresh_token: 'r', expires_at: Date.now() + 600000 };
+                return { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } };
+            })(),
+            acquireToken: jest.fn(),
+        });
+
+        const result = await handler({
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.includes('/mc/user'));
+        expect(mintCall[0]).toContain('http://192.168.1.50:8888');
+    });
+
+    test('CR MR29: explicit muse_token still works against a custom (allowlisted) relayer_ui_url', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+        });
+
+        const result = await handler({
+            muse_token: 'explicit-jwt',
+            relayer_ui_url: 'http://192.168.1.50:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
     test('BUG-366: allowlist rejection message reaches the client (self-authored)', async () => {
         const handler = registerWithOptions({
             httpClient: createMintingHttpMock(),
