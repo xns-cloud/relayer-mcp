@@ -98,7 +98,10 @@ mcp-registry:
     # extracted or run. A version tag alone is not a guarantee — GitHub release
     # assets can be replaced in place, and this binary is executed in a job where
     # MCP_REGISTRY_KEY is in scope. Bumping the CLI means changing both values.
-    - curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+    # Bounded: a stalled download at release time should fail in minutes with a
+    # clear cause, not hang until the job timeout. Retries cover transient GitHub
+    # blips; the checksum below is what covers the bytes.
+    - curl -fsSL --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 5 --retry-connrefused -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
     - echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
     - tar xzf mcp-publisher.tar.gz mcp-publisher
     # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
