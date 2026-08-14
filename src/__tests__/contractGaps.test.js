@@ -315,6 +315,11 @@ describe('T1 Contract-Gap: cross-tool invariants', () => {
         return srv;
     }
 
+    test('S2: registered tool count is exactly 15', () => {
+        const srv = registerAllTools();
+        expect(srv.tool.mock.calls.length).toBe(15);
+    });
+
     test('TP-5: no tool description matches /fullaccess/i', () => {
         const srv = registerAllTools();
         for (const [name, description] of srv.tool.mock.calls) {
