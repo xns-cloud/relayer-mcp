@@ -8,43 +8,70 @@ describe('verify_storage', () => {
         jest.resetModules();
     });
 
+    const defaultDockerUtil = {
+        getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+    };
+
+    function createMintingHttpMock(overrides = {}) {
+        const defaults = {
+            mint: { status: 200, data: { user_name: 'mcp-verify-test', access_key: 'ak-minted', secret_key: 'sk-minted', created_at: '2026-01-01' } },
+            policyCreate: { status: 200, data: { success: true, policy: {} } },
+            attach: { status: 200, data: { status: 'attached' } },
+            detach: { status: 200, data: { status: 'detached' } },
+            deleteUser: { status: 200, data: {} },
+            deletePolicy: { status: 200, data: { status: 'deleted' } },
+        };
+        const r = { ...defaults, ...overrides };
+
+        return {
+            post: jest.fn().mockImplementation(async (url) => {
+                if (url.endsWith('/mc/policy-create')) return r.policyCreate;
+                if (url.endsWith('/mc/policy-detach')) return r.detach;
+                if (url.endsWith('/mc/policy')) return r.attach;
+                if (url.endsWith('/mc/user')) return r.mint;
+                return { status: 404, data: {} };
+            }),
+            del: jest.fn().mockImplementation(async (url) => {
+                if (url.includes('/mc/user/')) return r.deleteUser;
+                if (url.includes('/mc/policy/')) return r.deletePolicy;
+                return { status: 404, data: {} };
+            }),
+            get: jest.fn(),
+        };
+    }
+
+    function createPassingS3Mock() {
+        let capturedContent;
+        return {
+            createBucket: jest.fn().mockResolvedValue(undefined),
+            putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
+            getObject: jest.fn().mockImplementation(async () => capturedContent),
+            deleteObject: jest.fn().mockResolvedValue(undefined),
+            deleteBucket: jest.fn().mockResolvedValue(undefined),
+        };
+    }
+
     function registerWithOptions(opts) {
         const register = require('../tools/verifyStorage');
         register(server, {
-            // Default dockerUtil fake: local daemon. Tests never exec the real docker CLI.
-            dockerUtil: {
-                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
-            },
+            dockerUtil: defaultDockerUtil,
             ...opts,
         });
         return server.tool.mock.calls[0][3];
     }
 
-    // TP-27: AC-20 — targets localhost:9000 plain HTTP, reports endpoint
-    test('success → reports endpoint and test bucket', async () => {
-        const register = require('../tools/verifyStorage');
-        server.tool.mockReset();
+    // --- TP-1: AC-1 happy path — mint only, no keys ---
 
-        let capturedContent;
-        register(server, {
-            dockerUtil: {
-                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
-            },
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => {
-                    capturedContent = body;
-                }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
+    test('mint path happy: round-trip passes with only muse_token', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
         });
 
-        const handler = server.tool.mock.calls[0][3];
         const result = await handler({
-            access_key_id: 'test-key',
-            secret_access_key: 'test-secret',
+            muse_token: 'test-jwt',
             endpoint: 'http://localhost:9000',
         });
         const parsed = JSON.parse(result.content[0].text);
@@ -52,11 +79,165 @@ describe('verify_storage', () => {
         expect(parsed.success).toBe(true);
         expect(parsed.endpoint).toBe('http://localhost:9000');
         expect(parsed.message).toContain('localhost:9000');
+        expect(result.isError).toBeUndefined();
     });
 
-    // TP-28: AC-21 — CreateBucket failure names the step
-    test('CreateBucket failure → names failing step', async () => {
+    test('mint path: sends keycloaktoken header on mint call', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+        });
+
+        await handler({ muse_token: 'my-jwt', endpoint: 'http://localhost:9000' });
+
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/user'));
+        expect(mintCall).toBeDefined();
+        expect(mintCall[2].headers.keycloaktoken).toBe('my-jwt');
+    });
+
+    test('mint path: uses minted credentials for S3 client', async () => {
+        let capturedCreds;
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: (cfg) => {
+                capturedCreds = cfg;
+                return createPassingS3Mock();
+            },
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        expect(capturedCreds.accessKeyId).toBe('ak-minted');
+        expect(capturedCreds.secretAccessKey).toBe('sk-minted');
+    });
+
+    // --- TP-2: AC-3/4 teardown on fail + step naming ---
+
+    test('TP-2: GetObject failure names step and runs teardown', async () => {
+        const deleteObject = jest.fn().mockResolvedValue(undefined);
+        const deleteBucket = jest.fn().mockResolvedValue(undefined);
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => ({
+                createBucket: jest.fn().mockResolvedValue(undefined),
+                putObject: jest.fn().mockResolvedValue(undefined),
+                getObject: jest.fn().mockRejectedValue(new Error('get failed')),
+                deleteObject,
+                deleteBucket,
+            }),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('GetObject');
+        expect(parsed.error).toContain('GetObject');
+        expect(result.isError).toBe(true);
+
+        expect(deleteBucket).toHaveBeenCalled();
+        const detachCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/policy-detach'));
+        expect(detachCall).toBeDefined();
+        expect(httpMock.del).toHaveBeenCalled();
+    });
+
+    // --- TP-3: AC-4 teardown failure non-fatal ---
+
+    test('TP-3: cleanup error is non-fatal — pass stays pass, warning added', async () => {
+        const s3 = createPassingS3Mock();
+        s3.deleteObject = jest.fn().mockRejectedValue(new Error('cleanup denied'));
+        s3.deleteBucket = jest.fn().mockRejectedValue(new Error('cleanup denied'));
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.cleanup_warning).toMatch(/cleanup failed/i);
+    });
+
+    // --- Mint step failures ---
+
+    test('MintUser failure names failing step', async () => {
+        const httpMock = createMintingHttpMock({
+            mint: { status: 403, data: { message: 'Forbidden' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('MintUser');
+        expect(parsed.error).toContain('MintUser');
+        expect(result.isError).toBe(true);
+    });
+
+    test('CreatePolicy failure names failing step', async () => {
+        const httpMock = createMintingHttpMock({
+            policyCreate: { status: 200, data: { success: false, message: 'policy error' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('CreatePolicy');
+        expect(parsed.error).toContain('CreatePolicy');
+    });
+
+    test('CreatePolicy failure cleans up minted user', async () => {
+        const httpMock = createMintingHttpMock({
+            policyCreate: { status: 200, data: { success: false, message: 'policy error' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
+        expect(deleteUserCall).toBeDefined();
+    });
+
+    test('AttachPolicy failure names failing step', async () => {
+        const httpMock = createMintingHttpMock({
+            attach: { status: 200, data: { status: 'error', message: 'attach failed' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('AttachPolicy');
+    });
+
+    // --- S3 round-trip step naming ---
+
+    test('CreateBucket failure names failing step', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
             createS3Client: () => ({
                 createBucket: jest.fn().mockRejectedValue(new Error('bucket create denied')),
                 putObject: jest.fn(),
@@ -66,22 +247,18 @@ describe('verify_storage', () => {
             }),
         });
 
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('CreateBucket');
-        expect(parsed.error).toContain('CreateBucket');
         expect(result.isError).toBe(true);
     });
 
-    // TP-28: PutObject failure names the step
-    test('PutObject failure → names failing step', async () => {
+    test('PutObject failure names failing step', async () => {
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
+            httpClient: httpMock,
             createS3Client: () => ({
                 createBucket: jest.fn().mockResolvedValue(undefined),
                 putObject: jest.fn().mockRejectedValue(new Error('put failed')),
@@ -91,43 +268,17 @@ describe('verify_storage', () => {
             }),
         });
 
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('PutObject');
     });
 
-    // TP-29: GetObject failure names the step
-    test('GetObject failure → names failing step', async () => {
+    test('content mismatch names Compare step', async () => {
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockResolvedValue(undefined),
-                getObject: jest.fn().mockRejectedValue(new Error('get failed')),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
-        });
-
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
-        const parsed = JSON.parse(result.content[0].text);
-
-        expect(parsed.success).toBe(false);
-        expect(parsed.failing_step).toBe('GetObject');
-    });
-
-    // Content mismatch → names Compare step
-    test('content mismatch → names Compare step', async () => {
-        const handler = registerWithOptions({
+            httpClient: httpMock,
             createS3Client: () => ({
                 createBucket: jest.fn().mockResolvedValue(undefined),
                 putObject: jest.fn().mockResolvedValue(undefined),
@@ -137,41 +288,118 @@ describe('verify_storage', () => {
             }),
         });
 
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('Compare');
     });
 
-    // --- Remote Docker host (homelab feedback: Claude Code on a jump host) ---
+    // --- Teardown order verification ---
 
-    // No endpoint given → default targets port 9000 on the machine the Docker
-    // daemon runs on, not blindly localhost.
-    test('no endpoint + remote docker → defaults to remote host:9000', async () => {
+    test('successful mint path: teardown calls detach, delete user, delete policy', async () => {
+        const s3 = createPassingS3Mock();
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => s3,
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        expect(s3.deleteObject).toHaveBeenCalled();
+        expect(s3.deleteBucket).toHaveBeenCalled();
+
+        const detachCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/policy-detach'));
+        expect(detachCall).toBeDefined();
+
+        const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
+        expect(deleteUserCall).toBeDefined();
+
+        const deletePolicyCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/policy/'));
+        expect(deletePolicyCall).toBeDefined();
+    });
+
+    // --- Passthrough path ---
+
+    test('passthrough: access_key_id + secret_access_key skip minting', async () => {
+        const httpMock = { post: jest.fn(), del: jest.fn(), get: jest.fn() };
+        let capturedCreds;
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: (cfg) => {
+                capturedCreds = cfg;
+                return createPassingS3Mock();
+            },
+        });
+
+        const result = await handler({
+            muse_token: 'jwt',
+            access_key_id: 'operator-ak',
+            secret_access_key: 'operator-sk',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(capturedCreds.accessKeyId).toBe('operator-ak');
+        expect(capturedCreds.secretAccessKey).toBe('operator-sk');
+        expect(httpMock.post).not.toHaveBeenCalledWith(
+            expect.stringContaining('/mc/user'),
+            expect.anything(),
+            expect.anything()
+        );
+    });
+
+    test('passthrough: muse_token not required when keys provided', async () => {
+        const handler = registerWithOptions({
+            httpClient: { post: jest.fn(), del: jest.fn(), get: jest.fn() },
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({
+            access_key_id: 'ak',
+            secret_access_key: 'sk',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
+    // --- Missing muse_token ---
+
+    test('missing muse_token without keys reports init error', async () => {
+        const handler = registerWithOptions({
+            httpClient: createMintingHttpMock(),
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('muse_token is required');
+        expect(result.isError).toBe(true);
+    });
+
+    // --- Remote Docker host ---
+
+    test('no endpoint + remote docker: defaults to remote host:9000', async () => {
         let capturedEndpoint;
-        let capturedContent;
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
             },
+            httpClient: httpMock,
             createS3Client: (cfg) => {
                 capturedEndpoint = cfg.endpoint;
-                return {
-                    createBucket: jest.fn().mockResolvedValue(undefined),
-                    putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                    getObject: jest.fn().mockImplementation(async () => capturedContent),
-                    deleteObject: jest.fn().mockResolvedValue(undefined),
-                    deleteBucket: jest.fn().mockResolvedValue(undefined),
-                };
+                return createPassingS3Mock();
             },
         });
 
-        const result = await handler({ access_key_id: 'k', secret_access_key: 's' });
+        const result = await handler({ muse_token: 'jwt' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(true);
@@ -179,41 +407,17 @@ describe('verify_storage', () => {
         expect(parsed.endpoint).toBe('http://docker-box.lan:9000');
     });
 
-    // Malformed endpoint is rejected at the zod boundary — never reaches S3.
-    test('malformed endpoint → schema validation rejects before S3', () => {
-        const { z } = require('zod');
-        const createS3Client = jest.fn();
-        registerWithOptions({ createS3Client });
-        const shape = server.tool.mock.calls[0][2];
-
-        const parsed = z.object(shape).safeParse({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'not a url',
-        });
-
-        expect(parsed.success).toBe(false);
-        expect(createS3Client).not.toHaveBeenCalled();
-    });
-
-    // Explicit endpoint always wins — docker detection is not even consulted.
-    test('explicit endpoint → docker host detection not consulted', async () => {
+    test('explicit endpoint: docker host detection not consulted', async () => {
         const getDockerHost = jest.fn();
-        let capturedContent;
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
             dockerUtil: { getDockerHost },
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
         });
 
         const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
+            muse_token: 'jwt',
             endpoint: 'http://10.0.0.7:19000',
         });
         const parsed = JSON.parse(result.content[0].text);
@@ -223,154 +427,61 @@ describe('verify_storage', () => {
         expect(getDockerHost).not.toHaveBeenCalled();
     });
 
-    // --- W3-AC1: Self-cleanup (finally-style) ---
+    // --- Endpoint validation ---
 
-    // On success: bucket and object are removed; response is still success.
-    test('cleanup-on-success: deleteObject + deleteBucket called, result still passes', async () => {
-        let capturedContent;
-        const deleteObject = jest.fn().mockResolvedValue(undefined);
-        const deleteBucket = jest.fn().mockResolvedValue(undefined);
-        const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject,
-                deleteBucket,
-            }),
+    test('malformed endpoint rejected at zod boundary', () => {
+        const { z } = require('zod');
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
+        const shape = server.tool.mock.calls[0][2];
+
+        const parsed = z.object(shape).safeParse({
+            muse_token: 'jwt',
+            endpoint: 'not a url',
         });
-
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
-        const parsed = JSON.parse(result.content[0].text);
-
-        expect(parsed.success).toBe(true);
-        expect(deleteObject).toHaveBeenCalledTimes(1);
-        expect(deleteBucket).toHaveBeenCalledTimes(1);
-        // Cleanup succeeded — no warning in the response
-        expect(parsed.cleanup_warning).toBeUndefined();
-    });
-
-    // On failure (e.g. GetObject throws): cleanup runs, result is still fail.
-    test('cleanup-on-failure: cleanup runs after GetObject error, result stays fail', async () => {
-        const deleteObject = jest.fn().mockResolvedValue(undefined);
-        const deleteBucket = jest.fn().mockResolvedValue(undefined);
-        const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockResolvedValue(undefined),
-                getObject: jest.fn().mockRejectedValue(new Error('get failed')),
-                deleteObject,
-                deleteBucket,
-            }),
-        });
-
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
-        const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
-        expect(result.isError).toBe(true);
-        // Cleanup was attempted
-        expect(deleteBucket).toHaveBeenCalledTimes(1);
     });
 
-    // Cleanup failure is non-fatal — a passing verify stays passing.
-    test('cleanup error is non-fatal: pass stays pass, warning added', async () => {
-        let capturedContent;
-        const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject: jest.fn().mockRejectedValue(new Error('cleanup denied')),
-                deleteBucket: jest.fn().mockRejectedValue(new Error('cleanup denied')),
-            }),
-        });
+    // --- Description checks ---
 
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
-        const parsed = JSON.parse(result.content[0].text);
-
-        // The verify PASSED — cleanup failure must not flip this.
-        expect(parsed.success).toBe(true);
-        // A warning is present so the user knows about the leftover bucket.
-        expect(parsed.cleanup_warning).toMatch(/cleanup failed|remain/i);
-    });
-
-    // --- W3-AC2: fullaccess requirement in description and failure output ---
-
-    test('tool description mentions fullaccess credentials', () => {
-        registerWithOptions({
-            createS3Client: jest.fn(),
-        });
+    test('tool description does not mention fullaccess', () => {
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
         const description = server.tool.mock.calls[0][1];
-        expect(description).toMatch(/fullaccess/i);
+        expect(description.toLowerCase()).not.toContain('fullaccess');
     });
 
-    test('AccessDenied error includes fullaccess credential hint in output', async () => {
-        const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockRejectedValue(new Error('AccessDenied: insufficient permissions')),
-                putObject: jest.fn(),
-                getObject: jest.fn(),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
-        });
-
-        const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
-            endpoint: 'http://localhost:9000',
-        });
-        const parsed = JSON.parse(result.content[0].text);
-
-        expect(parsed.success).toBe(false);
-        // The failure output must reference fullaccess
-        expect(JSON.stringify(parsed)).toMatch(/fullaccess/i);
+    test('tool description mentions OIDC/automatic provisioning', () => {
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
+        const description = server.tool.mock.calls[0][1];
+        expect(description).toMatch(/automatic|OIDC|provision/i);
     });
 
-    // --- W3-AC3: explicit-IP hint when endpoint was auto-detected ---
+    // --- Auto-detected endpoint hints ---
 
-    test('auto-detected endpoint + success → explicit-IP guidance note in output', async () => {
-        let capturedContent;
+    test('auto-detected endpoint + success: explicit-IP note in output', async () => {
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: '192.168.1.50', endpoint: 'ssh://user@192.168.1.50' }),
             },
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
         });
 
-        // No explicit endpoint passed — auto-detection runs.
-        const result = await handler({ access_key_id: 'k', secret_access_key: 's' });
+        const result = await handler({ muse_token: 'jwt' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(true);
-        // Output includes guidance on passing an explicit endpoint IP
         expect(JSON.stringify(parsed)).toMatch(/endpoint|explicit|ip/i);
     });
 
-    test('auto-detected endpoint + failure → explicit-IP guidance in error output', async () => {
+    test('auto-detected endpoint + failure: explicit-IP hint in error', async () => {
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
             dockerUtil: {
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
             },
+            httpClient: httpMock,
             createS3Client: () => ({
                 createBucket: jest.fn().mockRejectedValue(new Error('connection refused')),
                 putObject: jest.fn(),
@@ -380,36 +491,66 @@ describe('verify_storage', () => {
             }),
         });
 
-        // No explicit endpoint — auto-detection ran.
-        const result = await handler({ access_key_id: 'k', secret_access_key: 's' });
+        const result = await handler({ muse_token: 'jwt' });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
-        // The error output must include the explicit-IP hint
         expect(parsed.error).toMatch(/endpoint|explicit|ip/i);
     });
 
-    test('explicit endpoint passed → no explicit-IP hint added', async () => {
-        let capturedContent;
+    test('explicit endpoint passed: no explicit-IP hint', async () => {
+        const httpMock = createMintingHttpMock();
         const handler = registerWithOptions({
-            createS3Client: () => ({
-                createBucket: jest.fn().mockResolvedValue(undefined),
-                putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-                getObject: jest.fn().mockImplementation(async () => capturedContent),
-                deleteObject: jest.fn().mockResolvedValue(undefined),
-                deleteBucket: jest.fn().mockResolvedValue(undefined),
-            }),
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
         });
 
         const result = await handler({
-            access_key_id: 'k',
-            secret_access_key: 's',
+            muse_token: 'jwt',
             endpoint: 'http://10.0.0.7:9000',
         });
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(true);
-        // No note about explicit-IP when user already supplied it
         expect(parsed.note).toBeUndefined();
+    });
+
+    // --- Schema checks ---
+
+    test('access_key_id and secret_access_key are optional in schema', () => {
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
+        const schema = server.tool.mock.calls[0][2];
+        expect(schema.access_key_id.isOptional()).toBe(true);
+        expect(schema.secret_access_key.isOptional()).toBe(true);
+    });
+
+    test('muse_token is optional in schema', () => {
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
+        const schema = server.tool.mock.calls[0][2];
+        expect(schema.muse_token.isOptional()).toBe(true);
+    });
+
+    // --- Scoped policy document ---
+
+    test('mint path creates a scoped policy restricted to mcp-verify-* buckets', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        const policyCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/policy-create'));
+        expect(policyCall).toBeDefined();
+        const [, body] = policyCall;
+        const doc = JSON.parse(body.json);
+        expect(doc.Statement[0].Resource).toContain('arn:aws:s3:::mcp-verify-*');
+        expect(doc.Statement[0].Resource).toContain('arn:aws:s3:::mcp-verify-*/*');
+        expect(doc.Statement[0].Action).toContain('s3:CreateBucket');
+        expect(doc.Statement[0].Action).toContain('s3:DeleteBucket');
+        expect(doc.Statement[0].Action).toContain('s3:PutObject');
+        expect(doc.Statement[0].Action).toContain('s3:GetObject');
+        expect(doc.Statement[0].Action).toContain('s3:DeleteObject');
     });
 });

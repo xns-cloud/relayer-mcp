@@ -288,6 +288,35 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
     });
 });
 
+describe('T1 Contract-Gap: cross-tool fullaccess regression (TP-5)', () => {
+    test('no tool description matches /fullaccess/i', () => {
+        const server = { tool: jest.fn() };
+        const toolModules = [
+            '../tools/checkPrerequisites',
+            '../tools/registerAccount',
+            '../tools/checkEmailVerified',
+            '../tools/installRelayer',
+            '../tools/checkRelayerHealth',
+            '../tools/startClaim',
+            '../tools/checkClaimStatus',
+            '../tools/getHostTags',
+            '../tools/configureVpd',
+            '../tools/verifyStorage',
+            '../tools/setupCliCredentials',
+            '../tools/describeSettings',
+            '../tools/updateSettings',
+            '../tools/restartService',
+            '../tools/manageBackups',
+        ];
+        for (const mod of toolModules) {
+            require(mod)(server);
+        }
+        for (const [name, description] of server.tool.mock.calls) {
+            expect(description.toLowerCase()).not.toContain('fullaccess');
+        }
+    });
+});
+
 describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
     let server;
 
