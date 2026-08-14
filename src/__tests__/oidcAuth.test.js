@@ -263,7 +263,7 @@ describe('oidcAuth', () => {
         test('invalid timeoutMs values fall back to the 30-minute default (CR MR29)', async () => {
             jest.useFakeTimers();
             try {
-                for (const bad of [-5, 0, 'abc', NaN]) {
+                for (const bad of [-5, 0, 'abc', NaN, 1.5, 2 ** 31]) {
                     const mockServer = {
                         listen: jest.fn((port, host, cb) => cb()),
                         address: jest.fn(() => ({ port: 12345 })),

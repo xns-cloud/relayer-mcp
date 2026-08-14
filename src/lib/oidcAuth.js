@@ -217,7 +217,9 @@ function captureAuthCode(opts) {
             // after that would never be cleared, pinning the process open.
             // 5 minutes proved too short for a human who gets interrupted
             // (FT-1, 2026-08-14); invalid overrides fall back to the default.
-            const timeoutMs = (Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0)
+            // Node clamps timer values above 2^31-1 to ~1ms and truncates
+            // fractions — accept only positive safe integers in timer range.
+            const timeoutMs = (Number.isInteger(opts.timeoutMs) && opts.timeoutMs > 0 && opts.timeoutMs <= 0x7fffffff)
                 ? opts.timeoutMs
                 : DEFAULT_SIGNIN_TIMEOUT_MS;
             timeoutHandle = setTimeout(() => {
