@@ -57,7 +57,7 @@ module.exports = function registerCheckEmailVerified(server, options = {}) {
                             done: true,
                             result: {
                                 success: false,
-                                message: `No account found for ${email}. Use register_account first.`,
+                                message: `No account found for ${email}. Use start_registration first.`,
                                 exists: false,
                                 verified: false,
                             },
@@ -82,7 +82,7 @@ module.exports = function registerCheckEmailVerified(server, options = {}) {
                             done: true,
                             result: {
                                 success: false,
-                                message: `No account found for ${email}. Use register_account to create an account first.`,
+                                message: `No account found for ${email}. Use start_registration to create an account first.`,
                                 verified: false,
                                 exists: false,
                             },
