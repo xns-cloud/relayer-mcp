@@ -278,6 +278,37 @@ describe('check_prerequisites', () => {
         expect(ephCheck.remediation).toContain('persistent');
     });
 
+    test('remote docker + ephemeral environment: message names remote host, not local install', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+            environmentProbe: () => ({
+                ephemeral: true,
+                signals: ['/.dockerenv exists', 'systemd is absent'],
+            }),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const ephCheck = parsed.checks.find((c) => c.name === 'ephemeral_environment');
+        expect(ephCheck.passed).toBe(true);
+        expect(ephCheck.warning).toBe(true);
+        expect(ephCheck.detail).toContain('remote host');
+        expect(ephCheck.detail).toContain('docker-box.lan');
+        expect(ephCheck.detail).not.toContain('will be lost');
+        expect(ephCheck.remediation).toContain('remote Docker host');
+    });
+
     test('non-ephemeral environment: no warning', async () => {
         const handler = registerWithOptions({
             dockerUtil: {

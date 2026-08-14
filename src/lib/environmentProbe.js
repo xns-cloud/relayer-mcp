@@ -12,10 +12,12 @@ const nodeFs = require('fs');
  *
  * @param {object} [options]
  * @param {object} [options.fs] - Injected fs module (testing)
+ * @param {number} [options.pid] - Override process PID (testing; avoids false PID-1 signal in CI containers)
  * @returns {{ ephemeral: boolean, signals: string[] }}
  */
 function environmentProbe(options = {}) {
     const fs = options.fs || nodeFs;
+    const pid = options.pid ?? process.pid;
     const signals = [];
 
     try {
@@ -34,7 +36,7 @@ function environmentProbe(options = {}) {
         // Not readable — not a signal
     }
 
-    if (process.pid === 1) {
+    if (pid === 1) {
         signals.push('Process is PID 1');
     }
 

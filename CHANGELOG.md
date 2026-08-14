@@ -8,15 +8,22 @@
   Called with just your OIDC session (`muse_token`), the tool mints a throwaway IAM
   user with a policy scoped to `mcp-verify-*` test buckets, runs the round-trip, and
   deletes the user, the policy, and the test bucket afterwards — pass or fail. A
-  cleanup step that fails says so in a `cleanup_warning` (including failures the
-  server reports politely in a response body, not just network errors) and never
-  turns a passing verification into a failure. Operators who genuinely hold keys can
+  cleanup step that cannot complete says so in a `cleanup_warning` (including
+  failures the server reports in a response body, not just network errors) and
+  never turns a passing verification into a failure. Intent-flagged resources are
+  always cleaned up even when the response was lost (timeout, socket reset). Operators who genuinely hold keys can
   still pass `access_key_id`/`secret_access_key` to skip provisioning entirely. The
   word "fullaccess" no longer appears anywhere in the tool surface, and a regression
   test keeps it that way.
 
-- **Mint failures now repeat the server's actual reason** ("user already exists",
-  "cost_center is required") instead of a generic missing-keys message.
+- **Mint and provisioning failures name the failing step; full detail goes to the
+  server log** rather than the tool response (agent-context hygiene — no provider
+  error text is returned to the MCP client). Cleanup warnings use the same pattern.
+
+- **`relayer_ui_url` must point at a loopback or private-network host** (localhost,
+  127.0.0.0/8, ::1, 10/8, 172.16/12, 192.168/16, or *.local) and is URL-validated
+  at the Zod schema boundary. A public-internet URL is rejected before any request
+  carrying the token.
 
 ### Added
 

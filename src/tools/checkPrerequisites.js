@@ -125,12 +125,17 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             try {
                 const probe = _environmentProbe();
                 if (probe.ephemeral) {
+                    const remoteDocker = dockerHost.remote;
                     checks.push({
                         name: 'ephemeral_environment',
                         passed: true,
                         warning: true,
-                        detail: `This environment appears to be ephemeral (${probe.signals.join('; ')}). A Relayer installed here will be lost when the container exits.`,
-                        remediation: 'Install on a persistent Docker host instead. If you are running from a sandbox or CI, use an SSH Docker context to target a persistent machine: docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
+                        detail: remoteDocker
+                            ? `This environment appears to be ephemeral (${probe.signals.join('; ')}), but Docker targets a remote host (${dockerHost.host}). Persistence depends on the remote Docker host.`
+                            : `This environment appears to be ephemeral (${probe.signals.join('; ')}). A Relayer installed here will be lost when the container exits.`,
+                        remediation: remoteDocker
+                            ? 'The Relayer will be installed on the remote Docker host. Verify that host has persistent storage.'
+                            : 'Install on a persistent Docker host instead. If you are running from a sandbox or CI, use an SSH Docker context to target a persistent machine: docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
                     });
                 } else {
                     checks.push({ name: 'ephemeral_environment', passed: true, detail: 'Environment appears persistent — install will survive restarts' });

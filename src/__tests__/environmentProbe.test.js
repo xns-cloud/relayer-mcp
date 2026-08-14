@@ -27,6 +27,7 @@ describe('environmentProbe', () => {
         const { environmentProbe } = require('../lib/environmentProbe');
         const result = environmentProbe({
             fs: createFakeFs({ dockerenv: true, systemd: false }),
+            pid: 42,
         });
 
         expect(result.ephemeral).toBe(true);
@@ -40,6 +41,7 @@ describe('environmentProbe', () => {
                 cgroupContent: '12:devices:/docker/abc123\n',
                 systemd: false,
             }),
+            pid: 42,
         });
 
         expect(result.ephemeral).toBe(true);
@@ -55,6 +57,7 @@ describe('environmentProbe', () => {
         const { environmentProbe } = require('../lib/environmentProbe');
         const result = environmentProbe({
             fs: createFakeFs({ systemd: true }),
+            pid: 42,
         });
 
         expect(result.ephemeral).toBe(false);
@@ -64,6 +67,7 @@ describe('environmentProbe', () => {
         const { environmentProbe } = require('../lib/environmentProbe');
         const result = environmentProbe({
             fs: createFakeFs({ dockerenv: true, systemd: true }),
+            pid: 42,
         });
 
         expect(result.ephemeral).toBe(false);
@@ -77,6 +81,7 @@ describe('environmentProbe', () => {
                 cgroupContent: '1:name=systemd:/kubepods/burstable/pod123\n',
                 systemd: false,
             }),
+            pid: 42,
         });
 
         expect(result.ephemeral).toBe(true);
@@ -91,6 +96,7 @@ describe('environmentProbe', () => {
         const { environmentProbe } = require('../lib/environmentProbe');
         const result = environmentProbe({
             fs: createFakeFs({ dockerenv: true, systemd: false }),
+            pid: 42,
         });
 
         for (const sig of result.signals) {
