@@ -94,11 +94,18 @@ mcp-registry:
         echo "MCP_REGISTRY_KEY is not set — see PUBLISHING.md. Aborting."
         exit 1
       fi
-    # Pinned, not `latest`: a release is the wrong moment to discover a CLI change.
-    - curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+    # Pinned by version AND by content digest, then verified before anything is
+    # extracted or run. A version tag alone is not a guarantee — GitHub release
+    # assets can be replaced in place, and this binary is executed in a job where
+    # MCP_REGISTRY_KEY is in scope. Bumping the CLI means changing both values.
+    - curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+    - echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+    - tar xzf mcp-publisher.tar.gz mcp-publisher
     # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
     # verifies it against the public key served at the .well-known URL on xns.tech.
     - ./mcp-publisher login http --domain=xns.tech --private-key="${MCP_REGISTRY_KEY}"
     - ./mcp-publisher publish
   variables:
     MCP_PUBLISHER_VERSION: "1.8.1"
+    # sha256 of mcp-publisher_linux_amd64.tar.gz at the version above.
+    MCP_PUBLISHER_SHA256: "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
