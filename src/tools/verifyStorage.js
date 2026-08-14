@@ -74,12 +74,12 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         const detail = mintData?.message || mintData?.error || JSON.stringify(mintData);
                         throw new Error(`Mint user failed (HTTP ${mintStatus}): ${detail}`);
                     }
-                    effectiveAK = mintData.access_key;
-                    effectiveSK = mintData.secret_key;
+                    effectiveAK = mintData?.access_key;
+                    effectiveSK = mintData?.secret_key;
                     mintedUser = userName;
 
-                    if (mintData.success === false || !effectiveAK || !effectiveSK) {
-                        const msg = mintData.message || mintData.Message || mintData.error || mintData.Error || 'response missing access_key/secret_key';
+                    if (mintData?.success === false || !effectiveAK || !effectiveSK) {
+                        const msg = mintData?.message || mintData?.Message || mintData?.error || mintData?.Error || 'response missing access_key/secret_key';
                         throw new Error(`Mint user failed: ${msg}`);
                     }
 
