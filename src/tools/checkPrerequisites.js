@@ -3,6 +3,7 @@
 const net = require('net');
 const { createHttpClient } = require('../lib/httpClient');
 const { createDockerUtil } = require('../lib/dockerUtil');
+const { environmentProbe: defaultEnvironmentProbe } = require('../lib/environmentProbe');
 
 /**
  * Tool 1: check_prerequisites
@@ -32,6 +33,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     const docker = options.dockerUtil || createDockerUtil(options);
     const http = options.httpClient || createHttpClient(options);
     const _checkPort = options.checkPort || checkPort;
+    const _environmentProbe = options.environmentProbe || defaultEnvironmentProbe;
 
     server.tool(
         'check_prerequisites',
@@ -117,6 +119,24 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 }
             } catch {
                 checks.push({ name: 'existing_install', passed: true, detail: 'Existing-install check skipped (Docker not reachable)' });
+            }
+
+            // 3c. Ephemeral environment — finding, never a failure.
+            try {
+                const probe = _environmentProbe();
+                if (probe.ephemeral) {
+                    checks.push({
+                        name: 'ephemeral_environment',
+                        passed: true,
+                        warning: true,
+                        detail: `This environment appears to be ephemeral (${probe.signals.join('; ')}). A Relayer installed here will be lost when the container exits.`,
+                        remediation: 'Install on a persistent Docker host instead. If you are running from a sandbox or CI, use an SSH Docker context to target a persistent machine: docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
+                    });
+                } else {
+                    checks.push({ name: 'ephemeral_environment', passed: true, detail: 'Environment appears persistent — install will survive restarts' });
+                }
+            } catch {
+                checks.push({ name: 'ephemeral_environment', passed: true, detail: 'Ephemeral-environment check skipped (probe error)' });
             }
 
             // 4. Disk space (need at least 10 GB free — basic docker images + data)

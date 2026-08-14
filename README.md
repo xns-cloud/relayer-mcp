@@ -26,6 +26,19 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 
 If you start the MCP on an older Node, it exits immediately with this same guidance instead of a dependency stack trace.
 
+## Environment
+
+The Relayer runs as a Docker container and persists its data in a Docker volume. If the MCP is running inside an ephemeral environment (a sandbox container, a CI runner, or a throwaway VM), any installation performed there will be lost when that environment exits. `check_prerequisites` detects this automatically and reports it as a warning with a concrete next step — it never blocks the flow.
+
+**If your environment is ephemeral**, install on a persistent Docker host instead. The easiest path from an ephemeral sandbox is an SSH Docker context:
+
+```bash
+docker context create relayer --docker "host=ssh://user@persistent-host"
+docker context use relayer
+```
+
+The MCP then drives the install on the persistent host through the SSH context. Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
+
 ## Install
 
 **Claude Code** (one command):

@@ -246,6 +246,62 @@ describe('check_prerequisites', () => {
         expect(existing.remediation).toContain('fresh installs only');
     });
 
+    // --- Ephemeral environment (TP-6) ---
+
+    test('ephemeral environment: warning with remediation, success stays true', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+            environmentProbe: () => ({
+                ephemeral: true,
+                signals: ['/.dockerenv exists', 'systemd is absent'],
+            }),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const ephCheck = parsed.checks.find((c) => c.name === 'ephemeral_environment');
+        expect(ephCheck.passed).toBe(true);
+        expect(ephCheck.warning).toBe(true);
+        expect(ephCheck.detail).toContain('ephemeral');
+        expect(ephCheck.remediation).toBeDefined();
+        expect(ephCheck.remediation).toContain('persistent');
+    });
+
+    test('non-ephemeral environment: no warning', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+            environmentProbe: () => ({ ephemeral: false, signals: [] }),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const ephCheck = parsed.checks.find((c) => c.name === 'ephemeral_environment');
+        expect(ephCheck.passed).toBe(true);
+        expect(ephCheck.warning).toBeUndefined();
+    });
+
     // No existing container → explicit all-clear entry.
     test('no existing container → existing_install reports ready', async () => {
         const handler = registerWithOptions({
