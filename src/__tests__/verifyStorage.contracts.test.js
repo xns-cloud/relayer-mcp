@@ -92,6 +92,25 @@ describe('verify_storage — contract gaps', () => {
         expect(deleteUserCall).toBeDefined();
     });
 
+    // --- S1: mint 200 {success:false} surfaces provider message ---
+
+    test('mint HTTP 200 with {success:false, message} surfaces provider message in error', async () => {
+        const httpMock = createMintingHttpMock({
+            mint: { status: 200, data: { success: false, message: 'user already exists' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('MintUser');
+        expect(parsed.error).toContain('user already exists');
+    });
+
     // --- Attach: proxy error-path body has no `status` key at all ---
 
     test('AttachPolicy failure: proxy error body {success:false, message} (no status field) is caught and surfaced', async () => {

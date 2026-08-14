@@ -78,8 +78,9 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     effectiveSK = mintData.secret_key;
                     mintedUser = userName;
 
-                    if (!effectiveAK || !effectiveSK) {
-                        throw new Error('Mint user succeeded but response missing access_key/secret_key');
+                    if (mintData.success === false || !effectiveAK || !effectiveSK) {
+                        const msg = mintData.message || mintData.Message || mintData.error || mintData.Error || 'response missing access_key/secret_key';
+                        throw new Error(`Mint user failed: ${msg}`);
                     }
 
                     currentStep = 'CreatePolicy';
