@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.8.1] — 2026-08-14
+
+### Fixed
+
+- **`verify_storage` no longer dead-ends when called without keys or a token
+  (BUG-366).** 0.8.0 required a `muse_token` parameter on the self-provisioning
+  path, but no tool ever hands the token to the agent — the OIDC session lives
+  inside the server. Found by the post-merge functional test; 0.8.0 was never
+  published to npm. The tool now reuses the sign-in session established by
+  `get_host_tags`/`configure_vpd`, or starts a browser sign-in itself;
+  `muse_token` remains as an explicit override.
+- **The browser sign-in window is now 30 minutes** (was a hard-coded 5, which
+  timed out real humans), overridable via `timeoutMs`.
+- **Messages this tool authors itself now reach the client** — input-validation
+  and sign-in-guidance text (e.g. the `relayer_ui_url` allowlist reason) is no
+  longer hidden behind "See server log for detail". Caught provider/response
+  text stays server-side, unchanged.
+- **Cleanup no longer cries wolf after a definitive mint refusal.** When the
+  server answers a mint with an HTTP error or `success:false`, no user exists,
+  so no cleanup is attempted and no `cleanup_warning` is emitted. Lost-response
+  cases (timeouts, socket resets) still attempt cleanup as before.
+- **OIDC callback pages declare `charset=utf-8`** — the em dash no longer
+  renders as mojibake in the browser.
+
 ## [0.8.0] — 2026-08-13
 
 ### Changed

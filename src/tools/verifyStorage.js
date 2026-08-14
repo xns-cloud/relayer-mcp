@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { createS3Client } = require('../lib/s3Client');
 const { createDockerUtil } = require('../lib/dockerUtil');
 const { createHttpClient } = require('../lib/httpClient');
+const { createTokenManager } = require('../lib/ensureToken');
 
 /**
  * Tool 10: verify_storage
@@ -57,6 +58,14 @@ function validateHostAllowlist(urlString) {
 
 const NO_REDIRECT_TOKEN_CONFIG = { maxRedirects: 0 };
 
+/**
+ * An error whose message is authored by this tool (no caught provider text)
+ * and therefore safe to return to the MCP client verbatim.
+ */
+function safeError(message) {
+    return Object.assign(new Error(message), { userSafe: true });
+}
+
 function isNotFoundResponse(msg) {
     if (typeof msg !== 'string') return false;
     return /not.found|does.not.exist/i.test(msg);
@@ -66,12 +75,13 @@ module.exports = function registerVerifyStorage(server, options = {}) {
     const _createS3Client = options.createS3Client || createS3Client;
     const docker = options.dockerUtil || createDockerUtil(options);
     const http = options.httpClient || createHttpClient(options);
+    const tokenMgr = createTokenManager(options);
 
     server.tool(
         'verify_storage',
         'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
         {
-            muse_token: z.string().optional().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd. Required when access_key_id and secret_access_key are not provided.'),
+            muse_token: z.string().optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
             access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
             secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
             relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
@@ -104,7 +114,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
             try {
                 const hostCheck = validateHostAllowlist(baseUrl);
                 if (!hostCheck.allowed) {
-                    throw new Error(`relayer_ui_url rejected: ${hostCheck.reason}`);
+                    throw safeError(`relayer_ui_url rejected: ${hostCheck.reason}`);
                 }
 
                 if (!endpoint) {
@@ -117,7 +127,17 @@ module.exports = function registerVerifyStorage(server, options = {}) {
 
                 if (!usePassthrough) {
                     if (!muse_token) {
-                        throw new Error('muse_token is required when access_key_id and secret_access_key are not provided');
+                        // BUG-366: reuse the OIDC session get_host_tags/configure_vpd
+                        // established (shared token state), or start a browser sign-in.
+                        // No tool emits the token, so requiring it as a parameter
+                        // dead-ended every agent on the no-keys path.
+                        currentStep = 'SignIn';
+                        try {
+                            muse_token = await tokenMgr.ensureToken();
+                        } catch (signInErr) {
+                            console.error(`[verify_storage] SignIn: ${signInErr.message}`);
+                            throw safeError('OIDC sign-in did not complete. Run get_host_tags first to sign in, or pass muse_token or access_key_id/secret_access_key.');
+                        }
                     }
 
                     currentStep = 'MintUser';
@@ -129,12 +149,22 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (mintStatus !== 200) {
+                        // Definitive refusal — the server answered, no user was
+                        // created, so a cleanup attempt would only cry wolf.
+                        // A thrown request (no response) keeps the intent flag.
+                        mintedUser = null;
                         throw new Error(`Mint user failed (HTTP ${mintStatus})`);
                     }
                     effectiveAK = mintData?.access_key;
                     effectiveSK = mintData?.secret_key;
 
-                    if (mintData?.success === false || !effectiveAK || !effectiveSK) {
+                    if (mintData?.success === false) {
+                        mintedUser = null;
+                        throw new Error('Mint user failed');
+                    }
+                    if (!effectiveAK || !effectiveSK) {
+                        // HTTP 200 without keys is ambiguous — the user may
+                        // exist, so keep the cleanup intent.
                         throw new Error('Mint user failed: response missing access_key/secret_key');
                     }
                     mintConfirmed = true;
@@ -166,9 +196,11 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (policyStatus !== 200) {
+                        policyCreated = false;
                         throw new Error(`Create policy failed (HTTP ${policyStatus})`);
                     }
                     if (!policyData?.success) {
+                        policyCreated = false;
                         throw new Error('Create policy failed');
                     }
                     policyConfirmed = true;
@@ -181,9 +213,11 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (attachStatus !== 200) {
+                        policyAttached = false;
                         throw new Error(`Attach policy failed (HTTP ${attachStatus})`);
                     }
                     if (attachData?.status !== 'attached') {
+                        policyAttached = false;
                         throw new Error('Attach policy failed');
                     }
                     attachConfirmed = true;
@@ -232,9 +266,12 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                 const explicitIpHint = endpointAutoDetected
                     ? ' If the endpoint cannot be reached, pass an explicit IP via the endpoint option (e.g. "http://<ip>:9000").'
                     : '';
+                // Self-authored messages (userSafe) reach the client; anything
+                // that may carry provider/response text stays in the server log.
+                const detail = err.userSafe ? ` ${err.message}` : ' See server log for detail.';
                 result = {
                     success: false,
-                    error: `Storage verification failed at ${currentStep}. See server log for detail.${explicitIpHint}`,
+                    error: `Storage verification failed at ${currentStep}.${detail}${explicitIpHint}`,
                     endpoint,
                     failing_step: currentStep,
                 };

@@ -7,6 +7,7 @@ const { createHttpClient } = require('./httpClient');
 const DEFAULT_KEYCLOAK_URL = 'https://auth.xns.tech/auth';
 const DEFAULT_REALM = 'scprime';
 const DEFAULT_CLIENT_ID = 'relayer-native';
+const DEFAULT_SIGNIN_TIMEOUT_MS = 1800000; // 30 minutes
 
 /**
  * OIDC Authorization Code + PKCE (S256) token acquisition.
@@ -53,6 +54,7 @@ async function acquireToken(opts = {}) {
         challenge,
         openBrowser,
         createServer: _createServer,
+        timeoutMs: opts.timeoutMs,
     });
 
     // 5. Exchange code for tokens
@@ -157,7 +159,7 @@ function captureAuthCode(opts) {
 
             const error = url.searchParams.get('error');
             if (error) {
-                res.writeHead(400, { 'Content-Type': 'text/html' });
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Authentication failed</h1><p>You can close this window.</p></body></html>');
                 clearTimeout(timeoutHandle);
                 srv.close();
@@ -166,7 +168,7 @@ function captureAuthCode(opts) {
 
             const code = url.searchParams.get('code');
             if (!code) {
-                res.writeHead(400, { 'Content-Type': 'text/html' });
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Missing authorization code</h1></body></html>');
                 return; // Don't close server — wait for the real redirect
             }
@@ -174,14 +176,14 @@ function captureAuthCode(opts) {
             // R5-STATE-1: Validate OIDC state parameter to prevent CSRF
             const returnedState = url.searchParams.get('state');
             if (returnedState !== expectedState) {
-                res.writeHead(400, { 'Content-Type': 'text/html' });
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Invalid state parameter</h1><p>Possible CSRF attack. Please try again.</p></body></html>');
                 clearTimeout(timeoutHandle);
                 srv.close();
                 return reject(new Error('OIDC callback state mismatch — possible CSRF. Please try again.'));
             }
 
-            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end('<html><body><h1>Authentication successful</h1><p>You can close this window and return to the agent.</p></body></html>');
             clearTimeout(timeoutHandle);
 
@@ -216,11 +218,13 @@ function captureAuthCode(opts) {
             });
         });
 
-        // Timeout: 5 minutes for user to complete browser sign-in
+        // Timeout for the user to complete browser sign-in. 5 minutes proved
+        // too short for a human who gets interrupted (FT-1, 2026-08-14).
+        const timeoutMs = opts.timeoutMs ?? DEFAULT_SIGNIN_TIMEOUT_MS;
         timeoutHandle = setTimeout(() => {
             srv.close();
-            reject(new Error('OIDC sign-in timed out after 5 minutes. Please try again.'));
-        }, 300000);
+            reject(new Error(`OIDC sign-in timed out after ${Math.round(timeoutMs / 60000)} minutes. Please try again.`));
+        }, timeoutMs);
     });
 }
 

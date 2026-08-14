@@ -38,8 +38,11 @@ describe('verify_storage — contract gaps', () => {
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('MintUser');
         expect(result.isError).toBe(true);
+        // BUG-366: {success:false} is the provider's definitive "not created" —
+        // attempting cleanup (and warning on its failure) would cry wolf.
         const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
-        expect(deleteUserCall).toBeDefined();
+        expect(deleteUserCall).toBeUndefined();
+        expect(parsed.cleanup_warning).toBeUndefined();
     });
 
     // --- S1: mint 200 {success:false} — generic error, step named ---

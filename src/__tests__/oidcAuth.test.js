@@ -228,6 +228,60 @@ describe('oidcAuth', () => {
         });
     });
 
+    describe('BUG-366 fix set: sign-in window + charset', () => {
+        test('sign-in timeout defaults to 30 minutes and honors timeoutMs override', async () => {
+            jest.useFakeTimers();
+            try {
+                const mockServer = {
+                    listen: jest.fn((port, host, cb) => cb()),
+                    address: jest.fn(() => ({ port: 12345 })),
+                    close: jest.fn(),
+                };
+                const createServer = jest.fn(() => mockServer);
+                const openBrowser = jest.fn().mockResolvedValue(undefined);
+
+                const pDefault = acquireToken({ createServer, openBrowser, httpClient: { post: jest.fn() } });
+                pDefault.catch(() => {});
+                jest.advanceTimersByTime(300000);
+                // 5 minutes in: the old hard-coded window would have fired
+                let settled = false;
+                pDefault.then(() => { settled = true; }, () => { settled = true; });
+                await Promise.resolve();
+                expect(settled).toBe(false);
+                jest.advanceTimersByTime(1500001);
+                await expect(pDefault).rejects.toThrow('timed out after 30 minutes');
+
+                const pShort = acquireToken({ createServer, openBrowser, httpClient: { post: jest.fn() }, timeoutMs: 60000 });
+                pShort.catch(() => {});
+                jest.advanceTimersByTime(60001);
+                await expect(pShort).rejects.toThrow('timed out after 1 minute');
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        test('callback pages declare utf-8 charset (mojibake regression)', async () => {
+            const mockServer = {
+                listen: jest.fn((port, host, cb) => cb()),
+                address: jest.fn(() => ({ port: 12345 })),
+                close: jest.fn(),
+            };
+            let requestHandler;
+            const createServer = jest.fn((handler) => { requestHandler = handler; return mockServer; });
+            const writeHead = jest.fn();
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                const state = new URL(url).searchParams.get('state');
+                requestHandler({ url: `/callback?code=c&state=${state}` }, { writeHead, end: jest.fn() });
+            });
+            const httpClient = {
+                post: jest.fn().mockResolvedValue({ status: 200, data: { access_token: 'a', refresh_token: 'r', expires_in: 300 } }),
+            };
+
+            await acquireToken({ createServer, openBrowser, httpClient });
+            expect(writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        });
+    });
+
     describe('refreshToken', () => {
         test('refreshes and returns new token', async () => {
             const httpClient = {
