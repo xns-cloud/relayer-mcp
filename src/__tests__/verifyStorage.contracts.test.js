@@ -85,7 +85,7 @@ describe('verify_storage — contract gaps', () => {
 
     test('teardown: detach responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
-            detach: { status: 200, data: { success: false, message: 'user_name not found' } },
+            detach: { status: 200, data: { success: false, message: 'internal error during detach' } },
         });
         const handler = registerWithOptions({
             httpClient: httpMock,
@@ -101,7 +101,7 @@ describe('verify_storage — contract gaps', () => {
 
     test('teardown: delete-user responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
-            deleteUser: { status: 200, data: { success: false, message: 'not found' } },
+            deleteUser: { status: 200, data: { success: false, message: 'access denied' } },
         });
         const handler = registerWithOptions({
             httpClient: httpMock,
@@ -117,7 +117,7 @@ describe('verify_storage — contract gaps', () => {
 
     test('teardown: delete-policy responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
-            deletePolicy: { status: 200, data: { success: false, message: 'not found' } },
+            deletePolicy: { status: 200, data: { success: false, message: 'access denied' } },
         });
         const handler = registerWithOptions({
             httpClient: httpMock,

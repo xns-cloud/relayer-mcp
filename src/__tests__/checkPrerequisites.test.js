@@ -356,4 +356,71 @@ describe('check_prerequisites', () => {
         expect(existing.warning).toBeUndefined();
         expect(existing.detail).toContain('fresh install');
     });
+
+    // --- Docker host metadata guard ---
+
+    test('getDockerHost returns null → treated as local, no crash', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue(null),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const dockerCheck = parsed.checks.find((c) => c.name === 'docker');
+        expect(dockerCheck.passed).toBe(true);
+    });
+
+    test('getDockerHost returns undefined → treated as local, no crash', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue(undefined),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
+    test('getDockerHost returns partial metadata (missing host) → defaults applied', async () => {
+        const handler = registerWithOptions({
+            dockerUtil: {
+                docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                getDockerHost: jest.fn().mockResolvedValue({ remote: true }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+            httpClient: {
+                get: jest.fn().mockResolvedValue({ status: 200, data: {} }),
+                post: jest.fn(),
+            },
+            checkPort: jest.fn().mockResolvedValue(true),
+        });
+
+        const result = await handler({});
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+        const dockerCheck = parsed.checks.find((c) => c.name === 'docker');
+        expect(dockerCheck.passed).toBe(true);
+        expect(dockerCheck.detail).toContain('localhost');
+    });
 });

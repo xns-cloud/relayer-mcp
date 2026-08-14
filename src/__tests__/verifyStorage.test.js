@@ -696,4 +696,98 @@ describe('verify_storage', () => {
         const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
         expect(deleteUserCall).toBeDefined();
     });
+
+    // --- maxRedirects: 0 on token-bearing requests ---
+
+    test('token-bearing requests set maxRedirects 0 to prevent redirect-based token leak', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/user'));
+        expect(mintCall).toBeDefined();
+        expect(mintCall[2].maxRedirects).toBe(0);
+
+        const detachCall = httpMock.post.mock.calls.find(([url]) => url.endsWith('/mc/policy-detach'));
+        expect(detachCall).toBeDefined();
+        expect(detachCall[2].maxRedirects).toBe(0);
+    });
+
+    test('teardown delete calls set maxRedirects 0', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
+        expect(deleteUserCall).toBeDefined();
+        expect(deleteUserCall[1].maxRedirects).toBe(0);
+
+        const deletePolicyCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/policy/'));
+        expect(deletePolicyCall).toBeDefined();
+        expect(deletePolicyCall[1].maxRedirects).toBe(0);
+    });
+
+    // --- Lost-response orphan: cleanup warning when creation unconfirmed ---
+
+    test('lost mint response (transport throw) + failed user deletion → cleanup_warning present', async () => {
+        const httpMock = createMintingHttpMock();
+        const originalPost = httpMock.post;
+        httpMock.post = jest.fn().mockImplementation(async (url, ...rest) => {
+            if (url.endsWith('/mc/user')) {
+                throw new Error('socket hang up');
+            }
+            return originalPost(url, ...rest);
+        });
+        httpMock.del = jest.fn().mockImplementation(async (url) => {
+            if (url.includes('/mc/user/')) {
+                return { status: 200, data: { success: false, message: 'deletion failed' } };
+            }
+            return { status: 200, data: { status: 'deleted' } };
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.cleanup_warning).toMatch(/user cleanup failed/i);
+    });
+
+    test('lost mint response + user deletion returns not-found → no cleanup_warning', async () => {
+        const httpMock = createMintingHttpMock();
+        const originalPost = httpMock.post;
+        httpMock.post = jest.fn().mockImplementation(async (url, ...rest) => {
+            if (url.endsWith('/mc/user')) {
+                throw new Error('socket hang up');
+            }
+            return originalPost(url, ...rest);
+        });
+        httpMock.del = jest.fn().mockImplementation(async (url) => {
+            if (url.includes('/mc/user/')) {
+                return { status: 200, data: { success: false, message: 'user not found' } };
+            }
+            return { status: 200, data: { status: 'deleted' } };
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.cleanup_warning).toBeUndefined();
+    });
 });

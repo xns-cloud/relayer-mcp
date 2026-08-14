@@ -55,6 +55,13 @@ function validateHostAllowlist(urlString) {
     return { allowed: false, reason: `Host '${hostname}' is not a loopback, private-network, or .local address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
 }
 
+const NO_REDIRECT_TOKEN_CONFIG = { maxRedirects: 0 };
+
+function isNotFoundResponse(msg) {
+    if (typeof msg !== 'string') return false;
+    return /not.found|does.not.exist/i.test(msg);
+}
+
 module.exports = function registerVerifyStorage(server, options = {}) {
     const _createS3Client = options.createS3Client || createS3Client;
     const docker = options.dockerUtil || createDockerUtil(options);
@@ -119,7 +126,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     const { status: mintStatus, data: mintData } = await http.post(
                         `${baseUrl}/api/v1/mc/user`,
                         { user: userName },
-                        { headers: { keycloaktoken: muse_token } }
+                        { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (mintStatus !== 200) {
                         throw new Error(`Mint user failed (HTTP ${mintStatus})`);
@@ -156,7 +163,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     const { status: policyStatus, data: policyData } = await http.post(
                         `${baseUrl}/api/v1/mc/policy-create`,
                         { name: mintedPolicyName, type: 'json', json: policyDocument },
-                        { headers: { keycloaktoken: muse_token } }
+                        { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (policyStatus !== 200) {
                         throw new Error(`Create policy failed (HTTP ${policyStatus})`);
@@ -171,7 +178,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     const { status: attachStatus, data: attachData } = await http.post(
                         `${baseUrl}/api/v1/mc/policy`,
                         { name: mintedUser, policy: mintedPolicyName },
-                        { headers: { keycloaktoken: muse_token } }
+                        { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                     );
                     if (attachStatus !== 200) {
                         throw new Error(`Attach policy failed (HTTP ${attachStatus})`);
@@ -245,7 +252,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         await s3Cleanup.deleteObject(testBucket, testKey).catch(() => {});
                         await s3Cleanup.deleteBucket(testBucket);
                     } catch (e) {
-                        if (bucketConfirmed) {
+                        if (!isNotFoundResponse(e.message)) {
                             console.error(`[verify_storage] Bucket cleanup failed: ${e.message}`);
                             warnings.push('Test bucket cleanup failed (see server log)');
                         }
@@ -257,19 +264,18 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         const { data: detachData } = await http.post(
                             `${baseUrl}/api/v1/mc/policy-detach`,
                             { name: mintedUser, policy: mintedPolicyName },
-                            { headers: { keycloaktoken: muse_token } }
+                            { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                         );
                         if (detachData?.status !== 'detached') {
-                            if (attachConfirmed) {
+                            const msg = detachData?.message ?? detachData?.error ?? '';
+                            if (!isNotFoundResponse(msg)) {
                                 console.error(`[verify_storage] Policy detach failed: ${JSON.stringify(detachData)}`);
                                 warnings.push('Policy detach failed (see server log)');
                             }
                         }
                     } catch (e) {
-                        if (attachConfirmed) {
-                            console.error(`[verify_storage] Policy detach failed: ${e.message}`);
-                            warnings.push('Policy detach failed (see server log)');
-                        }
+                        console.error(`[verify_storage] Policy detach failed: ${e.message}`);
+                        warnings.push('Policy detach failed (see server log)');
                     }
                 }
 
@@ -277,19 +283,18 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     try {
                         const { data: delUserData } = await http.del(
                             `${baseUrl}/api/v1/mc/user/${mintedUser}`,
-                            { headers: { keycloaktoken: muse_token } }
+                            { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                         );
                         if (delUserData?.success === false) {
-                            if (mintConfirmed) {
+                            const msg = delUserData?.message ?? delUserData?.error ?? '';
+                            if (!isNotFoundResponse(msg)) {
                                 console.error(`[verify_storage] User cleanup failed: ${JSON.stringify(delUserData)}`);
                                 warnings.push('User cleanup failed (see server log)');
                             }
                         }
                     } catch (e) {
-                        if (mintConfirmed) {
-                            console.error(`[verify_storage] User cleanup failed: ${e.message}`);
-                            warnings.push('User cleanup failed (see server log)');
-                        }
+                        console.error(`[verify_storage] User cleanup failed: ${e.message}`);
+                        warnings.push('User cleanup failed (see server log)');
                     }
                 }
 
@@ -297,19 +302,18 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     try {
                         const { data: delPolicyData } = await http.del(
                             `${baseUrl}/api/v1/mc/policy/${mintedPolicyName}`,
-                            { headers: { keycloaktoken: muse_token } }
+                            { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
                         );
                         if (delPolicyData?.status !== 'deleted') {
-                            if (policyConfirmed) {
+                            const msg = delPolicyData?.message ?? delPolicyData?.error ?? '';
+                            if (!isNotFoundResponse(msg)) {
                                 console.error(`[verify_storage] Policy cleanup failed: ${JSON.stringify(delPolicyData)}`);
                                 warnings.push('Policy cleanup failed (see server log)');
                             }
                         }
                     } catch (e) {
-                        if (policyConfirmed) {
-                            console.error(`[verify_storage] Policy cleanup failed: ${e.message}`);
-                            warnings.push('Policy cleanup failed (see server log)');
-                        }
+                        console.error(`[verify_storage] Policy cleanup failed: ${e.message}`);
+                        warnings.push('Policy cleanup failed (see server log)');
                     }
                 }
 

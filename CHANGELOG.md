@@ -11,7 +11,11 @@
   cleanup step that cannot complete says so in a `cleanup_warning` (including
   failures the server reports in a response body, not just network errors) and
   never turns a passing verification into a failure. Intent-flagged resources are
-  always cleaned up even when the response was lost (timeout, socket reset). Operators who genuinely hold keys can
+  always cleaned up even when the response was lost (timeout, socket reset);
+  cleanup suppresses warnings only when the server confirms the resource does not
+  exist. All token-carrying requests disable HTTP redirects (`maxRedirects: 0`) to
+  prevent an allowlisted host from redirecting the token to a public endpoint.
+  Operators who genuinely hold keys can
   still pass `access_key_id`/`secret_access_key` to skip provisioning entirely. The
   word "fullaccess" no longer appears anywhere in the tool surface, and a regression
   test keeps it that way.

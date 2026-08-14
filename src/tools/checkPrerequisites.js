@@ -48,10 +48,16 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             // 1. Docker available — and WHERE it runs. With DOCKER_HOST or an
             // ssh:// context (e.g. Claude Code on a jump host), the daemon is
             // on another machine and the local checks below must adapt.
-            let dockerHost = { remote: false, host: 'localhost', endpoint: null };
+            const DEFAULT_DOCKER_HOST = { remote: false, host: 'localhost', endpoint: null };
+            let dockerHost = DEFAULT_DOCKER_HOST;
             try {
                 await docker.docker(['info', '--format', '{{.ServerVersion}}']);
-                dockerHost = await docker.getDockerHost();
+                const raw = await docker.getDockerHost();
+                dockerHost = {
+                    remote: Boolean(raw?.remote),
+                    host: raw?.host || 'localhost',
+                    endpoint: raw?.endpoint ?? null,
+                };
                 checks.push({
                     name: 'docker',
                     passed: true,
