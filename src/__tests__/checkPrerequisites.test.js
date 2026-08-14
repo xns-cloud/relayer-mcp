@@ -421,6 +421,14 @@ describe('check_prerequisites', () => {
         expect(parsed.success).toBe(true);
         const dockerCheck = parsed.checks.find((c) => c.name === 'docker');
         expect(dockerCheck.passed).toBe(true);
-        expect(dockerCheck.detail).toContain('localhost');
+        // incomplete remote metadata (no usable host) is classified LOCAL:
+        // the local-Docker detail is reported and both port checks run
+        // instead of skipping against a host we cannot name.
+        expect(dockerCheck.detail).toBe('Docker is running');
+        for (const name of ['port_8888', 'port_9000']) {
+            const portCheck = parsed.checks.find((c) => c.name === name);
+            expect(portCheck.skipped).toBeUndefined();
+            expect(portCheck.passed).toBe(true);
+        }
     });
 });

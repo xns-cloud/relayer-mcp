@@ -53,9 +53,14 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             try {
                 await docker.docker(['info', '--format', '{{.ServerVersion}}']);
                 const raw = await docker.getDockerHost();
+                // remote without a usable host is incomplete metadata — treat
+                // as local so the port checks run instead of silently skipping
+                // against a host we cannot name.
+                const remoteHost = typeof raw?.host === 'string' ? raw.host.trim() : '';
+                const isRemote = Boolean(raw?.remote) && remoteHost !== '' && remoteHost !== 'localhost';
                 dockerHost = {
-                    remote: Boolean(raw?.remote),
-                    host: raw?.host || 'localhost',
+                    remote: isRemote,
+                    host: isRemote ? remoteHost : 'localhost',
                     endpoint: raw?.endpoint ?? null,
                 };
                 checks.push({
