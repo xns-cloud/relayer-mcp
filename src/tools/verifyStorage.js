@@ -16,6 +16,45 @@ const { createHttpClient } = require('../lib/httpClient');
  * Optional access_key_id/secret_access_key skip minting entirely.
  * The minted credential lives in memory only — zero fs usage.
  */
+
+/**
+ * Validate that a URL points to a loopback, RFC-1918 private, or .local host.
+ * Rejects public/internet-routable hosts to prevent token forwarding.
+ *
+ * @param {string} urlString - A fully qualified URL
+ * @returns {{ allowed: boolean, reason?: string }}
+ */
+function validateHostAllowlist(urlString) {
+    let parsed;
+    try {
+        parsed = new URL(urlString);
+    } catch {
+        return { allowed: false, reason: 'URL is malformed' };
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (hostname === 'localhost' || hostname === '[::1]' || hostname === '::1') {
+        return { allowed: true };
+    }
+
+    if (hostname.endsWith('.local')) {
+        return { allowed: true };
+    }
+
+    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+        const octets = ipv4Match.slice(1).map(Number);
+        if (octets[0] === 127) return { allowed: true };
+        if (octets[0] === 10) return { allowed: true };
+        if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return { allowed: true };
+        if (octets[0] === 192 && octets[1] === 168) return { allowed: true };
+        return { allowed: false, reason: `Host ${hostname} is not a loopback or private-network address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
+    }
+
+    return { allowed: false, reason: `Host '${hostname}' is not a loopback, private-network, or .local address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
+}
+
 module.exports = function registerVerifyStorage(server, options = {}) {
     const _createS3Client = options.createS3Client || createS3Client;
     const docker = options.dockerUtil || createDockerUtil(options);
@@ -28,10 +67,10 @@ module.exports = function registerVerifyStorage(server, options = {}) {
             muse_token: z.string().optional().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd. Required when access_key_id and secret_access_key are not provided.'),
             access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
             secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
-            relayer_ui_url: z.string().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
+            relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
             endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000. Pass an explicit IP (e.g. http://192.168.1.100:9000) when auto-detection cannot reach the host.'),
         },
-        async ({ muse_token, access_key_id, secret_access_key, relayer_ui_url, endpoint }) => {
+        async ({ muse_token, access_key_id, secret_access_key, relayer_ui_url = 'http://localhost:8888', endpoint }) => {
             const runTs = Date.now();
             const testBucket = `mcp-verify-${runTs}`;
             const testKey = 'verify-test.txt';
@@ -44,12 +83,23 @@ module.exports = function registerVerifyStorage(server, options = {}) {
             let bucketCreated = false;
             let policyCreated = false;
             let policyAttached = false;
+            let mintConfirmed = false;
+            let bucketConfirmed = false;
+            let policyConfirmed = false;
+            let attachConfirmed = false;
             let effectiveAK = access_key_id;
             let effectiveSK = secret_access_key;
             let result;
             let isError = false;
 
+            const baseUrl = relayer_ui_url.replace(/\/+$/, '');
+
             try {
+                const hostCheck = validateHostAllowlist(baseUrl);
+                if (!hostCheck.allowed) {
+                    throw new Error(`relayer_ui_url rejected: ${hostCheck.reason}`);
+                }
+
                 if (!endpoint) {
                     const { host } = await docker.getDockerHost();
                     endpoint = `http://${host}:9000`;
@@ -65,26 +115,26 @@ module.exports = function registerVerifyStorage(server, options = {}) {
 
                     currentStep = 'MintUser';
                     const userName = `mcp-verify-${runTs}`;
+                    mintedUser = userName;
                     const { status: mintStatus, data: mintData } = await http.post(
-                        `${relayer_ui_url}/api/v1/mc/user`,
+                        `${baseUrl}/api/v1/mc/user`,
                         { user: userName },
                         { headers: { keycloaktoken: muse_token } }
                     );
                     if (mintStatus !== 200) {
-                        const detail = mintData?.message || mintData?.error || JSON.stringify(mintData);
-                        throw new Error(`Mint user failed (HTTP ${mintStatus}): ${detail}`);
+                        throw new Error(`Mint user failed (HTTP ${mintStatus})`);
                     }
                     effectiveAK = mintData?.access_key;
                     effectiveSK = mintData?.secret_key;
-                    mintedUser = userName;
 
                     if (mintData?.success === false || !effectiveAK || !effectiveSK) {
-                        const msg = mintData?.message || mintData?.Message || mintData?.error || mintData?.Error || 'response missing access_key/secret_key';
-                        throw new Error(`Mint user failed: ${msg}`);
+                        throw new Error('Mint user failed: response missing access_key/secret_key');
                     }
+                    mintConfirmed = true;
 
                     currentStep = 'CreatePolicy';
                     mintedPolicyName = `mcp-verify-policy-${runTs}`;
+                    policyCreated = true;
                     const policyDocument = JSON.stringify({
                         Version: '2012-10-17',
                         Statement: [{
@@ -103,30 +153,33 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                             ],
                         }],
                     });
-                    const { data: policyData } = await http.post(
-                        `${relayer_ui_url}/api/v1/mc/policy-create`,
+                    const { status: policyStatus, data: policyData } = await http.post(
+                        `${baseUrl}/api/v1/mc/policy-create`,
                         { name: mintedPolicyName, type: 'json', json: policyDocument },
                         { headers: { keycloaktoken: muse_token } }
                     );
-                    // MC proxy echoes {success: true, policy} — Go response discarded
-                    if (!policyData?.success) {
-                        const detail = policyData?.message || policyData?.error || JSON.stringify(policyData);
-                        throw new Error(`Create policy failed: ${detail}`);
+                    if (policyStatus !== 200) {
+                        throw new Error(`Create policy failed (HTTP ${policyStatus})`);
                     }
-                    policyCreated = true;
+                    if (!policyData?.success) {
+                        throw new Error('Create policy failed');
+                    }
+                    policyConfirmed = true;
 
                     currentStep = 'AttachPolicy';
-                    const { data: attachData } = await http.post(
-                        `${relayer_ui_url}/api/v1/mc/policy`,
+                    policyAttached = true;
+                    const { status: attachStatus, data: attachData } = await http.post(
+                        `${baseUrl}/api/v1/mc/policy`,
                         { name: mintedUser, policy: mintedPolicyName },
                         { headers: { keycloaktoken: muse_token } }
                     );
-                    // Attach returns {status:"attached"} with NO success field
-                    if (attachData?.status !== 'attached') {
-                        const detail = attachData?.message || attachData?.error || JSON.stringify(attachData);
-                        throw new Error(`Attach policy failed: ${detail}`);
+                    if (attachStatus !== 200) {
+                        throw new Error(`Attach policy failed (HTTP ${attachStatus})`);
                     }
-                    policyAttached = true;
+                    if (attachData?.status !== 'attached') {
+                        throw new Error('Attach policy failed');
+                    }
+                    attachConfirmed = true;
                 }
 
                 const s3 = _createS3Client({
@@ -136,8 +189,9 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                 });
 
                 currentStep = 'CreateBucket';
-                await s3.createBucket(testBucket);
                 bucketCreated = true;
+                await s3.createBucket(testBucket);
+                bucketConfirmed = true;
 
                 currentStep = 'PutObject';
                 await s3.putObject(testBucket, testKey, testContent);
@@ -167,12 +221,13 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                     };
                 }
             } catch (err) {
+                console.error(`[verify_storage] ${currentStep}: ${err.message}`);
                 const explicitIpHint = endpointAutoDetected
                     ? ' If the endpoint cannot be reached, pass an explicit IP via the endpoint option (e.g. "http://<ip>:9000").'
                     : '';
                 result = {
                     success: false,
-                    error: `Storage verification failed at ${currentStep}: ${err.message}.${explicitIpHint}`,
+                    error: `Storage verification failed at ${currentStep}. See server log for detail.${explicitIpHint}`,
                     endpoint,
                     failing_step: currentStep,
                 };
@@ -190,53 +245,71 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         await s3Cleanup.deleteObject(testBucket, testKey).catch(() => {});
                         await s3Cleanup.deleteBucket(testBucket);
                     } catch (e) {
-                        warnings.push(`Test bucket cleanup failed: ${e.message}`);
+                        if (bucketConfirmed) {
+                            console.error(`[verify_storage] Bucket cleanup failed: ${e.message}`);
+                            warnings.push('Test bucket cleanup failed (see server log)');
+                        }
                     }
                 }
 
                 if (policyAttached) {
                     try {
                         const { data: detachData } = await http.post(
-                            `${relayer_ui_url}/api/v1/mc/policy-detach`,
+                            `${baseUrl}/api/v1/mc/policy-detach`,
                             { name: mintedUser, policy: mintedPolicyName },
                             { headers: { keycloaktoken: muse_token } }
                         );
                         if (detachData?.status !== 'detached') {
-                            const detail = detachData?.message || JSON.stringify(detachData);
-                            warnings.push(`Policy detach failed: ${detail}`);
+                            if (attachConfirmed) {
+                                console.error(`[verify_storage] Policy detach failed: ${JSON.stringify(detachData)}`);
+                                warnings.push('Policy detach failed (see server log)');
+                            }
                         }
                     } catch (e) {
-                        warnings.push(`Policy detach failed: ${e.message}`);
+                        if (attachConfirmed) {
+                            console.error(`[verify_storage] Policy detach failed: ${e.message}`);
+                            warnings.push('Policy detach failed (see server log)');
+                        }
                     }
                 }
 
                 if (mintedUser) {
                     try {
                         const { data: delUserData } = await http.del(
-                            `${relayer_ui_url}/api/v1/mc/user/${mintedUser}`,
+                            `${baseUrl}/api/v1/mc/user/${mintedUser}`,
                             { headers: { keycloaktoken: muse_token } }
                         );
                         if (delUserData?.success === false) {
-                            const detail = delUserData?.message || JSON.stringify(delUserData);
-                            warnings.push(`User cleanup failed: ${detail}`);
+                            if (mintConfirmed) {
+                                console.error(`[verify_storage] User cleanup failed: ${JSON.stringify(delUserData)}`);
+                                warnings.push('User cleanup failed (see server log)');
+                            }
                         }
                     } catch (e) {
-                        warnings.push(`User cleanup failed: ${e.message}`);
+                        if (mintConfirmed) {
+                            console.error(`[verify_storage] User cleanup failed: ${e.message}`);
+                            warnings.push('User cleanup failed (see server log)');
+                        }
                     }
                 }
 
                 if (policyCreated) {
                     try {
                         const { data: delPolicyData } = await http.del(
-                            `${relayer_ui_url}/api/v1/mc/policy/${mintedPolicyName}`,
+                            `${baseUrl}/api/v1/mc/policy/${mintedPolicyName}`,
                             { headers: { keycloaktoken: muse_token } }
                         );
                         if (delPolicyData?.status !== 'deleted') {
-                            const detail = delPolicyData?.message || JSON.stringify(delPolicyData);
-                            warnings.push(`Policy cleanup failed: ${detail}`);
+                            if (policyConfirmed) {
+                                console.error(`[verify_storage] Policy cleanup failed: ${JSON.stringify(delPolicyData)}`);
+                                warnings.push('Policy cleanup failed (see server log)');
+                            }
                         }
                     } catch (e) {
-                        warnings.push(`Policy cleanup failed: ${e.message}`);
+                        if (policyConfirmed) {
+                            console.error(`[verify_storage] Policy cleanup failed: ${e.message}`);
+                            warnings.push('Policy cleanup failed (see server log)');
+                        }
                     }
                 }
 
@@ -255,3 +328,5 @@ module.exports = function registerVerifyStorage(server, options = {}) {
         },
     );
 };
+
+module.exports.validateHostAllowlist = validateHostAllowlist;

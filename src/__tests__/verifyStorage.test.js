@@ -1,5 +1,7 @@
 'use strict';
 
+const { defaultDockerUtil, createMintingHttpMock, createPassingS3Mock, registerWithOptions: _registerWithOptions } = require('./helpers/verifyStorageFixtures');
+
 describe('verify_storage', () => {
     let server;
 
@@ -8,56 +10,8 @@ describe('verify_storage', () => {
         jest.resetModules();
     });
 
-    const defaultDockerUtil = {
-        getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
-    };
-
-    function createMintingHttpMock(overrides = {}) {
-        const defaults = {
-            mint: { status: 200, data: { user_name: 'mcp-verify-test', access_key: 'ak-minted', secret_key: 'sk-minted', created_at: '2026-01-01' } },
-            policyCreate: { status: 200, data: { success: true, policy: {} } },
-            attach: { status: 200, data: { status: 'attached' } },
-            detach: { status: 200, data: { status: 'detached' } },
-            deleteUser: { status: 200, data: {} },
-            deletePolicy: { status: 200, data: { status: 'deleted' } },
-        };
-        const r = { ...defaults, ...overrides };
-
-        return {
-            post: jest.fn().mockImplementation(async (url) => {
-                if (url.endsWith('/mc/policy-create')) return r.policyCreate;
-                if (url.endsWith('/mc/policy-detach')) return r.detach;
-                if (url.endsWith('/mc/policy')) return r.attach;
-                if (url.endsWith('/mc/user')) return r.mint;
-                return { status: 404, data: {} };
-            }),
-            del: jest.fn().mockImplementation(async (url) => {
-                if (url.includes('/mc/user/')) return r.deleteUser;
-                if (url.includes('/mc/policy/')) return r.deletePolicy;
-                return { status: 404, data: {} };
-            }),
-            get: jest.fn(),
-        };
-    }
-
-    function createPassingS3Mock() {
-        let capturedContent;
-        return {
-            createBucket: jest.fn().mockResolvedValue(undefined),
-            putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-            getObject: jest.fn().mockImplementation(async () => capturedContent),
-            deleteObject: jest.fn().mockResolvedValue(undefined),
-            deleteBucket: jest.fn().mockResolvedValue(undefined),
-        };
-    }
-
     function registerWithOptions(opts) {
-        const register = require('../tools/verifyStorage');
-        register(server, {
-            dockerUtil: defaultDockerUtil,
-            ...opts,
-        });
-        return server.tool.mock.calls[0][3];
+        return _registerWithOptions(server, opts);
     }
 
     // --- TP-1: AC-1 happy path — mint only, no keys ---
@@ -379,7 +333,7 @@ describe('verify_storage', () => {
         const parsed = JSON.parse(result.content[0].text);
 
         expect(parsed.success).toBe(false);
-        expect(parsed.error).toContain('muse_token is required');
+        expect(parsed.failing_step).toBe('init');
         expect(result.isError).toBe(true);
     });
 
@@ -440,6 +394,115 @@ describe('verify_storage', () => {
         });
 
         expect(parsed.success).toBe(false);
+    });
+
+    test('malformed relayer_ui_url rejected at zod boundary', () => {
+        const { z } = require('zod');
+        registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
+        const shape = server.tool.mock.calls[0][2];
+
+        const parsed = z.object(shape).safeParse({
+            muse_token: 'jwt',
+            relayer_ui_url: 'not a url',
+        });
+
+        expect(parsed.success).toBe(false);
+    });
+
+    // --- Host allowlist ---
+
+    test('public relayer_ui_url rejected before any HTTP call', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({
+            muse_token: 'jwt',
+            relayer_ui_url: 'https://evil.example.com',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('init');
+        expect(result.isError).toBe(true);
+        expect(httpMock.post).not.toHaveBeenCalled();
+        expect(httpMock.del).not.toHaveBeenCalled();
+    });
+
+    test('localhost relayer_ui_url accepted', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({
+            muse_token: 'jwt',
+            relayer_ui_url: 'http://localhost:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
+    test('192.168.x relayer_ui_url accepted', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({
+            muse_token: 'jwt',
+            relayer_ui_url: 'http://192.168.1.100:8888',
+            endpoint: 'http://localhost:9000',
+        });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(true);
+    });
+
+    // --- Trailing-slash normalization ---
+
+    test('trailing slash on relayer_ui_url normalized (no double slash in paths)', async () => {
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({
+            muse_token: 'jwt',
+            relayer_ui_url: 'http://localhost:8888/',
+            endpoint: 'http://localhost:9000',
+        });
+
+        const mintCall = httpMock.post.mock.calls.find(([url]) => url.includes('/mc/user'));
+        expect(mintCall).toBeDefined();
+        expect(mintCall[0]).not.toContain('//api');
+    });
+
+    // --- Error text not leaked to client ---
+
+    test('error text is generic — no err.message in response', async () => {
+        const httpMock = createMintingHttpMock({
+            mint: { status: 500, data: { message: 'internal server error with secrets' } },
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('See server log for detail');
+        expect(parsed.error).not.toContain('internal server error with secrets');
     });
 
     // --- Description checks ---
@@ -552,5 +615,85 @@ describe('verify_storage', () => {
         expect(doc.Statement[0].Action).toContain('s3:PutObject');
         expect(doc.Statement[0].Action).toContain('s3:GetObject');
         expect(doc.Statement[0].Action).toContain('s3:DeleteObject');
+    });
+
+    // --- validateHostAllowlist unit tests ---
+
+    test('validateHostAllowlist: loopback addresses accepted', () => {
+        const { validateHostAllowlist } = require('../tools/verifyStorage');
+        expect(validateHostAllowlist('http://localhost:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://127.0.0.1:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://127.0.0.99:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://[::1]:8888').allowed).toBe(true);
+    });
+
+    test('validateHostAllowlist: RFC1918 addresses accepted', () => {
+        const { validateHostAllowlist } = require('../tools/verifyStorage');
+        expect(validateHostAllowlist('http://10.0.0.1:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://10.255.255.255:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://172.16.0.1:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://172.31.255.255:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://192.168.0.1:8888').allowed).toBe(true);
+        expect(validateHostAllowlist('http://192.168.255.255:8888').allowed).toBe(true);
+    });
+
+    test('validateHostAllowlist: .local hostnames accepted', () => {
+        const { validateHostAllowlist } = require('../tools/verifyStorage');
+        expect(validateHostAllowlist('http://myhost.local:8888').allowed).toBe(true);
+    });
+
+    test('validateHostAllowlist: public IPs rejected', () => {
+        const { validateHostAllowlist } = require('../tools/verifyStorage');
+        expect(validateHostAllowlist('http://8.8.8.8:8888').allowed).toBe(false);
+        expect(validateHostAllowlist('https://evil.example.com:8888').allowed).toBe(false);
+    });
+
+    test('validateHostAllowlist: 172.32.x is not RFC1918', () => {
+        const { validateHostAllowlist } = require('../tools/verifyStorage');
+        expect(validateHostAllowlist('http://172.32.0.1:8888').allowed).toBe(false);
+    });
+
+    // --- Intent-flag cleanup: bucket created before response ---
+
+    test('intent-flag: bucket cleanup attempted even when createBucket throws after server acted', async () => {
+        let s3CleanupCalled = false;
+        const httpMock = createMintingHttpMock();
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => ({
+                createBucket: jest.fn().mockRejectedValue(new Error('timeout after server created')),
+                putObject: jest.fn(),
+                getObject: jest.fn(),
+                deleteObject: jest.fn().mockImplementation(async () => { s3CleanupCalled = true; }),
+                deleteBucket: jest.fn().mockImplementation(async () => { s3CleanupCalled = true; }),
+            }),
+        });
+
+        const result = await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.failing_step).toBe('CreateBucket');
+        expect(s3CleanupCalled).toBe(true);
+    });
+
+    test('intent-flag: user cleanup attempted even when mint throws after server acted', async () => {
+        const httpMock = createMintingHttpMock();
+        const originalPost = httpMock.post;
+        httpMock.post = jest.fn().mockImplementation(async (url, ...rest) => {
+            if (url.endsWith('/mc/user')) {
+                throw new Error('timeout after server created user');
+            }
+            return originalPost(url, ...rest);
+        });
+        const handler = registerWithOptions({
+            httpClient: httpMock,
+            createS3Client: () => createPassingS3Mock(),
+        });
+
+        await handler({ muse_token: 'jwt', endpoint: 'http://localhost:9000' });
+
+        const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
+        expect(deleteUserCall).toBeDefined();
     });
 });

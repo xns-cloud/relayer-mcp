@@ -1,13 +1,13 @@
 'use strict';
 
-// Contract-gap probes for verify_storage against real relayer-ui MC proxy
-// response shapes (see epic-e1 HANDOFF.md "Data Contracts Consumed"). These
-// target scenarios the build's own verifyStorage.test.js does not exercise:
-// error-shaped 200 bodies from mint/attach, and — the main finding —
-// teardown calls that fail via response body rather than a thrown
-// exception. httpClient.js sets `validateStatus: () => true`, so no HTTP
-// status ever throws; only network-level errors (ECONNREFUSED, DNS, etc.)
-// reach the teardown try/catch blocks in verifyStorage.js's `finally`.
+// Pins the verify_storage contract against real relayer-ui MC proxy response
+// shapes (see epic-e1 HANDOFF.md "Data Contracts Consumed"). Covers:
+// error-shaped 200 bodies from mint/attach, and teardown calls that report
+// failure via response body (httpClient sets `validateStatus: () => true`,
+// so no HTTP status ever throws). The teardown tests verify that response-body
+// failures ARE inspected and surfaced as cleanup_warning.
+
+const { createMintingHttpMock, createPassingS3Mock, registerWithOptions: _registerWithOptions } = require('./helpers/verifyStorageFixtures');
 
 describe('verify_storage — contract gaps', () => {
     let server;
@@ -17,56 +17,8 @@ describe('verify_storage — contract gaps', () => {
         jest.resetModules();
     });
 
-    const defaultDockerUtil = {
-        getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
-    };
-
-    function createMintingHttpMock(overrides = {}) {
-        const defaults = {
-            mint: { status: 200, data: { user_name: 'mcp-verify-test', access_key: 'ak-minted', secret_key: 'sk-minted', created_at: '2026-01-01' } },
-            policyCreate: { status: 200, data: { success: true, policy: {} } },
-            attach: { status: 200, data: { status: 'attached' } },
-            detach: { status: 200, data: { status: 'detached' } },
-            deleteUser: { status: 200, data: {} },
-            deletePolicy: { status: 200, data: { status: 'deleted' } },
-        };
-        const r = { ...defaults, ...overrides };
-
-        return {
-            post: jest.fn().mockImplementation(async (url) => {
-                if (url.endsWith('/mc/policy-create')) return r.policyCreate;
-                if (url.endsWith('/mc/policy-detach')) return r.detach;
-                if (url.endsWith('/mc/policy')) return r.attach;
-                if (url.endsWith('/mc/user')) return r.mint;
-                return { status: 404, data: {} };
-            }),
-            del: jest.fn().mockImplementation(async (url) => {
-                if (url.includes('/mc/user/')) return r.deleteUser;
-                if (url.includes('/mc/policy/')) return r.deletePolicy;
-                return { status: 404, data: {} };
-            }),
-            get: jest.fn(),
-        };
-    }
-
-    function createPassingS3Mock() {
-        let capturedContent;
-        return {
-            createBucket: jest.fn().mockResolvedValue(undefined),
-            putObject: jest.fn().mockImplementation(async (bucket, key, body) => { capturedContent = body; }),
-            getObject: jest.fn().mockImplementation(async () => capturedContent),
-            deleteObject: jest.fn().mockResolvedValue(undefined),
-            deleteBucket: jest.fn().mockResolvedValue(undefined),
-        };
-    }
-
     function registerWithOptions(opts) {
-        const register = require('../tools/verifyStorage');
-        register(server, {
-            dockerUtil: defaultDockerUtil,
-            ...opts,
-        });
-        return server.tool.mock.calls[0][3];
+        return _registerWithOptions(server, opts);
     }
 
     // --- Mint: HTTP 200 with an error-shaped body ---
@@ -86,15 +38,13 @@ describe('verify_storage — contract gaps', () => {
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('MintUser');
         expect(result.isError).toBe(true);
-        // The just-minted user is still torn down even though provisioning
-        // never yielded usable keys.
         const deleteUserCall = httpMock.del.mock.calls.find(([url]) => url.includes('/mc/user/'));
         expect(deleteUserCall).toBeDefined();
     });
 
-    // --- S1: mint 200 {success:false} surfaces provider message ---
+    // --- S1: mint 200 {success:false} — generic error, step named ---
 
-    test('mint HTTP 200 with {success:false, message} surfaces provider message in error', async () => {
+    test('mint HTTP 200 with {success:false, message} reports failing step without leaking provider text', async () => {
         const httpMock = createMintingHttpMock({
             mint: { status: 200, data: { success: false, message: 'user already exists' } },
         });
@@ -108,12 +58,13 @@ describe('verify_storage — contract gaps', () => {
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('MintUser');
-        expect(parsed.error).toContain('user already exists');
+        expect(parsed.error).toContain('MintUser');
+        expect(parsed.error).toContain('See server log for detail');
     });
 
     // --- Attach: proxy error-path body has no `status` key at all ---
 
-    test('AttachPolicy failure: proxy error body {success:false, message} (no status field) is caught and surfaced', async () => {
+    test('AttachPolicy failure: proxy error body {success:false, message} (no status field) caught without leaking provider text', async () => {
         const httpMock = createMintingHttpMock({
             attach: { status: 200, data: { success: false, message: 'user_name not found' } },
         });
@@ -127,12 +78,12 @@ describe('verify_storage — contract gaps', () => {
 
         expect(parsed.success).toBe(false);
         expect(parsed.failing_step).toBe('AttachPolicy');
-        expect(parsed.error).toContain('user_name not found');
+        expect(parsed.error).toContain('See server log for detail');
     });
 
-    // --- Teardown: response-body failures (no throw) — see file header ---
+    // --- Teardown: response-body failures (no throw) ---
 
-    test('teardown: detach responds 200 with {success:false, message} — expected to surface as cleanup_warning', async () => {
+    test('teardown: detach responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
             detach: { status: 200, data: { success: false, message: 'user_name not found' } },
         });
@@ -148,7 +99,7 @@ describe('verify_storage — contract gaps', () => {
         expect(parsed.cleanup_warning).toMatch(/detach/i);
     });
 
-    test('teardown: delete-user responds 200 with {success:false, message} — expected to surface as cleanup_warning', async () => {
+    test('teardown: delete-user responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
             deleteUser: { status: 200, data: { success: false, message: 'not found' } },
         });
@@ -164,7 +115,7 @@ describe('verify_storage — contract gaps', () => {
         expect(parsed.cleanup_warning).toMatch(/user/i);
     });
 
-    test('teardown: delete-policy responds 200 with {success:false, message} — expected to surface as cleanup_warning', async () => {
+    test('teardown: delete-policy responds 200 with {success:false, message} — surfaced as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock({
             deletePolicy: { status: 200, data: { success: false, message: 'not found' } },
         });
@@ -181,9 +132,8 @@ describe('verify_storage — contract gaps', () => {
     });
 
     // Contrast case: a genuine network-level throw during detach IS caught
-    // and surfaced today — establishes the throw-path already works, so the
-    // gap above is specifically about response-body inspection, not a
-    // missing try/catch.
+    // and surfaced — establishes the throw-path works alongside response-body
+    // inspection.
     test('teardown: detach network throw (ECONNREFUSED) surfaces as cleanup_warning', async () => {
         const httpMock = createMintingHttpMock();
         const basePost = httpMock.post;
