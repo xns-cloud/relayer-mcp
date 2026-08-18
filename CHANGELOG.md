@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.9.0] — 2026-08-18
+
+### Added
+
+- **Every tool now declares its risk in machine-readable form.** All 15 tools carry
+  explicitly-set `readOnlyHint`, `destructiveHint`, and `openWorldHint` annotations, so a
+  client can tell a read-only lookup from an installer by reading `tools/list` — without
+  parsing the README. Five tools are marked destructive: `install_relayer`,
+  `restart_service`, `manage_backups`, `update_settings`, and `setup_cli_credentials`
+  (which overwrites `~/.xns/credentials` outright). Seven are read-only. None of the three
+  hints is left to the spec default on any tool — an omitted hint is not the same claim as
+  an explicit `false`.
+- **Cursor install instructions**, beside the existing Claude Desktop block rather than
+  below the fold, pinned to `@latest`.
+- **`websiteUrl` in `server.json`**, so the registry card links back to the project.
+- Keywords `zero-egress`, `rag-infrastructure`, `agentic-workflows`, and `agentic`.
+
+### Changed
+
+- **Migrated all 15 tools from the deprecated `server.tool` to `registerTool`.** Handler
+  behaviour is unchanged — every handler body is byte-identical, as are all 15 tool
+  descriptions and input schemas. Only the registration call and its metadata moved.
+- The runtime server now announces `tech.xns/relayer`, matching the name published to the
+  MCP registry and to npm. That name and the version are both read from `package.json`, so
+  the runtime, the package, and the registry card cannot drift apart, and a test now pins
+  what the running server actually announces rather than only what the JSON files say.
+
+### Internal
+
+- The mock-shape coupling that had 95 registration assertions spread across 18 test files
+  reaching into positional argument indexes now goes through one shared accessor, with a
+  regression lock that fails the build if a test bypasses it.
+- New annotation-presence test: stripping any single annotation fails the build.
+
 ## [0.8.1] — 2026-08-14
 
 ### Fixed
