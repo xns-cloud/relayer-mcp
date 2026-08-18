@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1] — 2026-08-18
+
+### Fixed
+
+- **`setup_cli_credentials` no longer writes your Muse token to disk.** The
+  `~/.xns/credentials` file kept the live Keycloak JWT alongside the S3 keys, for no
+  consumer: the `xns` CLI requires the `muse_token` key to be present but never reads its
+  value. The token expires within minutes, there is no refresh token to renew it, and until
+  it expires anyone who can read the file has Muse-API reach well beyond S3. The key is
+  still written, now empty, so the CLI's five-key schema is satisfied. The access and secret
+  keys stay — S3 request signing needs them in plaintext, the same as `~/.aws/credentials`.
+
 ## [0.9.0] — 2026-08-18
 
 ### Added
