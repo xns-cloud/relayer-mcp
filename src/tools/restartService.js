@@ -23,12 +23,20 @@ module.exports = function registerRestartService(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'restart_service',
-        'Restart a Relayer service (hostio, gateway, s3gateway, database) or all services. Disruptive: in-flight S3 requests will fail during the restart — confirm with the operator before calling. Verify recovery afterwards with check_relayer_health.',
         {
-            service: z.enum(SERVICES).optional()
-                .describe('Service to restart. Defaults to "all".'),
+            title: 'restart_service',
+            description: 'Restart a Relayer service (hostio, gateway, s3gateway, database) or all services. Disruptive: in-flight S3 requests will fail during the restart — confirm with the operator before calling. Verify recovery afterwards with check_relayer_health.',
+            inputSchema: {
+                service: z.enum(SERVICES).optional()
+                    .describe('Service to restart. Defaults to "all".'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: true,
+            },
         },
         async ({ service }) => {
             try {

@@ -9,7 +9,7 @@ describe('manage_backups', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -39,7 +39,8 @@ describe('manage_backups', () => {
         });
         registerWithOptions({ httpClient: { get: getMock, put: jest.fn(), del: jest.fn(), post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ action: 'list' })).content[0].text);
 
         expect(getMock.mock.calls[0][0]).toContain('/api/v1/backup/list');
@@ -60,7 +61,8 @@ describe('manage_backups', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ action: 'list' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -72,7 +74,8 @@ describe('manage_backups', () => {
         const putMock = jest.fn().mockResolvedValue({ status: 200, data: { success: true } });
         registerWithOptions({ httpClient: { get: jest.fn(), put: putMock, del: jest.fn(), post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ action: 'start' })).content[0].text);
 
         expect(putMock.mock.calls[0][0]).toContain('/api/v1/backup/start');
@@ -83,7 +86,8 @@ describe('manage_backups', () => {
         const http = { get: jest.fn(), put: jest.fn(), del: jest.fn(), post: jest.fn() };
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ action: 'restore' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -96,7 +100,8 @@ describe('manage_backups', () => {
         const putMock = jest.fn().mockResolvedValue({ status: 200, data: { success: true } });
         registerWithOptions({ httpClient: { get: jest.fn(), put: putMock, del: jest.fn(), post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({
             action: 'restore', file: 'b.zip', components: ['conf', 'samba'],
         })).content[0].text);
@@ -111,7 +116,8 @@ describe('manage_backups', () => {
         const putMock = jest.fn().mockResolvedValue({ status: 200, data: { success: true } });
         registerWithOptions({ httpClient: { get: jest.fn(), put: putMock, del: jest.fn(), post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({ action: 'restore', file: 'b.zip' });
 
         expect(putMock.mock.calls[0][1]).toEqual({ file: 'b.zip' });
@@ -121,7 +127,8 @@ describe('manage_backups', () => {
         const delMock = jest.fn().mockResolvedValue({ status: 200, data: { success: true } });
         registerWithOptions({ httpClient: { get: jest.fn(), put: jest.fn(), del: delMock, post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ action: 'delete', file: 'old.zip' })).content[0].text);
 
         const [url, config] = delMock.mock.calls[0];
@@ -149,7 +156,8 @@ describe('manage_backups', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ action: 'list' })).content[0].text);
 
         expect(parsed.success).toBe(true);
@@ -158,7 +166,8 @@ describe('manage_backups', () => {
 
     test('description warns restore is destructive', () => {
         registerWithOptions({ httpClient: { get: jest.fn(), put: jest.fn(), del: jest.fn(), post: jest.fn() } });
-        const description = server.tool.mock.calls[0][1];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const { description } = readRegistration(server);
         expect(description).toMatch(/OVERWRITES/);
         expect(description).toContain('confirm');
     });

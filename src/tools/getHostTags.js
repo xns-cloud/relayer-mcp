@@ -29,11 +29,19 @@ module.exports = function registerGetHostTags(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'get_host_tags',
-        'Get the available host tags for VPD (Virtual Private Datacenter) configuration, plus the currently applied VPD host selection. Translate tags into plain-language options for the operator — never show raw CEL expressions. Requires OIDC sign-in on first use (the user will be prompted to sign in via browser).',
         {
-            /* no parameters */
+            title: 'get_host_tags',
+            description: 'Get the available host tags for VPD (Virtual Private Datacenter) configuration, plus the currently applied VPD host selection. Translate tags into plain-language options for the operator — never show raw CEL expressions. Requires OIDC sign-in on first use (the user will be prompted to sign in via browser).',
+            inputSchema: {
+                /* no parameters */
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async () => {
             try {

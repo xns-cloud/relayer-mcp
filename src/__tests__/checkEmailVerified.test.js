@@ -4,10 +4,11 @@ describe('check_email_verified', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkEmailVerified');
         register(server, {
             pollIntervalMs: 10,
@@ -15,7 +16,7 @@ describe('check_email_verified', () => {
             sleep: jest.fn().mockResolvedValue(undefined),
             ...opts,
         });
-        return server.tool.mock.calls[0][3]; // handler
+        return readRegistration(server).handler;
     }
 
     // TP-13: verified:true → auto-proceed (AC-9)

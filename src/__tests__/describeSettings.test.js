@@ -39,7 +39,7 @@ describe('describe_settings', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -67,7 +67,8 @@ describe('describe_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -91,7 +92,8 @@ describe('describe_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
 
         expect(result.content[0].text).not.toContain('S3GW_CREDENTIAL_ENCRYPTION_KEY');
@@ -107,7 +109,8 @@ describe('describe_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({})).content[0].text);
         expect(parsed.uploadTuning).toEqual({ status: 'tuned', ceiling: 571 });
     });
@@ -130,7 +133,8 @@ describe('describe_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({})).content[0].text);
 
         expect(parsed.success).toBe(true);
@@ -145,7 +149,8 @@ describe('describe_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 

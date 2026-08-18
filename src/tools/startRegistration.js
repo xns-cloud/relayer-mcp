@@ -25,10 +25,18 @@ module.exports = function registerStartRegistration(server, options = {}) {
     const realm = options.realm || DEFAULT_REALM;
     const clientId = options.clientId || DEFAULT_CLIENT_ID;
 
-    server.tool(
+    server.registerTool(
         'start_registration',
-        'Get the browser registration URL for creating a new XNS account. The user opens this URL in a browser to sign up via Keycloak — the agent never touches credentials. After signing up, use check_email_verified to poll for email verification.',
-        {},
+        {
+            title: 'start_registration',
+            description: 'Get the browser registration URL for creating a new XNS account. The user opens this URL in a browser to sign up via Keycloak — the agent never touches credentials. After signing up, use check_email_verified to poll for email verification.',
+            inputSchema: {},
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: false,
+            },
+        },
         async () => {
             const verifier = generateVerifier();
             const challenge = generateChallenge(verifier);

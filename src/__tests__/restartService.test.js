@@ -9,7 +9,7 @@ describe('restart_service', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -35,7 +35,8 @@ describe('restart_service', () => {
         });
         registerWithOptions({ httpClient: { get: getMock, post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ service: 'hostio' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -51,7 +52,8 @@ describe('restart_service', () => {
         });
         registerWithOptions({ httpClient: { get: getMock, post: jest.fn() } });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({});
         await handler({ service: 'all' });
 
@@ -78,7 +80,8 @@ describe('restart_service', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ service: 'gateway' })).content[0].text);
 
         expect(parsed.success).toBe(true);
@@ -93,7 +96,8 @@ describe('restart_service', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ service: 's3gateway' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -103,7 +107,8 @@ describe('restart_service', () => {
 
     test('description warns the operation is disruptive', () => {
         registerWithOptions({ httpClient: { get: jest.fn(), post: jest.fn() } });
-        const description = server.tool.mock.calls[0][1];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const { description } = readRegistration(server);
         expect(description).toMatch(/disruptive/i);
         expect(description).toContain('confirm');
     });

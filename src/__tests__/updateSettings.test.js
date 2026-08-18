@@ -20,7 +20,7 @@ describe('update_settings', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -52,7 +52,8 @@ describe('update_settings', () => {
         const http = happyClient();
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             settings: { HOSTIO_UPLOAD_WORKERS: 12, BACKUP_FREQUENCY: 30, CostCenter: 'cc-new' },
         });
@@ -78,7 +79,8 @@ describe('update_settings', () => {
         const http = happyClient();
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({ settings: { HOSTIO_UPLOAD_WORKERS: 12 } });
 
         const [, body] = http.put.mock.calls[0];
@@ -89,7 +91,8 @@ describe('update_settings', () => {
         const http = happyClient();
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ settings: { HOSTIO_UPLOD_WORKERS: 5 } });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -106,7 +109,8 @@ describe('update_settings', () => {
         const http = happyClient();
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ settings: { S3GW_CREDENTIAL_ENCRYPTION_KEY: 'x' } });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -118,7 +122,8 @@ describe('update_settings', () => {
         const http = happyClient();
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             settings: { HOSTIO_UPLOAD_WORKERS: 'ten', BACKUP_ENABLED: false },
         });
@@ -138,7 +143,8 @@ describe('update_settings', () => {
         });
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ settings: { HOSTIO_SIMULTANEOUS_UPLOADS: 99999 } });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -166,7 +172,8 @@ describe('update_settings', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({ settings: { BACKUP_ENABLED: false } })).content[0].text);
 
         expect(parsed.success).toBe(true);
@@ -181,7 +188,8 @@ describe('update_settings', () => {
         };
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ settings: { BACKUP_ENABLED: false } });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -198,7 +206,8 @@ describe('update_settings', () => {
         };
         registerWithOptions({ httpClient: http });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ settings: { BACKUP_ENABLED: false } });
         const parsed = JSON.parse(result.content[0].text);
 

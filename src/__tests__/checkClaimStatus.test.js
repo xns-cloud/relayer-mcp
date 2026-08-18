@@ -4,17 +4,18 @@ describe('check_claim_status', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkClaimStatus');
         register(server, {
             pollIntervalMs: 10,
             sleep: jest.fn().mockResolvedValue(undefined),
             ...opts,
         });
-        return server.tool.mock.calls[0][3];
+        return readRegistration(server).handler;
     }
 
     // AC-15: STATE_3 → auto-proceed

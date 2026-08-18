@@ -8,25 +8,27 @@ describe('check_prerequisites', () => {
 
     beforeEach(() => {
         server = {
-            tool: jest.fn(),
+            registerTool: jest.fn(),
         };
         registeredTools = {};
     });
 
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkPrerequisites');
         register(server, opts);
-        const [name, desc, schema, handler] = server.tool.mock.calls[0];
-        registeredTools[name] = handler;
-        return handler;
+        const reg = readRegistration(server);
+        registeredTools[reg.name] = reg.handler;
+        return reg.handler;
     }
 
     // TP-4: check_prerequisites registered with correct name
     test('registers tool with name check_prerequisites', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkPrerequisites');
         register(server);
-        expect(server.tool).toHaveBeenCalledTimes(1);
-        expect(server.tool.mock.calls[0][0]).toBe('check_prerequisites');
+        expect(server.registerTool).toHaveBeenCalledTimes(1);
+        expect(readRegistration(server).name).toBe('check_prerequisites');
     });
 
     // TP-5: all checks pass → success: true

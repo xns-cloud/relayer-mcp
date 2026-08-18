@@ -4,7 +4,7 @@ describe('check_relayer_health', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     // Default dockerUtil fake: local daemon, monitoring sidecars running.
@@ -17,6 +17,7 @@ describe('check_relayer_health', () => {
     }
 
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkRelayerHealth');
         register(server, {
             pollIntervalMs: 10,
@@ -25,7 +26,7 @@ describe('check_relayer_health', () => {
             dockerUtil: localDockerUtil(),
             ...opts,
         });
-        return server.tool.mock.calls[0][3];
+        return readRegistration(server).handler;
     }
 
     // AC-13: healthy when ui+s3 healthy

@@ -2,7 +2,7 @@
 // Driver: loads the real MCP tool handlers and calls them in onboarding order.
 const { z } = require('zod');
 const handlers = {};
-const stub = { tool: (name, desc, shape, fn) => { handlers[name] = { shape, fn }; } };
+const stub = { registerTool: (name, config, fn) => { handlers[name] = { shape: config.inputSchema, fn }; } };
 
 // Register the tools we want to exercise.
 require('./src/tools/checkPrerequisites')(stub, {});

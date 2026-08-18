@@ -35,6 +35,15 @@ describe('E-B1 identity contract: npm ↔ MCP registry', () => {
         expect(serverJson.name).toBe(IMMUTABLE_MCP_NAME);
     });
 
+    // E-A2 CONTRACT-1: the file-level chain above says nothing about what the
+    // RUNNING server announces. An edit to src/index.js could break the chain
+    // with every other test still green, so pin the runtime name too.
+    test('the running server announces the immutable registry name', () => {
+        const { server } = require('../index');
+        expect(server.server._serverInfo.name).toBe(IMMUTABLE_MCP_NAME);
+        expect(server.server._serverInfo.version).toBe(pkg.version);
+    });
+
     test('server.json packages[0].identifier is the immutable npm package name', () => {
         expect(pkg.name).toBe(IMMUTABLE_NPM_NAME);
         expect(serverJson.packages).toHaveLength(1);
@@ -87,6 +96,13 @@ describe('E-B1 keyword contract (AC1a)', () => {
     // breaks any existing search/discovery that already matched on it.
     test('keywords still include the original four', () => {
         for (const kw of ['mcp', 'relayer', 'xns', 'onboarding']) {
+            expect(pkg.keywords).toContain(kw);
+        }
+    });
+
+    // E-A2 AC7: four agentic-discoverability keywords pinned.
+    test('keywords include the E-A2 agentic-discoverability additions', () => {
+        for (const kw of ['zero-egress', 'rag-infrastructure', 'agentic-workflows', 'agentic']) {
             expect(pkg.keywords).toContain(kw);
         }
     });

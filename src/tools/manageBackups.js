@@ -28,16 +28,32 @@ module.exports = function registerManageBackups(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'manage_backups',
-        'Manage Relayer configuration backups: list archives, start a backup, restore from an archive, or delete one. Restore OVERWRITES current state and restarts services — always confirm with the operator and state which archive and components first. Backups must be enabled (BACKUP_ENABLED) for list/start.',
         {
-            action: z.enum(['list', 'start', 'restore', 'delete'])
-                .describe('Backup operation to perform.'),
-            file: z.string().optional()
-                .describe('Archive file name from list (e.g. "1718000000000.zip"). Required for restore and delete.'),
-            components: z.array(z.enum(COMPONENTS)).optional()
-                .describe('Restore only these components (db, conf, hostio, samba). Omit to restore everything.'),
+            title: 'manage_backups',
+            description: 'Manage Relayer configuration backups: list archives, start a backup, restore from an archive, or delete one. Restore OVERWRITES current state and restarts services — always confirm with the operator and state which archive and components first. Backups must be enabled (BACKUP_ENABLED) for list/start.',
+            inputSchema: {
+                action: z.enum(['list', 'start', 'restore', 'delete'])
+                    .describe('Backup operation to perform.'),
+                // A bare string here reaches restore/delete, so bound it to an archive
+                // name: no path separators, no traversal, no whitespace-only (MR !33).
+                file: z.string().trim().min(1).regex(/^[A-Za-z0-9._-]+$/, 'file must be an archive name from action "list" — no path separators')
+                    .refine((v) => !v.includes('..'), 'file must not contain ".."')
+                    .optional()
+                    .describe('Archive file name from list (e.g. "1718000000000.zip"). Required for restore and delete.'),
+                // An explicitly EMPTY array previously collapsed to a full restore,
+                // identical to omitting the field — a destructive surprise for a caller
+                // that filtered its selection down to nothing (MR !33). Omit the field to
+                // restore everything; an empty list is now rejected.
+                components: z.array(z.enum(COMPONENTS)).nonempty('components must name at least one component; omit the field entirely to restore everything').optional()
+                    .describe('Restore only these components (db, conf, hostio, samba). Omit to restore everything.'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: true,
+            },
         },
         async ({ action, file, components }) => {
             try {
@@ -83,6 +99,7 @@ module.exports = function registerManageBackups(server, options = {}) {
 
                 if (status >= 400 || data?.success === false) {
                     const detail = data?.message || data?.error || `HTTP ${status}`;
+                    console.error(`[manage_backups] ${action} failed: ${detail}`);
                     return {
                         content: [{
                             type: 'text',
@@ -93,7 +110,7 @@ module.exports = function registerManageBackups(server, options = {}) {
                                 // agent to the fix instead of a dead end.
                                 error: data?.disabled
                                     ? 'Backups are disabled. Enable them with update_settings {"BACKUP_ENABLED": true} first.'
-                                    : `Backup ${action} failed: ${detail}`,
+                                    : `Backup ${action} failed. See server log for detail.`,
                             }, null, 2),
                         }],
                         isError: true,
@@ -123,12 +140,13 @@ module.exports = function registerManageBackups(server, options = {}) {
                     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
                 };
             } catch (err) {
+                console.error(`[manage_backups] ${action}: ${err.message}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Backup ${action} failed: ${err.message}`,
+                            error: `Backup ${action} failed. See server log for detail.`,
                         }),
                     }],
                     isError: true,

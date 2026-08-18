@@ -49,7 +49,8 @@ function registerWithOptions(server, opts) {
         dockerUtil: defaultDockerUtil,
         ...opts,
     });
-    return server.tool.mock.calls[0][3];
+    const { readRegistration } = require('./mockRegistration');
+    return readRegistration(server).handler;
 }
 
 module.exports = {

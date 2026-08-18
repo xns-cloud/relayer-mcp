@@ -6,16 +6,17 @@ describe('install_relayer', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     // Wrap the handler so the registered Zod shape is applied first — mirrors how
     // the MCP SDK validates + fills defaults before the handler ever runs.
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/installRelayer');
         register(server, opts);
-        const [, , shape, handler] = server.tool.mock.calls[0];
-        return (args) => handler(z.object(shape).parse(args));
+        const { schema, handler } = readRegistration(server);
+        return (args) => handler(z.object(schema).parse(args));
     }
 
     // TP-30: uses execFile, no shell (security non-negotiable)

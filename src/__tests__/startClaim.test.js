@@ -4,13 +4,14 @@ describe('start_claim', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithHttp(httpMock) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/startClaim');
         register(server, { httpClient: httpMock });
-        return server.tool.mock.calls[0][3];
+        return readRegistration(server).handler;
     }
 
     // AC-14: success → claim_url + expires_at

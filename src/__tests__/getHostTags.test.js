@@ -9,7 +9,7 @@ describe('get_host_tags', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -41,7 +41,8 @@ describe('get_host_tags', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -77,7 +78,8 @@ describe('get_host_tags', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -104,7 +106,8 @@ describe('get_host_tags', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -129,7 +132,8 @@ describe('get_host_tags', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -146,7 +150,8 @@ describe('get_host_tags', () => {
             httpClient: { get: jest.fn(), post: jest.fn() },
         });
 
-        const description = server.tool.mock.calls[0][1];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const { description } = readRegistration(server);
         expect(description).toContain('CEL');
         expect(description).toContain('plain-language');
     });
@@ -164,7 +169,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({});
 
         for (const [url] of getMock.mock.calls) {
@@ -190,7 +196,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -218,7 +225,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({})).content[0].text);
         expect(parsed.current.is_default).toBe(true);
     });
@@ -239,7 +247,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({})).content[0].text);
         expect(parsed.success).toBe(true);
         expect(parsed.current).toBeNull();
@@ -262,7 +271,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -288,7 +298,8 @@ describe('get_host_tags', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 

@@ -51,14 +51,22 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
     const pollTimeout = options.pollTimeoutMs ?? POLL_TIMEOUT_MS;
     const sleep = options.sleep;
 
-    server.tool(
+    server.registerTool(
         'check_relayer_health',
-        'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), HostIO, and the monitoring sidecars (Prometheus + Grafana containers). Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component; a missing monitoring stack reports as degraded (dashboards empty) without blocking the install flow. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Note: HostIO health status is unknown until OIDC authentication is completed.',
         {
-            poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),
-            host: z.string().trim().min(1).optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
-            ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer UI (matches install_relayer ui_port)'),
-            s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (matches install_relayer s3_port)'),
+            title: 'check_relayer_health',
+            description: 'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), HostIO, and the monitoring sidecars (Prometheus + Grafana containers). Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component; a missing monitoring stack reports as degraded (dashboards empty) without blocking the install flow. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Note: HostIO health status is unknown until OIDC authentication is completed.',
+            inputSchema: {
+                poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),
+                host: z.string().trim().min(1).optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
+                ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer UI (matches install_relayer ui_port)'),
+                s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (matches install_relayer s3_port)'),
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ poll, host, ui_port, s3_port }) => {
             try {
@@ -201,12 +209,13 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                     }],
                 };
             } catch (err) {
+                console.error(`[check_relayer_health] ${err.message}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Health check failed: ${err.message}`,
+                            error: 'Health check failed. See server log for detail.',
                         }),
                     }],
                     isError: true,

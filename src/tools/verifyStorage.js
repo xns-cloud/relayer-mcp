@@ -18,45 +18,9 @@ const { createTokenManager } = require('../lib/ensureToken');
  * The minted credential lives in memory only — zero fs usage.
  */
 
-/**
- * Validate that a URL points to a loopback, RFC-1918 private, or .local host.
- * Rejects public/internet-routable hosts to prevent token forwarding.
- *
- * @param {string} urlString - A fully qualified URL
- * @returns {{ allowed: boolean, reason?: string }}
- */
-function validateHostAllowlist(urlString) {
-    let parsed;
-    try {
-        parsed = new URL(urlString);
-    } catch {
-        return { allowed: false, reason: 'URL is malformed' };
-    }
-
-    const hostname = parsed.hostname.toLowerCase();
-
-    if (hostname === 'localhost' || hostname === '[::1]' || hostname === '::1') {
-        return { allowed: true };
-    }
-
-    if (hostname.endsWith('.local')) {
-        return { allowed: true };
-    }
-
-    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4Match) {
-        const octets = ipv4Match.slice(1).map(Number);
-        if (octets[0] === 127) return { allowed: true };
-        if (octets[0] === 10) return { allowed: true };
-        if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return { allowed: true };
-        if (octets[0] === 192 && octets[1] === 168) return { allowed: true };
-        return { allowed: false, reason: `Host ${hostname} is not a loopback or private-network address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
-    }
-
-    return { allowed: false, reason: `Host '${hostname}' is not a loopback, private-network, or .local address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
-}
-
-const NO_REDIRECT_TOKEN_CONFIG = { maxRedirects: 0 };
+// Host allowlist + no-redirect policy now live in lib/hostAllowlist.js so every
+// token-bearing tool shares one definition (MR !33).
+const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
 
 /**
  * An error whose message is authored by this tool (no caught provider text)
@@ -77,15 +41,23 @@ module.exports = function registerVerifyStorage(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
     const tokenMgr = createTokenManager(options);
 
-    server.tool(
+    server.registerTool(
         'verify_storage',
-        'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
         {
-            muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
-            access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
-            secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
-            relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
-            endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000. Pass an explicit IP (e.g. http://192.168.1.100:9000) when auto-detection cannot reach the host.'),
+            title: 'verify_storage',
+            description: 'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
+            inputSchema: {
+                muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
+                access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
+                secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
+                relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
+                endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000. Pass an explicit IP (e.g. http://192.168.1.100:9000) when auto-detection cannot reach the host.'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ muse_token, access_key_id, secret_access_key, relayer_ui_url = 'http://localhost:8888', endpoint }) => {
             const runTs = Date.now();
