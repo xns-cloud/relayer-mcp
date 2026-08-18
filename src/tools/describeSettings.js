@@ -20,11 +20,19 @@ module.exports = function registerDescribeSettings(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'describe_settings',
-        'List the adjustable Relayer settings: worker/concurrency tuning, backup schedule, and cost center (CCID). Returns current value, default, type, and guidance per setting. Use before update_settings. Requires OIDC sign-in (same session as the other tools).',
         {
-            /* no parameters — the whitelist is small by design */
+            title: 'describe_settings',
+            description: 'List the adjustable Relayer settings: worker/concurrency tuning, backup schedule, and cost center (CCID). Returns current value, default, type, and guidance per setting. Use before update_settings. Requires OIDC sign-in (same session as the other tools).',
+            inputSchema: {
+                /* no parameters — the whitelist is small by design */
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async () => {
             try {

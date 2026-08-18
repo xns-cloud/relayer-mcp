@@ -4,19 +4,21 @@ describe('start_registration', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts = {}) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/startRegistration');
         register(server, opts);
-        return server.tool.mock.calls[0][3];
+        return readRegistration(server).handler;
     }
 
     test('registers tool with name start_registration', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         require('../tools/startRegistration')(server);
-        expect(server.tool).toHaveBeenCalledTimes(1);
-        expect(server.tool.mock.calls[0][0]).toBe('start_registration');
+        expect(server.registerTool).toHaveBeenCalledTimes(1);
+        expect(readRegistration(server).name).toBe('start_registration');
     });
 
     test('returns registration_url with correct Keycloak host', async () => {
@@ -61,20 +63,23 @@ describe('start_registration', () => {
     });
 
     test('tool schema accepts no parameters', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         registerWithOptions();
-        const schema = server.tool.mock.calls[0][2];
+        const { schema } = readRegistration(server);
         expect(Object.keys(schema)).toHaveLength(0);
     });
 
     test('tool schema does not accept a password', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         registerWithOptions();
-        const schema = server.tool.mock.calls[0][2];
+        const { schema } = readRegistration(server);
         expect(Object.keys(schema)).not.toContain('password');
     });
 
     test('tool description does not mention password handling', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         registerWithOptions();
-        const description = server.tool.mock.calls[0][1];
+        const { description } = readRegistration(server);
         expect(description.toLowerCase()).not.toContain('password');
     });
 

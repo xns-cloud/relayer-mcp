@@ -40,13 +40,21 @@ module.exports = function registerConfigureVpd(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'configure_vpd',
-        'Configure VPD (Virtual Private Datacenter) host selection for the Relayer, or preview it with dry_run. Use defaults ("true" for both expressions) or a CEL expression filtering hosts by tags. The Relayer requires a minimum of 10 data hosts and 20 parity hosts — if too few match, broaden the criteria. Requires OIDC sign-in (same session as get_host_tags).',
         {
-            data_expression: z.string().describe('CEL expression for data host selection. Use "true" for default (all hosts).'),
-            parity_expression: z.string().describe('CEL expression for parity host selection. Use "true" for default (all hosts).'),
-            dry_run: z.boolean().optional().describe('Preview how many hosts match without applying anything. Not supported on Relayer versions without the evaluate endpoint.'),
+            title: 'configure_vpd',
+            description: 'Configure VPD (Virtual Private Datacenter) host selection for the Relayer, or preview it with dry_run. Use defaults ("true" for both expressions) or a CEL expression filtering hosts by tags. The Relayer requires a minimum of 10 data hosts and 20 parity hosts — if too few match, broaden the criteria. Requires OIDC sign-in (same session as get_host_tags).',
+            inputSchema: {
+                data_expression: z.string().describe('CEL expression for data host selection. Use "true" for default (all hosts).'),
+                parity_expression: z.string().describe('CEL expression for parity host selection. Use "true" for default (all hosts).'),
+                dry_run: z.boolean().optional().describe('Preview how many hosts match without applying anything. Not supported on Relayer versions without the evaluate endpoint.'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ data_expression, parity_expression, dry_run }) => {
             try {

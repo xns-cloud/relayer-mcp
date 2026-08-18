@@ -28,16 +28,24 @@ module.exports = function registerManageBackups(server, options = {}) {
     const tokenMgr = createTokenManager(options);
     const { ensureToken } = tokenMgr;
 
-    server.tool(
+    server.registerTool(
         'manage_backups',
-        'Manage Relayer configuration backups: list archives, start a backup, restore from an archive, or delete one. Restore OVERWRITES current state and restarts services — always confirm with the operator and state which archive and components first. Backups must be enabled (BACKUP_ENABLED) for list/start.',
         {
-            action: z.enum(['list', 'start', 'restore', 'delete'])
-                .describe('Backup operation to perform.'),
-            file: z.string().optional()
-                .describe('Archive file name from list (e.g. "1718000000000.zip"). Required for restore and delete.'),
-            components: z.array(z.enum(COMPONENTS)).optional()
-                .describe('Restore only these components (db, conf, hostio, samba). Omit to restore everything.'),
+            title: 'manage_backups',
+            description: 'Manage Relayer configuration backups: list archives, start a backup, restore from an archive, or delete one. Restore OVERWRITES current state and restarts services — always confirm with the operator and state which archive and components first. Backups must be enabled (BACKUP_ENABLED) for list/start.',
+            inputSchema: {
+                action: z.enum(['list', 'start', 'restore', 'delete'])
+                    .describe('Backup operation to perform.'),
+                file: z.string().optional()
+                    .describe('Archive file name from list (e.g. "1718000000000.zip"). Required for restore and delete.'),
+                components: z.array(z.enum(COMPONENTS)).optional()
+                    .describe('Restore only these components (db, conf, hostio, samba). Omit to restore everything.'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: true,
+            },
         },
         async ({ action, file, components }) => {
             try {

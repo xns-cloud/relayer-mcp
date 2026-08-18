@@ -18,11 +18,19 @@ module.exports = function registerStartClaim(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
     const relayerUiBase = options.relayerUiBase || RELAYER_UI_BASE;
 
-    server.tool(
+    server.registerTool(
         'start_claim',
-        'Start a claim session to link this Relayer installation to an XNS account. Returns a claim URL that the user must open in a browser to complete the claim. The claim has an expiration time. After calling this, use check_claim_status to monitor claim progress.',
         {
-            /* no parameters */
+            title: 'start_claim',
+            description: 'Start a claim session to link this Relayer installation to an XNS account. Returns a claim URL that the user must open in a browser to complete the claim. The claim has an expiration time. After calling this, use check_claim_status to monitor claim progress.',
+            inputSchema: {
+                /* no parameters */
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async () => {
             try {

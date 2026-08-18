@@ -24,12 +24,20 @@ module.exports = function registerCheckClaimStatus(server, options = {}) {
     const pollInterval = options.pollIntervalMs ?? POLL_INTERVAL_MS;
     const sleep = options.sleep;
 
-    server.tool(
+    server.registerTool(
         'check_claim_status',
-        'Poll the status of a claim session. Checks every 10 seconds. States: STATE_1 (pending — user has not yet opened the claim URL), STATE_2 (in progress — user is completing the claim in browser), STATE_3 (completed — claim successful). Automatically proceeds when STATE_3 is reached.',
         {
-            claim_id: z.string().describe('The claim_id returned by start_claim'),
-            timeout_ms: z.number().optional().default(600000).describe('Maximum time to poll in milliseconds (default: 10 minutes)'),
+            title: 'check_claim_status',
+            description: 'Poll the status of a claim session. Checks every 10 seconds. States: STATE_1 (pending — user has not yet opened the claim URL), STATE_2 (in progress — user is completing the claim in browser), STATE_3 (completed — claim successful). Automatically proceeds when STATE_3 is reached.',
+            inputSchema: {
+                claim_id: z.string().describe('The claim_id returned by start_claim'),
+                timeout_ms: z.number().optional().default(600000).describe('Maximum time to poll in milliseconds (default: 10 minutes)'),
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ claim_id, timeout_ms }) => {
             try {

@@ -13,7 +13,7 @@ describe('verify_storage — contract gaps', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
         jest.resetModules();
     });
 
@@ -182,7 +182,8 @@ describe('verify_storage — contract gaps', () => {
 
     test('schema rejects a whitespace-only muse_token override', () => {
         registerWithOptions({ httpClient: createMintingHttpMock(), createS3Client: () => createPassingS3Mock() });
-        const schema = server.tool.mock.calls[0][2];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const schema = readRegistration(server).schema;
         expect(schema.muse_token.safeParse('   ').success).toBe(false);
         expect(schema.muse_token.safeParse('real-token').success).toBe(true);
         expect(schema.muse_token.safeParse(undefined).success).toBe(true);

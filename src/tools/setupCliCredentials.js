@@ -21,13 +21,21 @@ const { createHttpClient } = require('../lib/httpClient');
 module.exports = function registerSetupCliCredentials(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
 
-    server.tool(
+    server.registerTool(
         'setup_cli_credentials',
-        'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
         {
-            muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),
-            installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
-            relayer_ui_url: z.string().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
+            title: 'setup_cli_credentials',
+            description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
+            inputSchema: {
+                muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),
+                installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
+                relayer_ui_url: z.string().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: true,
+            },
         },
         async ({ muse_token, installation_id, relayer_ui_url }) => {
             try {

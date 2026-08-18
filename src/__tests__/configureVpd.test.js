@@ -9,7 +9,7 @@ describe('configure_vpd', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -41,7 +41,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ data_expression: 'true', parity_expression: 'true' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -62,7 +63,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: '"region" == "antarctica"',
             parity_expression: '"region" == "antarctica"',
@@ -89,7 +91,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: 'bad syntax {{',
             parity_expression: 'true',
@@ -127,7 +130,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ data_expression: 'true', parity_expression: 'true' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -147,7 +151,8 @@ describe('configure_vpd', () => {
             httpClient: { post: postMock, get: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({
             data_expression: '"region" == "us-east"',
             parity_expression: '"region" == "eu-west"',
@@ -170,7 +175,8 @@ describe('configure_vpd', () => {
             httpClient: { post: postMock, get: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({ data_expression: 'true', parity_expression: 'true' });
 
         const [url] = postMock.mock.calls[0];
@@ -190,7 +196,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ data_expression: 'true', parity_expression: 'true' });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -213,7 +220,8 @@ describe('configure_vpd', () => {
             httpClient: { post: postMock, get: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: '"region" == "us-east"',
             parity_expression: 'true',
@@ -244,7 +252,8 @@ describe('configure_vpd', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: 'true',
             parity_expression: 'true',

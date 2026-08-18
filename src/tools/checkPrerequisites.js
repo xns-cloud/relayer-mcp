@@ -35,11 +35,19 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     const _checkPort = options.checkPort || checkPort;
     const _environmentProbe = options.environmentProbe || defaultEnvironmentProbe;
 
-    server.tool(
+    server.registerTool(
         'check_prerequisites',
-        'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Run this first before any other relayer tool.',
         {
-            /* no parameters */
+            title: 'check_prerequisites',
+            description: 'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Run this first before any other relayer tool.',
+            inputSchema: {
+                /* no parameters */
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async () => {
             const checks = [];

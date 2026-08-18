@@ -23,7 +23,7 @@ describe('T1 Contract-Gap: checkClaimStatus isError logic', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -33,7 +33,8 @@ describe('T1 Contract-Gap: checkClaimStatus isError logic', () => {
             sleep: jest.fn().mockResolvedValue(undefined),
             ...opts,
         });
-        return server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        return readRegistration(server).handler;
     }
 
     // The expression `!result.continue_polling === false` at checkClaimStatus.js:138
@@ -106,7 +107,7 @@ describe('T1 Contract-Gap: getHostTags empty tags array', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     // When HostIO returns { tags: [] } — empty array is truthy in JS,
@@ -132,7 +133,8 @@ describe('T1 Contract-Gap: getHostTags empty tags array', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({});
         const parsed = JSON.parse(result.content[0].text);
 
@@ -147,7 +149,7 @@ describe('T1 Contract-Gap: configureVpd string response body', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     function registerWithOptions(opts) {
@@ -166,7 +168,8 @@ describe('T1 Contract-Gap: configureVpd string response body', () => {
             refreshToken: jest.fn(),
             ...opts,
         });
-        return server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        return readRegistration(server).handler;
     }
 
     // HostIO is a Go endpoint that may return a plain string body on 400,
@@ -182,7 +185,8 @@ describe('T1 Contract-Gap: configureVpd string response body', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: '"region" == "nowhere"',
             parity_expression: '"region" == "nowhere"',
@@ -207,7 +211,8 @@ describe('T1 Contract-Gap: configureVpd string response body', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({
             data_expression: '{{bad',
             parity_expression: 'true',
@@ -225,7 +230,7 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     // Verify getHostTags actually sends the keycloaktoken header
@@ -247,7 +252,8 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
             httpClient: { get: getMock, post: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({});
 
         // Verify the header was passed
@@ -277,7 +283,8 @@ describe('T1 Contract-Gap: keycloaktoken header plumbing', () => {
             httpClient: { post: postMock, get: jest.fn() },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         await handler({ data_expression: 'true', parity_expression: 'true' });
 
         // Verify the header was passed as third argument (config) to post()
@@ -308,7 +315,7 @@ describe('T1 Contract-Gap: cross-tool invariants', () => {
     ];
 
     function registerAllTools() {
-        const srv = { tool: jest.fn() };
+        const srv = { registerTool: jest.fn() };
         for (const mod of ALL_TOOL_MODULES) {
             require(mod)(srv);
         }
@@ -317,19 +324,23 @@ describe('T1 Contract-Gap: cross-tool invariants', () => {
 
     test('S2: registered tool count is exactly 15', () => {
         const srv = registerAllTools();
-        expect(srv.tool.mock.calls.length).toBe(15);
+        expect(srv.registerTool.mock.calls.length).toBe(15);
     });
 
     test('TP-5: no tool description matches /fullaccess/i', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const srv = registerAllTools();
-        for (const [name, description] of srv.tool.mock.calls) {
+        for (let i = 0; i < srv.registerTool.mock.calls.length; i++) {
+            const { description } = readRegistration(srv, i);
             expect(description.toLowerCase()).not.toContain('fullaccess');
         }
     });
 
     test('TP-4: no tool schema accepts a password key', () => {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const srv = registerAllTools();
-        for (const [name, , schema] of srv.tool.mock.calls) {
+        for (let i = 0; i < srv.registerTool.mock.calls.length; i++) {
+            const { schema } = readRegistration(srv, i);
             const keys = Object.keys(schema || {});
             expect(keys).not.toContain('password');
         }
@@ -340,7 +351,7 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
     });
 
     // The code considers S3 healthy when status >= 200 && status < 500.
@@ -367,7 +378,8 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ poll: false });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -399,7 +411,8 @@ describe('T1 Contract-Gap: checkRelayerHealth S3 4xx response', () => {
             },
         });
 
-        const handler = server.tool.mock.calls[0][3];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const handler = readRegistration(server).handler;
         const result = await handler({ poll: false });
         const parsed = JSON.parse(result.content[0].text);
 

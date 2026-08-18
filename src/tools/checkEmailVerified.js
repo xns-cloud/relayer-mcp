@@ -27,12 +27,20 @@ module.exports = function registerCheckEmailVerified(server, options = {}) {
     const pollTimeout = options.pollTimeoutMs ?? POLL_TIMEOUT_MS;
     const sleep = options.sleep;
 
-    server.tool(
+    server.registerTool(
         'check_email_verified',
-        'Poll to check if the user has verified their email address. Automatically polls every 15 seconds for up to 30 minutes. Returns immediately if already verified. If the email has no account, indicates registration is needed.',
         {
-            email: z.string().email().describe('Email address to check verification status'),
-            poll: z.boolean().optional().default(true).describe('If true (default), poll until verified or timeout. If false, check once.'),
+            title: 'check_email_verified',
+            description: 'Poll to check if the user has verified their email address. Automatically polls every 15 seconds for up to 30 minutes. Returns immediately if already verified. If the email has no account, indicates registration is needed.',
+            inputSchema: {
+                email: z.string().email().describe('Email address to check verification status'),
+                poll: z.boolean().optional().default(true).describe('If true (default), poll until verified or timeout. If false, check once.'),
+            },
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ email, poll }) => {
             try {

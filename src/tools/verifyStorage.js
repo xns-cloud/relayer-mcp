@@ -77,15 +77,23 @@ module.exports = function registerVerifyStorage(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
     const tokenMgr = createTokenManager(options);
 
-    server.tool(
+    server.registerTool(
         'verify_storage',
-        'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
         {
-            muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
-            access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
-            secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
-            relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
-            endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000. Pass an explicit IP (e.g. http://192.168.1.100:9000) when auto-detection cannot reach the host.'),
+            title: 'verify_storage',
+            description: 'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
+            inputSchema: {
+                muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),
+                access_key_id: z.string().optional().describe('S3 access key ID — when provided with secret_access_key, skips automatic credential provisioning'),
+                secret_access_key: z.string().optional().describe('S3 secret access key — when provided with access_key_id, skips automatic credential provisioning'),
+                relayer_ui_url: z.string().trim().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888)'),
+                endpoint: z.string().trim().url().optional().describe('S3 endpoint URL. Default: http://{docker-host}:9000. Pass an explicit IP (e.g. http://192.168.1.100:9000) when auto-detection cannot reach the host.'),
+            },
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: true,
+            },
         },
         async ({ muse_token, access_key_id, secret_access_key, relayer_ui_url = 'http://localhost:8888', endpoint }) => {
             const runTs = Date.now();

@@ -6,7 +6,7 @@ describe('verify_storage', () => {
     let server;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
         jest.resetModules();
     });
 
@@ -395,7 +395,8 @@ describe('verify_storage', () => {
     test('malformed endpoint rejected at zod boundary', () => {
         const { z } = require('zod');
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const shape = server.tool.mock.calls[0][2];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const shape = readRegistration(server).schema;
 
         const parsed = z.object(shape).safeParse({
             muse_token: 'jwt',
@@ -408,7 +409,8 @@ describe('verify_storage', () => {
     test('malformed relayer_ui_url rejected at zod boundary', () => {
         const { z } = require('zod');
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const shape = server.tool.mock.calls[0][2];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const shape = readRegistration(server).schema;
 
         const parsed = z.object(shape).safeParse({
             muse_token: 'jwt',
@@ -518,13 +520,15 @@ describe('verify_storage', () => {
 
     test('tool description does not mention fullaccess', () => {
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const description = server.tool.mock.calls[0][1];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const { description } = readRegistration(server);
         expect(description.toLowerCase()).not.toContain('fullaccess');
     });
 
     test('tool description mentions OIDC/automatic provisioning', () => {
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const description = server.tool.mock.calls[0][1];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const { description } = readRegistration(server);
         expect(description).toMatch(/automatic|OIDC|provision/i);
     });
 
@@ -591,14 +595,16 @@ describe('verify_storage', () => {
 
     test('access_key_id and secret_access_key are optional in schema', () => {
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const schema = server.tool.mock.calls[0][2];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const schema = readRegistration(server).schema;
         expect(schema.access_key_id.isOptional()).toBe(true);
         expect(schema.secret_access_key.isOptional()).toBe(true);
     });
 
     test('muse_token is optional in schema', () => {
         registerWithOptions({ createS3Client: jest.fn(), httpClient: createMintingHttpMock() });
-        const schema = server.tool.mock.calls[0][2];
+        const { readRegistration } = require('./helpers/mockRegistration');
+        const schema = readRegistration(server).schema;
         expect(schema.muse_token.isOptional()).toBe(true);
     });
 

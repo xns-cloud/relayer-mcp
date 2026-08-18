@@ -24,17 +24,18 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
     let installPath;
 
     beforeEach(() => {
-        server = { tool: jest.fn() };
+        server = { registerTool: jest.fn() };
         // execFile (and therefore mkdir -p) is faked, so the install dir has to
         // exist for the real .env write on the default path.
         installPath = fs.mkdtempSync(path.join(os.tmpdir(), 'xns-a2-'));
     });
 
     function registerWithOptions(opts) {
+        const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/installRelayer');
         register(server, opts);
-        const [, , shape, handler] = server.tool.mock.calls[0];
-        return (args) => handler(z.object(shape).parse(args));
+        const { schema, handler } = readRegistration(server);
+        return (args) => handler(z.object(schema).parse(args));
     }
 
     function run(composeUp, extraArgs = {}) {
