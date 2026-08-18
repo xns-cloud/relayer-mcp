@@ -66,6 +66,19 @@ claude mcp add relayer -- npx @xns-cloud/relayer-mcp@latest
 }
 ```
 
+**Cursor** — add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "relayer": {
+      "command": "npx",
+      "args": ["@xns-cloud/relayer-mcp@latest"]
+    }
+  }
+}
+```
+
 No separate install step required — npx fetches the package on demand.
 
 ## Tools

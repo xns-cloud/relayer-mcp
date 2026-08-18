@@ -90,6 +90,13 @@ describe('E-B1 keyword contract (AC1a)', () => {
             expect(pkg.keywords).toContain(kw);
         }
     });
+
+    // E-A2 AC7: four agentic-discoverability keywords pinned.
+    test('keywords include the E-A2 agentic-discoverability additions', () => {
+        for (const kw of ['zero-egress', 'rag-infrastructure', 'agentic-workflows', 'agentic']) {
+            expect(pkg.keywords).toContain(kw);
+        }
+    });
 });
 
 describe('E-B1 README drift contract (AC2a)', () => {

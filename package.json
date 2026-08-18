@@ -37,7 +37,11 @@
     "storage",
     "backup",
     "s3-compatible",
-    "claude"
+    "claude",
+    "zero-egress",
+    "rag-infrastructure",
+    "agentic-workflows",
+    "agentic"
   ],
   "engines": {
     "node": ">=20"

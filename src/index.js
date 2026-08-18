@@ -14,7 +14,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 
 const server = new McpServer({
-    name: 'relayer-mcp',
+    name: 'tech.xns/relayer',
     version: require('../package.json').version,
 });
 
