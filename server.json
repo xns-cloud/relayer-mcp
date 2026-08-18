@@ -7,12 +7,12 @@
     "url": "https://gitlab.com/scpcorp/relayer-mcp",
     "source": "gitlab"
   },
-  "version": "0.9.1",
+  "version": "0.9.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@xns-cloud/relayer-mcp",
-      "version": "0.9.1",
+      "version": "0.9.2",
       "transport": {
         "type": "stdio"
       }
