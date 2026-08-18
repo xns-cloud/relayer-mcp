@@ -94,8 +94,18 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                     };
                 }
 
-                // Step 2: derive S3 endpoint (same host, port 9000)
-                const s3Endpoint = relayer_ui_url.replace(/:(\d+)(\/|$)/, ':9000$2');
+                // Step 2: derive S3 endpoint (same host, port 9000).
+                // Parse rather than regex-replace: the old `.replace(/:(\d+)(\/|$)/, ...)`
+                // only rewrote an EXISTING :port slot, so a portless URL kept 80/443, a
+                // query or fragment survived into the persisted endpoint, and a ':digits'
+                // sequence in the PATH could be rewritten instead of the port (MR !33).
+                const s3Url = new URL(relayer_ui_url);
+                s3Url.port = '9000';
+                s3Url.username = '';
+                s3Url.password = '';
+                s3Url.search = '';
+                s3Url.hash = '';
+                const s3Endpoint = s3Url.toString().replace(/\/$/, '');
 
                 // Step 3: write ~/.xns/credentials (AC-11 JSON schema, mode 0600)
                 const credsPath = path.join(os.homedir(), '.xns', 'credentials');
@@ -116,6 +126,10 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 };
 
                 fs.writeFileSync(credsPath, JSON.stringify(creds, null, 2), { mode: 0o600 });
+                // writeFileSync's mode only applies when the file is CREATED. This file is
+                // overwritten unconditionally, so an existing loose-permission file would
+                // keep those permissions and hold secret keys (MR !33).
+                fs.chmodSync(credsPath, 0o600);
 
                 return {
                     content: [{

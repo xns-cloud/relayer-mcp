@@ -73,6 +73,41 @@ describe('setup_cli_credentials does not forward the Muse token to arbitrary hos
     });
 });
 
+describe('the persisted S3 endpoint is derived, not string-patched', () => {
+    // The old regex only rewrote an existing :port slot. Every case below was wrong
+    // before (MR !33, Fable pass): portless URLs kept 80/443, query/fragment survived
+    // into the persisted endpoint, and ':digits' in a PATH could be rewritten instead.
+    async function endpointFor(relayerUiUrl) {
+        const tools = register('../tools/setupCliCredentials', {
+            httpClient: {
+                post: async () => ({ status: 200, data: { access_key: 'AK', secret_key: 'SK' } }),
+                get: async () => ({ status: 200, data: {} }),
+            },
+        });
+        const { config, handler } = tools['setup_cli_credentials'];
+        const args = z.object(config.inputSchema).parse({ muse_token: 'T', relayer_ui_url: relayerUiUrl });
+        return JSON.parse((await handler(args)).content[0].text).s3_endpoint;
+    }
+
+    test.each([
+        ['http://localhost:8888', 'http://localhost:9000'],
+        ['http://192.168.1.50', 'http://192.168.1.50:9000'],      // was http://192.168.1.50 (port 80)
+        ['http://myhost.local', 'http://myhost.local:9000'],       // was port 80
+        ['http://10.0.0.5:8888?x=1', 'http://10.0.0.5:9000'],      // query no longer persisted
+        ['http://10.0.0.5:8888#f', 'http://10.0.0.5:9000'],        // fragment no longer persisted
+        ['http://10.0.0.5/x:123/y', 'http://10.0.0.5:9000/x:123/y'], // path no longer rewritten
+        ['http://10.0.0.5:8888/sub', 'http://10.0.0.5:9000/sub'],  // real path preserved
+    ])('%s -> %s', async (input, expected) => {
+        expect(await endpointFor(input)).toBe(expected);
+    });
+
+    test('always targets port 9000 for every host the allowlist accepts', async () => {
+        for (const u of ['http://localhost', 'http://127.0.0.1', 'http://10.0.0.5', 'http://192.168.1.1']) {
+            expect(await endpointFor(u)).toMatch(/:9000$/);
+        }
+    });
+});
+
 describe('manage_backups rejects selections that would silently widen a restore', () => {
     const shape = () => register('../tools/manageBackups')['manage_backups'].config.inputSchema;
 
