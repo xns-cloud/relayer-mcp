@@ -59,8 +59,8 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
             inputSchema: {
                 poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),
                 host: z.string().trim().min(1).optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
-                ui_port: z.number().int().positive().optional().default(8888).describe('Host port for the Relayer UI (matches install_relayer ui_port)'),
-                s3_port: z.number().int().positive().optional().default(9000).describe('Host port for the S3 API (matches install_relayer s3_port)'),
+                ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer UI (matches install_relayer ui_port)'),
+                s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (matches install_relayer s3_port)'),
             },
             annotations: {
                 readOnlyHint: true,
@@ -209,12 +209,13 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                     }],
                 };
             } catch (err) {
+                console.error(`[check_relayer_health] ${err.message}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Health check failed: ${err.message}`,
+                            error: 'Health check failed. See server log for detail.',
                         }),
                     }],
                     isError: true,

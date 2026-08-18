@@ -18,45 +18,9 @@ const { createTokenManager } = require('../lib/ensureToken');
  * The minted credential lives in memory only — zero fs usage.
  */
 
-/**
- * Validate that a URL points to a loopback, RFC-1918 private, or .local host.
- * Rejects public/internet-routable hosts to prevent token forwarding.
- *
- * @param {string} urlString - A fully qualified URL
- * @returns {{ allowed: boolean, reason?: string }}
- */
-function validateHostAllowlist(urlString) {
-    let parsed;
-    try {
-        parsed = new URL(urlString);
-    } catch {
-        return { allowed: false, reason: 'URL is malformed' };
-    }
-
-    const hostname = parsed.hostname.toLowerCase();
-
-    if (hostname === 'localhost' || hostname === '[::1]' || hostname === '::1') {
-        return { allowed: true };
-    }
-
-    if (hostname.endsWith('.local')) {
-        return { allowed: true };
-    }
-
-    const ipv4Match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4Match) {
-        const octets = ipv4Match.slice(1).map(Number);
-        if (octets[0] === 127) return { allowed: true };
-        if (octets[0] === 10) return { allowed: true };
-        if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return { allowed: true };
-        if (octets[0] === 192 && octets[1] === 168) return { allowed: true };
-        return { allowed: false, reason: `Host ${hostname} is not a loopback or private-network address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
-    }
-
-    return { allowed: false, reason: `Host '${hostname}' is not a loopback, private-network, or .local address. Allowed: localhost, 127.0.0.0/8, ::1, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, *.local` };
-}
-
-const NO_REDIRECT_TOKEN_CONFIG = { maxRedirects: 0 };
+// Host allowlist + no-redirect policy now live in lib/hostAllowlist.js so every
+// token-bearing tool shares one definition (MR !33).
+const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
 
 /**
  * An error whose message is authored by this tool (no caught provider text)

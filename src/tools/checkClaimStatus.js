@@ -31,7 +31,7 @@ module.exports = function registerCheckClaimStatus(server, options = {}) {
             description: 'Poll the status of a claim session. Checks every 10 seconds. States: STATE_1 (pending — user has not yet opened the claim URL), STATE_2 (in progress — user is completing the claim in browser), STATE_3 (completed — claim successful). Automatically proceeds when STATE_3 is reached.',
             inputSchema: {
                 claim_id: z.string().describe('The claim_id returned by start_claim'),
-                timeout_ms: z.number().optional().default(600000).describe('Maximum time to poll in milliseconds (default: 10 minutes)'),
+                timeout_ms: z.number().int().min(1000).max(3600000).optional().default(600000).describe('Maximum time to poll in milliseconds (default: 10 minutes, max 1 hour)'),
             },
             annotations: {
                 readOnlyHint: true,
@@ -146,12 +146,13 @@ module.exports = function registerCheckClaimStatus(server, options = {}) {
                     isError: (result.success === false && result.continue_polling !== false) ? true : undefined,
                 };
             } catch (err) {
+                console.error(`[check_claim_status] ${err.message}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Claim status check failed: ${err.message}`,
+                            error: 'Claim status check failed. See server log for detail.',
                         }),
                     }],
                     isError: true,
