@@ -10,6 +10,9 @@
   `llms.txt` and the pricing page have all stated throughout — the README was the only
   surface carrying the wrong term, and it had propagated to npm, the GitHub mirror and the
   Glama listing.
+- **`package-lock.json` version realigned.** It had read `0.8.1` since that release and was
+  not bumped for either 0.9.0 or 0.9.1, so `npm ci` installed a lockfile disagreeing with
+  `package.json`. Now tracks the package version.
 
 ## [0.9.1] — 2026-08-18
 
