@@ -35,6 +35,15 @@ describe('E-B1 identity contract: npm ↔ MCP registry', () => {
         expect(serverJson.name).toBe(IMMUTABLE_MCP_NAME);
     });
 
+    // E-A2 CONTRACT-1: the file-level chain above says nothing about what the
+    // RUNNING server announces. An edit to src/index.js could break the chain
+    // with every other test still green, so pin the runtime name too.
+    test('the running server announces the immutable registry name', () => {
+        const { server } = require('../index');
+        expect(server.server._serverInfo.name).toBe(IMMUTABLE_MCP_NAME);
+        expect(server.server._serverInfo.version).toBe(pkg.version);
+    });
+
     test('server.json packages[0].identifier is the immutable npm package name', () => {
         expect(pkg.name).toBe(IMMUTABLE_NPM_NAME);
         expect(serverJson.packages).toHaveLength(1);

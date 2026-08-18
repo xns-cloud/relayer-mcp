@@ -6,50 +6,39 @@
  * Asserts all 15 tools carry explicitly-set readOnlyHint, destructiveHint,
  * and openWorldHint via server._registeredTools[name].annotations.
  *
- * Source of truth: epic-E-A2/fixtures/tool-annotations.json.
+ * Contract provenance: epic-E-A2/fixtures/tool-annotations.json (mirrored inline
+ * below — see the note there).
  * A stripped annotation must fail the build (AC4).
  */
 
-const path = require('path');
-const fs = require('fs');
+// The annotation contract. Provenance: this table is the in-repo mirror of
+// epic-E-A2/fixtures/tool-annotations.json, the scoping artifact that carries the
+// per-tool evidence for each hint. It is inlined rather than read from that file
+// because this package is published to npm and its test suite must run in CI with
+// no sprint tree mounted — a file read would be a dead branch everywhere but one
+// workstation. If the two ever disagree, the fixture's evidence column is the
+// argument and this table is what actually ships; reconcile deliberately.
+const fixtureData = {
+    tools: [
+        { name: 'check_prerequisites',   readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'start_registration',    readOnlyHint: true,  destructiveHint: false, openWorldHint: false },
+        { name: 'check_email_verified',  readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'install_relayer',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
+        { name: 'check_relayer_health',  readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'start_claim',           readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        { name: 'check_claim_status',    readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'get_host_tags',         readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'configure_vpd',         readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        { name: 'verify_storage',        readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        { name: 'setup_cli_credentials', readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
+        { name: 'describe_settings',     readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
+        { name: 'update_settings',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
+        { name: 'restart_service',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
+        { name: 'manage_backups',        readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
+    ],
+};
 
 const { server } = require('../index');
-
-// Load the annotation contract fixture.
-const fixturePath = path.resolve(
-    __dirname, '..', '..', '..', '..', '..', '..',
-    'mnt', 'e', 'development', 'sprints', 'Inflight',
-    '2026-08-agentic-discoverability-top_15',
-    'epic-E-A2', 'fixtures', 'tool-annotations.json',
-);
-
-// Fall back to a local copy if the sprint fixture is not reachable (CI).
-let fixtureData;
-try {
-    fixtureData = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-} catch {
-    // Inline the contract so the test is self-contained even outside the
-    // sprint tree. This MUST stay in sync with the fixture.
-    fixtureData = {
-        tools: [
-            { name: 'check_prerequisites',   readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'start_registration',    readOnlyHint: true,  destructiveHint: false, openWorldHint: false },
-            { name: 'check_email_verified',  readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'install_relayer',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
-            { name: 'check_relayer_health',  readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'start_claim',           readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-            { name: 'check_claim_status',    readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'get_host_tags',         readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'configure_vpd',         readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-            { name: 'verify_storage',        readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-            { name: 'setup_cli_credentials', readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
-            { name: 'describe_settings',     readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-            { name: 'update_settings',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
-            { name: 'restart_service',       readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
-            { name: 'manage_backups',        readOnlyHint: false, destructiveHint: true,  openWorldHint: true },
-        ],
-    };
-}
 
 const expectedByName = {};
 for (const tool of fixtureData.tools) {

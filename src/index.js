@@ -13,8 +13,12 @@ if (!nodeCheck.ok) {
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 
+// Name and version both derive from package.json so the runtime server, the npm
+// package, and the registry card cannot drift apart (CONTRACT-1, E-A2 review).
+// package.json mcpName is the immutable registry identity, pinned by
+// registryIdentity.test.js.
 const server = new McpServer({
-    name: 'tech.xns/relayer',
+    name: require('../package.json').mcpName,
     version: require('../package.json').version,
 });
 
