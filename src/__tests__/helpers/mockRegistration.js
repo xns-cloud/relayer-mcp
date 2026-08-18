@@ -19,16 +19,21 @@
  *
  * @param {object} server - The mock server with registerTool as jest.fn()
  * @param {number} [callIndex=0] - Which registration call to read
- * @returns {{ name: string, description: string, schema: object, handler: Function, annotations: object }}
+ * @returns {{ name: string, title: string, description: string, schema: object,
+ *             handler: Function, annotations: object, config: object }}
  */
 function readRegistration(server, callIndex = 0) {
     const [name, config, handler] = server.registerTool.mock.calls[callIndex];
     return {
         name,
+        title: config.title,
         description: config.description,
         schema: config.inputSchema,
         handler,
         annotations: config.annotations,
+        // The whole config, for assertions about the object's shape itself
+        // (e.g. a field being absent) rather than a named field's value.
+        config,
     };
 }
 

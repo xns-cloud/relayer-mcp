@@ -5,7 +5,7 @@
  *
  * AC1 requires zero server.tool call-sites and full routing through the
  * shared mockRegistration helper. A file that reaches into
- * `registerTool.mock.calls[i]` positionally instead of going through
+ * `registerTool.mock.calls[...]` positionally instead of going through
  * `readRegistration` is a latent AC1 violation the annotation/shape
  * tests would not catch (it can still pass while duplicating the coupling
  * the helper exists to remove). This test fails the build if any test
@@ -16,7 +16,12 @@ const fs = require('fs');
 const path = require('path');
 
 const TESTS_DIR = __dirname;
-const POSITIONAL_READ = /registerTool\.mock\.calls\[\d+\]\[\d+\]/;
+// Any direct indexed access, not just the two-index form. Tuple destructuring
+// (`const [name, config] = ...mock.calls[0]`) bypasses the helper just as much
+// as `...mock.calls[0][1]` does, and the narrower pattern missed it (CR thread 1).
+// `.mock.calls.length` is untouched — it reads no registration field.
+const POSITIONAL_READ = /registerTool\.mock\.calls\[/;
+const SELF_EXEMPT = new Set(['mockRegistration.test.js', 'helperUsageGate.test.js']);
 
 function listTestFiles(dir) {
     const out = [];
@@ -32,11 +37,14 @@ function listTestFiles(dir) {
 }
 
 describe('helper usage gate', () => {
-    test('no test file reads registerTool.mock.calls[i][j] positionally outside the helper', () => {
+    test('no test file indexes registerTool.mock.calls directly outside the helper', () => {
         const offenders = [];
 
         for (const file of listTestFiles(TESTS_DIR)) {
-            if (path.basename(file) === 'mockRegistration.test.js') continue; // exercises the helper's own indexing
+            // Two files legitimately contain the pattern: the helper's own test
+            // (it exercises the indexing) and this gate (its regex and comments
+            // spell the pattern out).
+            if (SELF_EXEMPT.has(path.basename(file))) continue;
             const content = fs.readFileSync(file, 'utf8');
             if (POSITIONAL_READ.test(content)) {
                 offenders.push(path.relative(TESTS_DIR, file));

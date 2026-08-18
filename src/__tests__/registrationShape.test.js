@@ -13,6 +13,8 @@
  * description would not fail any pre-existing test.
  */
 
+const { readRegistration } = require('./helpers/mockRegistration');
+
 const ALL_TOOL_MODULES = [
     '../tools/checkPrerequisites',
     '../tools/startRegistration',
@@ -39,13 +41,15 @@ describe('T1 Contract-Gap: tools-list-entry-sample config shape', () => {
             const server = { registerTool: jest.fn() };
             require(mod)(server);
 
-            const [name, config] = server.registerTool.mock.calls[0] || [];
-            const label = `${mod} (registered as "${name}")`;
-
-            if (!config) {
-                failures.push(`${label}: registerTool was not called`);
+            let name;
+            let config;
+            try {
+                ({ name, config } = readRegistration(server));
+            } catch {
+                failures.push(`${mod}: registerTool was not called`);
                 continue;
             }
+            const label = `${mod} (registered as "${name}")`;
             if (config.title !== name) {
                 failures.push(`${label}: title "${config.title}" !== registered name "${name}"`);
             }
