@@ -10,7 +10,7 @@ MCP server for [XNS Relayer](https://xns.tech) — S3-compatible decentralized o
 npx @xns-cloud/relayer-mcp@latest
 ```
 
-**Pricing:** [$4.99/TB-mo](https://xns.tech) storage, [$0 egress uncapped](https://xns.tech), [no minimum retention](https://xns.tech).
+**Pricing:** [$4.00 per network-TB-month](https://xns.tech/pricing) — you pay for the parity your data is stored with, [$0 egress uncapped](https://xns.tech/pricing), [no minimum retention](https://xns.tech/pricing).
 
 ## Requirements
 
