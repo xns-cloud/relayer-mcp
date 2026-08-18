@@ -108,6 +108,55 @@ describe('the persisted S3 endpoint is derived, not string-patched', () => {
     });
 });
 
+describe('the credentials file does not persist the Muse token', () => {
+    // The xns CLI requires the KEY to exist (5-key schema) but never reads its value:
+    // `_ = p.MuseToken` in internal/credentials/store.go validateProfile is the only
+    // reference, and its comment says "muse_token may be empty". Writing the live JWT
+    // there left a short-lived, unrenewable credential on disk granting Muse-API reach
+    // beyond S3, for no consumer.
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+
+    test('writes the muse_token key present but empty, and keeps the S3 keys', async () => {
+        const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xns-creds-'));
+        const realHomedir = os.homedir;
+        os.homedir = () => tmpHome;
+        try {
+            const tools = register('../tools/setupCliCredentials', {
+                httpClient: {
+                    post: async () => ({ status: 200, data: { access_key: 'AKIAEXAMPLE', secret_key: 'wJalrSECRET' } }),
+                    get: async () => ({ status: 200, data: {} }),
+                },
+            });
+            const { config, handler } = tools['setup_cli_credentials'];
+            const args = z.object(config.inputSchema).parse({
+                muse_token: 'eyJHEADER.eyJPAYLOAD.SIGNATURE',
+                installation_id: 'cc-test-001',
+                relayer_ui_url: 'http://localhost:8888',
+            });
+
+            await handler(args);
+
+            const raw = fs.readFileSync(path.join(tmpHome, '.xns', 'credentials'), 'utf8');
+            const profile = JSON.parse(raw).profiles.default;
+
+            // The key must still be present — the CLI's schema is 5-key.
+            expect(Object.keys(profile)).toContain('muse_token');
+            expect(profile.muse_token).toBe('');
+            // The token must not appear anywhere in the file, under any key.
+            expect(raw).not.toContain('eyJHEADER');
+            // The credentials the CLI actually needs are still written.
+            expect(profile.access_key_id).toBe('AKIAEXAMPLE');
+            expect(profile.secret_access_key).toBe('wJalrSECRET');
+            expect(profile.cost_center_id).toBe('cc-test-001');
+        } finally {
+            os.homedir = realHomedir;
+            fs.rmSync(tmpHome, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('manage_backups rejects selections that would silently widen a restore', () => {
     const shape = () => register('../tools/manageBackups')['manage_backups'].config.inputSchema;
 

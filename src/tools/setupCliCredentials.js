@@ -119,7 +119,18 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                             access_key_id: ak,
                             secret_access_key: sk,
                             cost_center_id: installation_id,
-                            muse_token: muse_token,
+                            // Deliberately empty. The 5-key schema requires the key to be
+                            // PRESENT, but the xns CLI never reads its value — the only
+                            // reference in that codebase is `_ = p.MuseToken` in
+                            // validateProfile, whose comment states "muse_token may be
+                            // empty", and its round-trip test asserts the field IS empty.
+                            // Writing the JWT here bought nothing and cost real exposure:
+                            // it expires in minutes so the copy goes stale, there is no
+                            // refresh token to renew it, and until expiry a read of this
+                            // file grants Muse-API reach well beyond S3. The access and
+                            // secret keys below do belong here — S3 request signing needs
+                            // them in plaintext, same as ~/.aws/credentials.
+                            muse_token: '',
                         },
                     },
                     active_profile: 'default',
