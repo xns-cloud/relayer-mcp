@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Ships as a desktop extension (MCPB bundle).** `manifest.json` at the repo root packages
+  the existing stdio server as an [MCP Bundle](https://github.com/anthropics/mcpb) for
+  one-click install in Claude Desktop, which is the submission route to Anthropic's
+  Connectors Directory for a local-first server. Build with `npm run bundle`; validated
+  against the 0.3 manifest schema and smoke-tested (initialize + `tools/list` returns all
+  15 tools with titles and annotations intact). `manifest.json` `version` must be bumped in
+  lockstep with `package.json`.
+- **`PRIVACY.md`, plus a Privacy Policy section in the README.** A missing or incomplete
+  privacy policy is an immediate rejection at directory review. The policy records what the
+  server does and does not do: no telemetry, OIDC tokens held in memory and never written to
+  disk, the private-network-only host allowlist, and the three XNS services it contacts
+  (`auth.xns.tech`, `console.xns.tech`, `releases.scpri.me`). **It must be published at
+  `https://xns.tech/privacy` before submission** — `manifest.json` points there.
+
 ## [0.9.3] — 2026-08-18
 
 ### Changed

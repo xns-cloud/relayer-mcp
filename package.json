@@ -19,7 +19,9 @@
   "scripts": {
     "test": "jest --verbose",
     "start": "node src/index.js",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "bundle:validate": "mcpb validate manifest.json",
+    "bundle": "npm ci --omit=dev && mcpb validate manifest.json && mcpb pack"
   },
   "keywords": [
     "mcp",
@@ -52,7 +54,9 @@
     "src/tools/",
     "src/templates/",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "manifest.json",
+    "PRIVACY.md"
   ],
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1053.0",

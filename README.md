@@ -179,6 +179,30 @@ Requires Node.js 20+.
 
 This package uses the `relayer-native` Keycloak client ID for OIDC authentication. The same client ID is intended for reuse by a future standalone Relayer CLI (`@xns-cloud/relayer-cli`), with the OIDC module (`src/lib/oidcAuth.js`) extracted to a shared `@xns-cloud/relayer-auth` package.
 
+## Privacy Policy
+
+Full policy: **<https://xns.tech/privacy>** (also in this repo as [PRIVACY.md](./PRIVACY.md)).
+
+The short version:
+
+- **No telemetry.** This server has no analytics, crash reporting, or usage counters. It does not phone home.
+- **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
+- **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
+- **Private network only.** The server refuses to connect to public addresses — `localhost`, loopback, RFC 1918 ranges, and `*.local` only. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.
+- **Your stored objects never pass through it.** The Relayer you host handles your data directly.
+
+## Desktop extension (MCPB)
+
+The same server ships as an [MCP Bundle](https://github.com/anthropics/mcpb) for one-click install in Claude Desktop. Build it from a clean checkout:
+
+```bash
+npm ci --omit=dev
+npx @anthropic-ai/mcpb validate manifest.json
+npx @anthropic-ai/mcpb pack
+```
+
+`manifest.json` at the repo root is the bundle manifest. Its `version` must match `package.json`.
+
 ## License
 
 Apache-2.0 © SCP Corp. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
