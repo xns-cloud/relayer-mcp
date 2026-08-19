@@ -181,11 +181,12 @@ This package uses the `relayer-native` Keycloak client ID for OIDC authenticatio
 
 ## Privacy Policy
 
-Full policy: **<https://xns.tech/privacy>** (also in this repo as [PRIVACY.md](./PRIVACY.md)).
+Canonical policy: **<https://xns.tech/privacy-policy/>**. Product-specific detail for this
+server is in [PRIVACY.md](./PRIVACY.md).
 
 The short version:
 
-- **No telemetry.** This server has no analytics, crash reporting, or usage counters. It does not phone home.
+- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
 - **Private network only.** The server refuses to connect to public addresses — `localhost`, loopback, RFC 1918 ranges, and `*.local` only. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.

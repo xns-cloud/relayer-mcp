@@ -12,11 +12,14 @@
   15 tools with titles and annotations intact). `manifest.json` `version` must be bumped in
   lockstep with `package.json`.
 - **`PRIVACY.md`, plus a Privacy Policy section in the README.** A missing or incomplete
-  privacy policy is an immediate rejection at directory review. The policy records what the
-  server does and does not do: no telemetry, OIDC tokens held in memory and never written to
-  disk, the private-network-only host allowlist, and the three XNS services it contacts
-  (`auth.xns.tech`, `console.xns.tech`, `releases.scpri.me`). **It must be published at
-  `https://xns.tech/privacy` before submission** — `manifest.json` points there.
+  privacy policy is an immediate rejection at directory review. `manifest.json` points at the
+  canonical policy, `https://xns.tech/privacy-policy/` (live since 2021, verified 200).
+  `PRIVACY.md` is a product-specific supplement carrying only claims verifiable in this
+  codebase: no telemetry, OIDC tokens held in memory and never written to disk
+  (`src/lib/tokenState.js`), the private-network-only host allowlist
+  (`src/lib/hostAllowlist.js`), and the three XNS services contacted (`auth.xns.tech`,
+  `console.xns.tech`, `releases.scpri.me`). Account-level terms are deliberately left to the
+  canonical policy.
 
 ## [0.9.3] — 2026-08-18
 
