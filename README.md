@@ -197,12 +197,18 @@ The short version:
 The same server ships as an [MCP Bundle](https://github.com/anthropics/mcpb) for one-click install in Claude Desktop. Build it from a clean checkout:
 
 ```bash
-npm ci --omit=dev
-npx @anthropic-ai/mcpb validate manifest.json
-npx @anthropic-ai/mcpb pack
+npm run bundle
 ```
 
-`manifest.json` at the repo root is the bundle manifest. Its `version` must match `package.json`.
+That reinstalls production-only dependencies, validates the manifest, and writes the `.mcpb`. The MCPB CLI version is pinned in the script — do not invoke it unversioned, or the bundle you ship is not the bundle that was validated. Run `npm ci` afterwards to get the dev dependencies back for testing.
+
+To validate the manifest alone without repacking:
+
+```bash
+npm run bundle:validate
+```
+
+`manifest.json` at the repo root is the bundle manifest. `mcpbManifest.test.js` pins its `version` and tool list to `package.json`, `server.json`, and the running server, so drift fails the suite rather than shipping.
 
 ## License
 

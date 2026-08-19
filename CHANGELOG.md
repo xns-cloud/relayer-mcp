@@ -11,6 +11,11 @@
   against the 0.3 manifest schema and smoke-tested (initialize + `tools/list` returns all
   15 tools with titles and annotations intact). `manifest.json` `version` must be bumped in
   lockstep with `package.json`.
+- **`npm run bundle` is pinned and actually runs.** The first cut called a bare `mcpb` after
+  `npm ci --omit=dev`, and the CLI was in neither `dependencies` nor `devDependencies` — the
+  script could not have worked. Both scripts now invoke
+  `npx --yes @anthropic-ai/mcpb@2.1.2`, the same version the bundle was validated and packed
+  with, and the README documents `npm run bundle` instead of an unversioned `npx`.
 - **`src/__tests__/mcpbManifest.test.js` pins the manifest to everything it duplicates.**
   `manifest.json` is a fourth place the server's identity is written down, and the CI publish
   job validates only `package.json` and `server.json` against the release tag. The new tests

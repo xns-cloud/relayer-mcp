@@ -20,8 +20,8 @@
     "test": "jest --verbose",
     "start": "node src/index.js",
     "prepublishOnly": "npm test",
-    "bundle:validate": "mcpb validate manifest.json",
-    "bundle": "npm ci --omit=dev && mcpb validate manifest.json && mcpb pack"
+    "bundle:validate": "npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json",
+    "bundle": "npm ci --omit=dev && npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json && npx --yes @anthropic-ai/mcpb@2.1.2 pack"
   },
   "keywords": [
     "mcp",
