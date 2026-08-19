@@ -1,0 +1,16 @@
+# Excluded from the .mcpb bundle — the bundle ships runtime code only.
+src/__tests__/
+.github/
+.gitlab-ci.yml
+.coderabbit.yaml
+drive.js
+glama.json
+CONTRIBUTING.md
+CHANGELOG.md
+package-lock.json
+node_modules/.package-lock.json
+node_modules/**/test/
+node_modules/**/tests/
+node_modules/**/*.md
+node_modules/**/*.ts
+node_modules/**/.bin/

@@ -179,6 +179,37 @@ Requires Node.js 20+.
 
 This package uses the `relayer-native` Keycloak client ID for OIDC authentication. The same client ID is intended for reuse by a future standalone Relayer CLI (`@xns-cloud/relayer-cli`), with the OIDC module (`src/lib/oidcAuth.js`) extracted to a shared `@xns-cloud/relayer-auth` package.
 
+## Privacy Policy
+
+Canonical policy: **<https://xns.tech/privacy-policy/>**. Product-specific detail for this
+server is in [PRIVACY.md](./PRIVACY.md).
+
+The short version:
+
+- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
+- **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
+- **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
+- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.
+- **Your stored objects never pass through it.** The Relayer you host handles your data directly.
+
+## Desktop extension (MCPB)
+
+The same server ships as an [MCP Bundle](https://github.com/anthropics/mcpb) for one-click install in Claude Desktop. Build it from a clean checkout:
+
+```bash
+npm run bundle
+```
+
+That reinstalls production-only dependencies, validates the manifest, and writes the `.mcpb`. The MCPB CLI version is pinned in the script — do not invoke it unversioned, or the bundle you ship is not the bundle that was validated. Run `npm ci` afterwards to get the dev dependencies back for testing.
+
+To validate the manifest alone without repacking:
+
+```bash
+npm run bundle:validate
+```
+
+`manifest.json` at the repo root is the bundle manifest. `mcpbManifest.test.js` pins its `version` and tool list to `package.json`, `server.json`, and the running server, so drift fails the suite rather than shipping.
+
 ## License
 
 Apache-2.0 © SCP Corp. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

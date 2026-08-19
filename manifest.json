@@ -1,0 +1,115 @@
+{
+  "manifest_version": "0.3",
+  "name": "relayer-mcp",
+  "display_name": "XNS Relayer",
+  "version": "0.9.3",
+  "description": "Set up and manage a self-hosted XNS Relayer \u2014 S3-compatible object storage \u2014 conversationally.",
+  "long_description": "XNS Relayer is S3-compatible object storage you host yourself: $0 egress, uncapped, on hardware you control. This extension gives Claude 15 tools that walk the whole lifecycle \u2014 check prerequisites, register an XNS account, install the Relayer via Docker Compose, claim it to your account, choose which hosts store your data (VPD), verify an S3 round trip, provision CLI credentials, then handle day-2 work: settings, service restarts, and configuration backups.\n\nThe server runs locally on your machine and talks to your Relayer over loopback or your private network only \u2014 connections to public addresses are refused by design. Sign-in happens in your browser against XNS's identity service; the agent never sees your password.",
+  "author": {
+    "name": "SCP Corp",
+    "url": "https://xns.tech"
+  },
+  "homepage": "https://xns.tech",
+  "documentation": "https://gitlab.com/scpcorp/relayer-mcp#readme",
+  "support": "https://gitlab.com/scpcorp/relayer-mcp/-/issues",
+  "license": "Apache-2.0",
+  "privacy_policies": [
+    "https://xns.tech/privacy-policy/"
+  ],
+  "keywords": [
+    "storage",
+    "s3",
+    "object-storage",
+    "backup",
+    "self-hosted",
+    "docker",
+    "devops"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/scpcorp/relayer-mcp"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "src/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/src/index.js"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "check_prerequisites",
+      "description": "Check Docker, ports, disk space, and network reachability before installing."
+    },
+    {
+      "name": "start_registration",
+      "description": "Get the browser URL for creating an XNS account."
+    },
+    {
+      "name": "check_email_verified",
+      "description": "Wait for the new account's email address to be verified."
+    },
+    {
+      "name": "install_relayer",
+      "description": "Install and start the Relayer with Docker Compose."
+    },
+    {
+      "name": "check_relayer_health",
+      "description": "Report the health of each Relayer service and its monitoring sidecars."
+    },
+    {
+      "name": "start_claim",
+      "description": "Begin linking this Relayer installation to an XNS account."
+    },
+    {
+      "name": "check_claim_status",
+      "description": "Wait for the browser claim to complete."
+    },
+    {
+      "name": "get_host_tags",
+      "description": "List the host tags available for choosing where data is stored."
+    },
+    {
+      "name": "configure_vpd",
+      "description": "Choose which hosts store your data, or preview the choice first."
+    },
+    {
+      "name": "verify_storage",
+      "description": "Prove the S3 gateway works with an upload-and-download round trip."
+    },
+    {
+      "name": "setup_cli_credentials",
+      "description": "Provision S3 credentials so the XNS CLI works without further setup."
+    },
+    {
+      "name": "describe_settings",
+      "description": "List the adjustable Relayer settings with their current values."
+    },
+    {
+      "name": "update_settings",
+      "description": "Change adjustable Relayer settings."
+    },
+    {
+      "name": "restart_service",
+      "description": "Restart one Relayer service or all of them."
+    },
+    {
+      "name": "manage_backups",
+      "description": "List, create, restore, or delete Relayer configuration backups."
+    }
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

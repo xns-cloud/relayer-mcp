@@ -1,2 +1,5 @@
 node_modules/
 agent-scratchpad/
+
+# MCPB bundle build artifact
+*.mcpb

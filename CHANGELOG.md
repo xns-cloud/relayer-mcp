@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Ships as a desktop extension (MCPB bundle).** `manifest.json` at the repo root packages
+  the existing stdio server as an [MCP Bundle](https://github.com/anthropics/mcpb) for
+  one-click install in Claude Desktop, which is the submission route to Anthropic's
+  Connectors Directory for a local-first server. Build with `npm run bundle`; validated
+  against the 0.3 manifest schema and smoke-tested (initialize + `tools/list` returns all
+  15 tools with titles and annotations intact). `manifest.json` `version` must be bumped in
+  lockstep with `package.json`.
+- **`npm run bundle` is pinned and actually runs.** The first cut called a bare `mcpb` after
+  `npm ci --omit=dev`, and the CLI was in neither `dependencies` nor `devDependencies` — the
+  script could not have worked. Both scripts now invoke
+  `npx --yes @anthropic-ai/mcpb@2.1.2`, the same version the bundle was validated and packed
+  with, and the README documents `npm run bundle` instead of an unversioned `npx`.
+- **`src/__tests__/mcpbManifest.test.js` pins the manifest to everything it duplicates.**
+  `manifest.json` is a fourth place the server's identity is written down, and the CI publish
+  job validates only `package.json` and `server.json` against the release tag. The new tests
+  pin the version across all three files, pin the manifest tool list to what the server
+  actually registers at runtime, and check the fields directory review reads. Verified to bite:
+  mutating the version and renaming a tool fails 3 of 8.
+- **`PRIVACY.md`, plus a Privacy Policy section in the README.** A missing or incomplete
+  privacy policy is an immediate rejection at directory review. `manifest.json` points at the
+  canonical policy, `https://xns.tech/privacy-policy/` (live since 2021, verified 200).
+  `PRIVACY.md` is a product-specific supplement carrying only claims verifiable in this
+  codebase: no telemetry, OIDC tokens held in memory and never written to disk
+  (`src/lib/tokenState.js`), the private-network-only host allowlist
+  (`src/lib/hostAllowlist.js`), and the three XNS services contacted (`auth.xns.tech`,
+  `console.xns.tech`, `releases.scpri.me`). Account-level terms are deliberately left to the
+  canonical policy.
+
 ## [0.9.3] — 2026-08-18
 
 ### Changed

@@ -19,7 +19,9 @@
   "scripts": {
     "test": "jest --verbose",
     "start": "node src/index.js",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "bundle:validate": "npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json",
+    "bundle": "npm ci --omit=dev && npx --yes @anthropic-ai/mcpb@2.1.2 validate manifest.json && npx --yes @anthropic-ai/mcpb@2.1.2 pack"
   },
   "keywords": [
     "mcp",
@@ -52,7 +54,9 @@
     "src/tools/",
     "src/templates/",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "manifest.json",
+    "PRIVACY.md"
   ],
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1053.0",
