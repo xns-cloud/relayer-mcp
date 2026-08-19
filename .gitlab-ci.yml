@@ -28,8 +28,10 @@
 
 stages:
   - test
+  - bundle
   - publish
   - registry
+  - release
 
 test:
   stage: test
@@ -41,6 +43,73 @@ test:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+# Builds the MCPB desktop-extension bundle and proves it actually runs.
+#
+# This job sits BEFORE publish on purpose. `npm publish` is irreversible; a
+# broken bundle discovered afterwards leaves a shipped npm version whose
+# packaging path does not work. Failing here costs a red pipeline and nothing
+# else.
+#
+# It is also the only thing that executes `npm run bundle`. That script shipped
+# broken once — it called a bare `mcpb` that was in neither dependencies nor
+# devDependencies — and nobody noticed, because the bundle was always built by
+# hand. Running it every release turns that class of defect into a build
+# failure instead of a review catch.
+bundle:
+  stage: bundle
+  image: node:20
+  needs: [test]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    # manifest.json is a fourth copy of the version (package.json, server.json
+    # and package-lock.json are the others). A unit test pins them to each other;
+    # this re-checks against the TAG so the job stands alone when retried.
+    - MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+    - |
+      if [ "v${MANIFEST_VERSION}" != "${CI_COMMIT_TAG}" ]; then
+        echo "Tag ${CI_COMMIT_TAG} does not match manifest.json version ${MANIFEST_VERSION} — aborting."
+        exit 1
+      fi
+    # npm run bundle reinstalls production-only deps, validates, and packs. The
+    # MCPB CLI version is pinned inside that script — do not inline an
+    # unversioned npx here, or the artifact stops matching what was validated.
+    # `mcpb pack` names its output after the working directory, which is not
+    # stable across runners, so rename it explicitly.
+    - npm run bundle
+    - mv ./*.mcpb "relayer-mcp-${CI_COMMIT_TAG}.mcpb"
+    # Prove the packed bundle starts and speaks MCP. A bundle that validates but
+    # cannot answer initialize is worse than no bundle — it would fail in a
+    # reviewer's Claude Desktop instead of here.
+    - mkdir -p bundle-check && cd bundle-check && unzip -q "../relayer-mcp-${CI_COMMIT_TAG}.mcpb"
+    - |
+      printf '%s\n%s\n' \
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+        '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+        | node src/index.js > ../bundle-check.jsonl
+    - cd ..
+    - |
+      node -e '
+        const lines = require("fs").readFileSync("bundle-check.jsonl","utf8").trim().split("\n");
+        const tools = JSON.parse(lines[lines.length - 1]).result.tools;
+        const expected = require("./manifest.json").tools.length;
+        if (tools.length !== expected) {
+          console.error("Bundle answered with " + tools.length + " tools, manifest declares " + expected + " — aborting.");
+          process.exit(1);
+        }
+        const bad = tools.filter((t) => !t.title || !t.annotations);
+        if (bad.length) {
+          console.error("Tools missing title or annotations (directory review rejects these): " + bad.map((t) => t.name).join(", "));
+          process.exit(1);
+        }
+        console.log("Bundle smoke test passed: " + tools.length + " tools, all annotated.");
+      '
+  artifacts:
+    name: "relayer-mcp-${CI_COMMIT_TAG}-mcpb"
+    paths:
+      - "relayer-mcp-*.mcpb"
+    expire_in: never
 
 publish:
   stage: publish
@@ -112,3 +181,28 @@ mcp-registry:
     MCP_PUBLISHER_VERSION: "1.8.1"
     # sha256 of mcp-publisher_linux_amd64.tar.gz at the version above.
     MCP_PUBLISHER_SHA256: "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+
+# Attaches the .mcpb to a GitLab release so there is one canonical, tag-pinned
+# artifact to submit and to link from docs. Without it the bundle exists only on
+# whichever laptop last ran `npm run bundle` — which is how you end up
+# submitting a build nobody can reproduce.
+#
+# Runs last: a release should not appear for a version that failed to reach npm
+# or the MCP Registry.
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: [bundle, publish, mcp-registry]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    - echo "Creating release ${CI_COMMIT_TAG} with the MCPB bundle attached."
+  release:
+    tag_name: "$CI_COMMIT_TAG"
+    name: "$CI_COMMIT_TAG"
+    description: "MCPB desktop-extension bundle for ${CI_COMMIT_TAG}. Install it in Claude Desktop; see CHANGELOG.md for what changed. npm: @xns-cloud/relayer-mcp@${CI_COMMIT_TAG}"
+    assets:
+      links:
+        - name: "relayer-mcp-${CI_COMMIT_TAG}.mcpb"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/relayer-mcp-${CI_COMMIT_TAG}.mcpb?job=bundle"
+          link_type: package
