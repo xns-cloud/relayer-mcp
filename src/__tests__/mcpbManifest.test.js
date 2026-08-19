@@ -22,6 +22,7 @@ const readJson = (p) => JSON.parse(fs.readFileSync(path.join(repoRoot, p), 'utf8
 const manifest = readJson('manifest.json');
 const pkg = readJson('package.json');
 const serverJson = readJson('server.json');
+const lock = readJson('package-lock.json');
 
 describe('MCPB manifest: version chain', () => {
     test('manifest.json version matches package.json', () => {
@@ -30,6 +31,14 @@ describe('MCPB manifest: version chain', () => {
 
     test('manifest.json version matches server.json', () => {
         expect(manifest.version).toBe(serverJson.version);
+    });
+
+    test('package-lock.json carries the same version in both places', () => {
+        // npm writes the version twice; `npm version` is banned here (agents do not
+        // tag), so the bump is hand-applied and the lockfile is the file that gets
+        // forgotten. Regenerate with `npm install --package-lock-only`.
+        expect(lock.version).toBe(pkg.version);
+        expect(lock.packages[''].version).toBe(pkg.version);
     });
 
     test('manifest declares the MCPB schema version the CLI validates against', () => {
