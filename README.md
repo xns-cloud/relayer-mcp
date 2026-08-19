@@ -189,7 +189,7 @@ The short version:
 - **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
-- **Private network only.** The server refuses to connect to public addresses — `localhost`, loopback, RFC 1918 ranges, and `*.local` only. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.
+- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.
 - **Your stored objects never pass through it.** The Relayer you host handles your data directly.
 
 ## Desktop extension (MCPB)

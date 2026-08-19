@@ -48,10 +48,13 @@ Both are yours to delete at any time.
 
 ## Network boundary
 
-The extension refuses to connect to public addresses. It will talk only to `localhost`,
-loopback, RFC 1918 private ranges (`10/8`, `172.16/12`, `192.168/16`), and `*.local`
-(`src/lib/hostAllowlist.js`). A Relayer on the public internet cannot be driven by this
-extension. The only public hosts it contacts are the three XNS services named above.
+The extension cannot be pointed at a Relayer on the public internet. Two mechanisms enforce
+that: the tools that accept a host or endpoint argument run it through an allowlist that
+permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
+`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`); the remaining tools expose no URL
+parameter at all and are fixed to `localhost`. Either way there is no input that reaches a
+public Relayer. The only public hosts this software contacts are the three XNS services
+named above.
 
 ## Stopping it
 

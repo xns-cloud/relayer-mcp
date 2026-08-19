@@ -11,6 +11,12 @@
   against the 0.3 manifest schema and smoke-tested (initialize + `tools/list` returns all
   15 tools with titles and annotations intact). `manifest.json` `version` must be bumped in
   lockstep with `package.json`.
+- **`src/__tests__/mcpbManifest.test.js` pins the manifest to everything it duplicates.**
+  `manifest.json` is a fourth place the server's identity is written down, and the CI publish
+  job validates only `package.json` and `server.json` against the release tag. The new tests
+  pin the version across all three files, pin the manifest tool list to what the server
+  actually registers at runtime, and check the fields directory review reads. Verified to bite:
+  mutating the version and renaming a tool fails 3 of 8.
 - **`PRIVACY.md`, plus a Privacy Policy section in the README.** A missing or incomplete
   privacy policy is an immediate rejection at directory review. `manifest.json` points at the
   canonical policy, `https://xns.tech/privacy-policy/` (live since 2021, verified 200).
