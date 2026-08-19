@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.3] — 2026-08-18
+
+### Changed
+
+- **Pricing headline is now `$6.00 per TB-month`.** The README previously led with
+  `$4.00 per network-TB-month`, which required the reader to apply an expansion ratio to
+  reach their actual bill. XNS now quotes the all-in figure: store a terabyte, pay six
+  dollars, with the erasure-coded protection included in the rate rather than metered on
+  top. Matches `xns.tech/pricing.json` 2026.08.2 and every other public surface.
+
 ## [0.9.2] — 2026-08-18
 
 ### Fixed
