@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.1] — 2026-08-19
+
+### Added
+
+- **Releases now carry the `.mcpb` desktop-extension bundle.** The CI jobs that build,
+  smoke-test, and attach it landed after `0.10.0` was tagged, so `0.10.0` shipped without an
+  artifact. This release is what exercises them: `bundle` packs the extension, unzips it, drives
+  it over stdio and asserts the tool count and annotations survive the round trip; `release`
+  attaches the result to the GitLab release. Nothing in the npm package changed — the version
+  exists so the release path can run at all, because both jobs are gated on a `vX.Y.Z` tag.
+
 ## [0.10.0] — 2026-08-19
 
 ### Added
