@@ -191,7 +191,12 @@ mcp-registry:
 # or the MCP Registry.
 release:
   stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  # release-cli was deprecated in GitLab 18.0 and is removed in 20.0; glab is the
+  # replacement. Pinned, not :latest — an unpinned release image means the tool
+  # that publishes our artifact can change under us between two tags.
+  # v1.58.0 is the version GitLab's migration note names, but it is gone from the
+  # registry; v1.114.0 is current.
+  image: registry.gitlab.com/gitlab-org/cli:v1.114.0
   needs: [bundle, publish, mcp-registry]
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
