@@ -26,12 +26,21 @@
     that looks right is worse than none. The response names the README section
     "Moving the install files to the Docker host", which carries three worked examples — an
     ssh Docker context, a non-standard port or bastion, and a host with no ssh route from the
-    MCP machine — with the two footguns spelled out: copy to the parent directory, and create
-    the destination first because scp will not create a missing parent.
+    MCP machine — with the three footguns spelled out: keep the same directory name, copy to
+    the parent directory, and create the destination first because scp will not create a
+    missing parent.
   - `move_files` carries what a person substitutes into whichever example matches: source and
-    destination machine and path, the detected Docker endpoint, the file list, and the exact
-    contents of the env file. That last one is the escape hatch for a Docker host with no ssh
-    route at all — there are only two small files and they can be recreated by hand.
+    destination machine and path, the detected Docker endpoint, the file list, the env-file
+    contents, and `compose_source` / `compose_url` naming where the compose file came from.
+    That last pair matters because the three sources need different recovery: the channel has
+    a URL to re-fetch, a `compose_url` override is the caller's own file, and the bundled
+    fallback exists only inside the npm package on the MCP machine, so that file has to travel.
+  - **The destination directory must keep the same name.** Compose derives its project name
+    from the directory it runs in and prefixes volume names with it, so landing the files in a
+    differently-named directory makes `docker compose` there a different project: it would not
+    see the running containers, and `docker compose up` would create new empty volumes instead
+    of attaching the existing ones — the Relayer would come up looking like the buckets had
+    vanished. The response and the README both say so now.
   - A failed `mkdir` now names the machine that refused it — this is the first thing to fail
     when a workstation drives a remote daemon and the path is under `/opt`.
   - Both tool descriptions say the install spans two machines, so an agent choosing tools

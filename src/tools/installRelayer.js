@@ -236,16 +236,20 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // sudo policy and path — and a wrong command that looks right is
                 // worse than none. State the facts instead and point at the
                 // worked examples in the README, which a person can match to
-                // their own setup. `env_contents` is the escape hatch that works
-                // in every configuration, including ones with no ssh route at
-                // all: the two files can be recreated by hand on the Docker host.
+                // their own setup. `move_files` carries enough to rebuild the
+                // install by hand when there is no ssh route at all — but only
+                // `compose_source` tells the user WHICH of the three recovery
+                // paths applies, and on the compose_url path there is no env
+                // file to hand back because none was written.
                 const actionRequired = dockerHost.remote
                     ? `The Relayer is running on ${dockerHost.host}, but the files that define it are NOT. `
-                      + `docker-compose.yml${envContents ? ' and .env' : ''} were written to ${install_path} on this machine; `
+                      + `${envContents ? 'docker-compose.yml and the env file were' : 'docker-compose.yml was'} written to ${install_path} on this machine; `
                       + `${dockerHost.host} has no copy. Your data is safe — it is in Docker volumes on ${dockerHost.host}. `
                       + `What does not work until you fix this: restarting, changing ports, or upgrading from `
                       + `${dockerHost.host}, because "docker compose" there has no file to read. `
                       + `Move them now, not later — if this machine is a sandbox, CI runner, or throwaway VM, before the session ends. `
+                      + `Keep the same directory name — compose takes its project name from it, and a differently-named `
+                      + `directory would start a new project with empty volumes instead of attaching the existing ones. `
                       + `See "Moving the install files to the Docker host" in the relayer-mcp README for worked examples covering `
                       + `an ssh Docker context, a non-standard port or bastion, and a host you cannot ssh to from here. `
                       + `Better long-term: run this MCP on ${dockerHost.host} so the files and the containers stay together.`
@@ -268,12 +272,25 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                                     source_machine: 'this machine (the one running the MCP)',
                                     source_path: install_path,
                                     destination_machine: dockerHost.host,
+                                    // The last path segment is load-bearing: compose derives
+                                    // the project name from it and prefixes volume names with
+                                    // it, so landing the files in a differently-named directory
+                                    // makes docker compose there a different project that would
+                                    // create new empty volumes instead of attaching the existing
+                                    // ones. Same directory name on both machines.
                                     destination_path: install_path,
                                     docker_endpoint: dockerHost.endpoint,
                                     files: envContents ? ['docker-compose.yml', '.env'] : ['docker-compose.yml'],
-                                    // Recreating the .env by hand needs no ssh, no scp and no
-                                    // shell — it works for every configuration, including a
-                                    // tcp:// Docker context with no ssh route at all.
+                                    // Which of the three recovery paths in the README applies.
+                                    // 'bundled-fallback' is the one with no URL to fetch — that
+                                    // compose came out of the npm package on THIS machine, so
+                                    // the file itself has to travel.
+                                    compose_source: source,
+                                    compose_url: source === 'channel' ? channelComposeUrl
+                                        : source === 'compose_url' ? compose_url
+                                            : null,
+                                    // null on the compose_url path: no env file is written
+                                    // there, so there is nothing to hand back.
                                     env_contents: envContents,
                                     readme_section: 'Moving the install files to the Docker host',
                                 },

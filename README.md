@@ -53,8 +53,9 @@ The MCP then drives the install on the persistent host through the SSH context. 
 
 The MCP does **not** generate a copy command for you. Getting one right means guessing your scp version, shell, ssh port, bastion, sudo policy and path, and a wrong command that looks right is worse than no command. Below are three worked examples covering the common shapes — take the one that matches your setup and substitute the values from `move_files`.
 
-Two things to know before you adapt any of them:
+Three things to know before you adapt any of them:
 
+- **Keep the same directory name on both machines.** Compose takes the project name from the directory it runs in, and volume names are prefixed with it. Land the files in `/srv/relayer` instead of `/opt/xns-relayer` and `docker compose` there is a *different project*: it will not see the running containers, and `docker compose up` would create new empty volumes rather than attach the existing ones — the Relayer would come up looking like your buckets had vanished. The parent path can be anything; the last path segment must match. `move_files.destination_path` gives you the value to use.
 - **Copy to the parent directory.** `scp -r /opt/xns-relayer host:/opt/xns-relayer` copies *into* an existing target, leaving the files at `/opt/xns-relayer/xns-relayer/` where `docker compose` will not find them.
 - **`/opt` needs root.** If your ssh user cannot write the destination, create it first — `scp` will not create a missing parent.
 
@@ -75,19 +76,29 @@ scp -P 2222 -r /opt/xns-relayer user@docker-box:/opt
 scp -J user@bastion -r /opt/xns-relayer user@docker-box:/opt
 ```
 
-**3 — No ssh route from this machine.** A `tcp://` Docker context, a key only the Docker CLI can use, or a locked-down sandbox. There are only two small files, so recreate them on the Docker host by hand — `install_relayer` returns the exact env-file contents in `move_files.env_contents`:
+**3 — No ssh route from this machine.** A `tcp://` Docker context, a key only the Docker CLI can use, or a locked-down sandbox. There are only two small files, so recreate them on the Docker host by hand.
+
+Check `move_files.compose_source` in the response first — it tells you where your compose file came from, and the three cases need different handling:
+
+| `compose_source` | Where to get `docker-compose.yml` |
+|---|---|
+| `channel` | `curl -fsSLO <the channel URL named in `move_files.compose_url`>` |
+| `bundled-fallback` | It came from inside the npm package on the MCP machine, not from a URL. Copy that one file across by any means you have — a clipboard paste is fine, it is a few dozen lines. |
+| `compose_url` | Your own custom compose, from wherever you supplied it. |
+
+Then, in a directory whose **last path segment matches** `move_files.destination_path`:
 
 ```bash
 # on the Docker host
 sudo install -d -o $USER /opt/xns-relayer
 cd /opt/xns-relayer
-curl -fsSLO https://releases.scpri.me/relayer/beta/docker-compose.yml
+# put docker-compose.yml here per the table above, then write the env file:
 printf 'UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n' > .env
 ```
 
-Use the `UI_PORT`, `S3_PORT` and `BIND_ADDRESS` values from `move_files.env_contents`, not the defaults above, if you installed with custom ports or a bind address.
+Use the values from `move_files.env_contents`, not the defaults above, if you installed with custom ports or a bind address. If `env_contents` is `null` the install wrote no env file (the `compose_url` path) — your compose file supplies its own values, or you export them before `docker compose up`.
 
-Verify from the Docker host afterwards — this should print the running services rather than an error about a missing configuration file:
+Verify from the Docker host afterwards — this should list the running services rather than an error about a missing configuration file, and should show the containers that are *already up*, not propose new ones:
 
 ```bash
 cd /opt/xns-relayer && docker compose ps
