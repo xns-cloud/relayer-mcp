@@ -433,4 +433,67 @@ describe('check_prerequisites', () => {
             expect(portCheck.passed).toBe(true);
         }
     });
+
+    // BUG-230: check_prerequisites is the last point where the user can still
+    // choose to run the MCP on the Docker host instead. If it detects a remote
+    // daemon it has to say what that costs BEFORE install_relayer writes a file.
+    describe('remote Docker host — install file location warning', () => {
+        function remoteOpts(dockerHostResult) {
+            return {
+                dockerUtil: {
+                    docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                    getDockerHost: jest.fn().mockResolvedValue(dockerHostResult),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                },
+                httpClient: { get: jest.fn().mockResolvedValue({ status: 200, data: {} }), post: jest.fn() },
+                checkPort: jest.fn().mockResolvedValue(true),
+            };
+        }
+
+        test('remote host → warns that install files land on the MCP machine', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            expect(check).toBeDefined();
+            expect(check.warning).toBe(true);
+            expect(check.passed).toBe(true);           // a warning, never a blocker
+            expect(check.detail).toContain('docker-box.lan');
+            expect(check.remediation).toContain('docker-box.lan');
+        });
+
+        test('remote host → the warning offers both fixes and points at the README', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            expect(check.remediation).toMatch(/run the mcp on docker-box\.lan/i);
+            expect(check.remediation).toContain('Moving the install files to the Docker host');
+        });
+
+        // Same rule as install_relayer: no generated shell command, because the
+        // correct one depends on configuration this tool cannot see.
+        test('remote host → warning contains no generated shell command', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan:2222' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            expect(check.remediation).not.toMatch(/\bscp\s+-/);
+            expect(check.remediation).not.toMatch(/\bssh\s+-t\b/);
+        });
+
+        test('local host → no install_file_location warning', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            expect(parsed.checks.find((c) => c.name === 'install_file_location')).toBeUndefined();
+        });
+
+        test('warning does not fail the overall check', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            expect(parsed.success).toBe(true);
+        });
+    });
 });
