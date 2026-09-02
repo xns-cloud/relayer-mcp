@@ -47,7 +47,7 @@ The MCP then drives the install on the persistent host through the SSH context. 
 
 **Know the tradeoff before you take this path.** With an SSH context the containers start on the remote host and the data lives in Docker volumes there, but `install_relayer` writes `docker-compose.yml` and `.env` on the machine running the MCP — not on the Docker host. That is fine for the install and fine for your data; it is not fine for day 2. Restarting, changing ports, and upgrading from the Docker host all need a compose file that host does not have. From an ephemeral sandbox it is worse: the only copy of those files exits with the sandbox, leaving a running Relayer nobody can administer.
 
-`check_prerequisites` warns about this before anything is written, and `install_relayer` returns an `action_required` field plus a `move_files` block carrying the source machine and path, the destination machine and path, the Docker endpoint it detected, and the contents of the env file it wrote. Either run the MCP on the Docker host, or move the install directory across as soon as the install finishes.
+`check_prerequisites` warns about this before anything is written, and `install_relayer` returns an `action_required` field plus a `move_files` block carrying the source machine and path, the destination machine and path, the Docker endpoint it detected, where the compose file came from, and the contents of the env file it wrote. Either run the MCP on the Docker host, or [move the install directory across](#moving-the-install-files-to-the-docker-host) as soon as the install finishes.
 
 ### Moving the install files to the Docker host
 
@@ -55,7 +55,7 @@ The MCP does **not** generate a copy command for you. Getting one right means gu
 
 Three things to know before you adapt any of them:
 
-- **Keep the same directory name on both machines.** Compose takes the project name from the directory it runs in, and volume names are prefixed with it. Land the files in `/srv/relayer` instead of `/opt/xns-relayer` and `docker compose` there is a *different project*: it will not see the running containers, and `docker compose up` would create new empty volumes rather than attach the existing ones — the Relayer would come up looking like your buckets had vanished. The parent path can be anything; the last path segment must match. `move_files.destination_path` gives you the value to use.
+- **Keep the same directory name on both machines.** Compose takes the project name from the directory it runs in, and volume names are prefixed with it. Land the files in `/srv/relayer` instead of `/opt/xns-relayer` and `docker compose` there is a *different project*: it will not see the running containers, and `docker compose up` would create a second set of empty volumes and then fail, because `container_name: xns-relayer` is pinned in the compose file and that name is already taken. You get a `409 Conflict` rather than a working Relayer, plus stray empty volumes to clean up. Use the last path segment from `move_files.destination_path`. Keeping the whole path identical is safest — a compose file that binds a relative host path resolves it against the project directory.
 - **Copy to the parent directory.** `scp -r /opt/xns-relayer host:/opt/xns-relayer` copies *into* an existing target, leaving the files at `/opt/xns-relayer/xns-relayer/` where `docker compose` will not find them.
 - **`/opt` needs root.** If your ssh user cannot write the destination, create it first — `scp` will not create a missing parent.
 
@@ -72,7 +72,8 @@ scp -r /opt/xns-relayer user@docker-box:/opt
 ssh -t -p 2222 user@docker-box 'sudo install -d -o $USER /opt/xns-relayer'
 scp -P 2222 -r /opt/xns-relayer user@docker-box:/opt
 
-# via a bastion
+# via a bastion — the prepare step needs the same -J
+ssh -t -J user@bastion user@docker-box 'sudo install -d -o $USER /opt/xns-relayer'
 scp -J user@bastion -r /opt/xns-relayer user@docker-box:/opt
 ```
 
@@ -82,7 +83,7 @@ Check `move_files.compose_source` in the response first — it tells you where y
 
 | `compose_source` | Where to get `docker-compose.yml` |
 |---|---|
-| `channel` | `curl -fsSLO <the channel URL named in `move_files.compose_url`>` |
+| `channel` | `curl -fsSLO <compose_url>`, using the URL from `move_files.compose_url` |
 | `bundled-fallback` | It came from inside the npm package on the MCP machine, not from a URL. Copy that one file across by any means you have — a clipboard paste is fine, it is a few dozen lines. |
 | `compose_url` | Your own custom compose, from wherever you supplied it. |
 

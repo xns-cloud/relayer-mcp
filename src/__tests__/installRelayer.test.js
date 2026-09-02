@@ -726,7 +726,10 @@ describe('install_relayer', () => {
             for (const tool of [/\bscp\b/, /\brsync\b/, /\bsftp\b/, /\bdocker cp\b/, /\btar c/]) {
                 expect(whole).not.toMatch(tool);
             }
-            expect(whole).not.toMatch(/\bssh\s+(-\w+\s+)*[\w.@-]+\s+['"]/);
+            // Catches `ssh -t host …`, `ssh -J bastion host …`, `ssh -i key host …`
+            // and `ssh user@host …`; the earlier shape required a quoted argument
+            // in a fixed position and matched only one of them.
+            expect(whole).not.toMatch(/\bssh\s+(-|[\w.-]+@)/);
             expect(parsed.action_required).toContain('Moving the install files to the Docker host');
         });
 
@@ -756,16 +759,19 @@ describe('install_relayer', () => {
 
         // Which of the three README recovery paths applies. Without it the
         // no-ssh example cannot be followed from the response alone.
+        // toBeTruthy() here would pass if the override path handed back the
+        // channel URL — the exact regression the field exists to prevent — so
+        // each case asserts its own URL.
         test.each([
-            ['channel', {}, 'channel'],
-            ['compose_url override', { compose_url: 'https://example.com/dc.yml' }, 'compose_url'],
-        ])('%s → move_files.compose_source and compose_url agree', async (_label, extra, expected) => {
+            ['channel', {}, 'channel', 'https://releases.scpri.me/relayer/beta/docker-compose.yml'],
+            ['compose_url override', { compose_url: 'https://example.com/dc.yml' }, 'compose_url', 'https://example.com/dc.yml'],
+        ])('%s → move_files.compose_source and compose_url agree', async (_label, extra, expectedSource, expectedUrl) => {
             const handler = remoteHandler();
             const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer', ...extra })).content[0].text);
 
-            expect(parsed.move_files.compose_source).toBe(expected);
+            expect(parsed.move_files.compose_source).toBe(expectedSource);
             expect(parsed.move_files.compose_source).toBe(parsed.source);
-            expect(parsed.move_files.compose_url).toBeTruthy();
+            expect(parsed.move_files.compose_url).toBe(expectedUrl);
         });
 
         // The bundled fallback is the one path with no URL to fetch — the file
@@ -795,6 +801,14 @@ describe('install_relayer', () => {
             const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
 
             expect(parsed.file_location.docker_endpoint).toBe('unix:///var/run/docker.sock');
+        });
+
+        // installRelayer.js and checkPrerequisites.js both send the user to a
+        // README heading by name. Renaming the heading would strand all three
+        // pointers with nothing failing.
+        test('the README heading the response points at actually exists', () => {
+            const readme = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'README.md'), 'utf8');
+            expect(readme).toMatch(/^### Moving the install files to the Docker host$/m);
         });
 
         test('remote host → move_files names both machines, both paths and the endpoint', async () => {

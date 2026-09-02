@@ -248,8 +248,9 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                       + `What does not work until you fix this: restarting, changing ports, or upgrading from `
                       + `${dockerHost.host}, because "docker compose" there has no file to read. `
                       + `Move them now, not later — if this machine is a sandbox, CI runner, or throwaway VM, before the session ends. `
-                      + `Keep the same directory name — compose takes its project name from it, and a differently-named `
-                      + `directory would start a new project with empty volumes instead of attaching the existing ones. `
+                      + `Keep the same directory name — compose takes its project name from it, so a differently-named `
+                      + `directory starts a new project that creates empty volumes and then fails on the pinned `
+                      + `xns-relayer container name. `
                       + `See "Moving the install files to the Docker host" in the relayer-mcp README for worked examples covering `
                       + `an ssh Docker context, a non-standard port or bastion, and a host you cannot ssh to from here. `
                       + `Better long-term: run this MCP on ${dockerHost.host} so the files and the containers stay together.`
@@ -274,10 +275,11 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                                     destination_machine: dockerHost.host,
                                     // The last path segment is load-bearing: compose derives
                                     // the project name from it and prefixes volume names with
-                                    // it, so landing the files in a differently-named directory
-                                    // makes docker compose there a different project that would
-                                    // create new empty volumes instead of attaching the existing
-                                    // ones. Same directory name on both machines.
+                                    // it, so a differently-named directory on the Docker host is
+                                    // a different project. It creates a second set of empty
+                                    // volumes and then fails, because container_name is pinned
+                                    // to xns-relayer and that name is already taken — a 409, not
+                                    // a silent wrong start. Same directory name on both machines.
                                     destination_path: install_path,
                                     docker_endpoint: dockerHost.endpoint,
                                     files: envContents ? ['docker-compose.yml', '.env'] : ['docker-compose.yml'],

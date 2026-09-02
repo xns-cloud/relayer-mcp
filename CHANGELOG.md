@@ -38,9 +38,9 @@
   - **The destination directory must keep the same name.** Compose derives its project name
     from the directory it runs in and prefixes volume names with it, so landing the files in a
     differently-named directory makes `docker compose` there a different project: it would not
-    see the running containers, and `docker compose up` would create new empty volumes instead
-    of attaching the existing ones — the Relayer would come up looking like the buckets had
-    vanished. The response and the README both say so now.
+    see the running containers, and `docker compose up` would create a second set of empty
+    volumes and then fail with a 409, because `container_name: xns-relayer` is pinned and that
+    name is already taken. The response and the README both say so now.
   - A failed `mkdir` now names the machine that refused it — this is the first thing to fail
     when a workstation drives a remote daemon and the path is under `/opt`.
   - Both tool descriptions say the install spans two machines, so an agent choosing tools
