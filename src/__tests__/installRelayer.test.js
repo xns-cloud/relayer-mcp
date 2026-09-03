@@ -680,4 +680,276 @@ describe('install_relayer', () => {
         // node-exporter stays version-pinned, not :latest.
         expect(template).not.toMatch(/node-exporter:latest/);
     });
+
+    // BUG-229 / BUG-230: the MCP and the Docker daemon are routinely different
+    // machines (DOCKER_HOST or an ssh:// context — the README recommends exactly
+    // that from an ephemeral sandbox). The install files are written locally
+    // while the containers start remotely, and the old response reported a single
+    // install_path that was only true on one of them. These tests pin the
+    // response telling the truth about which machine holds what.
+    describe('remote Docker host — file location is stated, not implied', () => {
+        function remoteHandler(overrides = {}) {
+            return registerWithOptions({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+                fs: { readFile: jest.fn(), writeFile: jest.fn().mockResolvedValue() },
+                dockerUtil: {
+                    composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                    getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }),
+                    ...overrides,
+                },
+            });
+        }
+
+        test('remote host → action_required names both machines and what breaks', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.success).toBe(true);
+            expect(parsed.action_required).toContain('docker-box.lan');
+            expect(parsed.action_required).toContain('/opt/xns-relayer');
+            expect(parsed.action_required).toContain('restarting, changing ports, or upgrading');
+        });
+
+        // Deliberately no generated shell command: a wrong one that looks right
+        // is worse than none, and the correct form depends on the user's scp
+        // version, shell, ssh port, bastion and sudo policy. The response points
+        // at the README's worked examples instead.
+        test('remote host → no generated shell command in the response', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+            const whole = JSON.stringify(parsed);
+
+            // Named tools, not one prior flag shape: `scp -` and `ssh -t` would
+            // pass for `scp /opt/x host:/opt`, `rsync -av`, `docker cp` or a
+            // heredoc, none of which we intend to emit either.
+            for (const tool of [/\bscp\b/, /\brsync\b/, /\bsftp\b/, /\bdocker cp\b/, /\btar c/]) {
+                expect(whole).not.toMatch(tool);
+            }
+            // Catches `ssh -t host …`, `ssh -J bastion host …`, `ssh -i key host …`
+            // and `ssh user@host …`; the earlier shape required a quoted argument
+            // in a fixed position and matched only one of them.
+            expect(whole).not.toMatch(/\bssh\s+(-|[\w.-]+@)/);
+            expect(parsed.action_required).toContain('Moving the install files to the Docker host');
+        });
+
+        // move_files carries the values a person substitutes into whichever
+        // README template matches their setup.
+        // The tool description and CHANGELOG both promise action_required leads
+        // the payload. Nothing read the key order, so moving the spread below
+        // `message` stayed green.
+        test('action_required is the first field after success', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(Object.keys(parsed).slice(0, 2)).toEqual(['success', 'action_required']);
+        });
+
+        // move_files.destination_path must not be edited by the user: compose
+        // takes its project name from the directory basename and prefixes volume
+        // names with it, so a differently-named directory is a different project
+        // with empty volumes.
+        test('remote host → action_required warns against renaming the directory', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.action_required).toContain('Keep the same directory name');
+            expect(parsed.action_required).toContain('project name');
+        });
+
+        // Which of the three README recovery paths applies. Without it the
+        // no-ssh example cannot be followed from the response alone.
+        // toBeTruthy() here would pass if the override path handed back the
+        // channel URL — the exact regression the field exists to prevent — so
+        // each case asserts its own URL.
+        test.each([
+            ['channel', {}, 'channel', 'https://releases.scpri.me/relayer/beta/docker-compose.yml'],
+            ['compose_url override', { compose_url: 'https://example.com/dc.yml' }, 'compose_url', 'https://example.com/dc.yml'],
+        ])('%s → move_files.compose_source and compose_url agree', async (_label, extra, expectedSource, expectedUrl) => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer', ...extra })).content[0].text);
+
+            expect(parsed.move_files.compose_source).toBe(expectedSource);
+            expect(parsed.move_files.compose_source).toBe(parsed.source);
+            expect(parsed.move_files.compose_url).toBe(expectedUrl);
+        });
+
+        // The bundled fallback is the one path with no URL to fetch — the file
+        // itself has to travel, and the response has to say so.
+        test('bundled fallback → compose_url is null so the README sends the file, not a curl', async () => {
+            const handler = registerWithOptions({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'curl' ? new Error('offline') : null, '', '')),
+                fs: { readFile: jest.fn().mockResolvedValue('services: {}'), writeFile: jest.fn().mockResolvedValue() },
+                dockerUtil: {
+                    composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                    getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }),
+                },
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.move_files.compose_source).toBe('bundled-fallback');
+            expect(parsed.move_files.compose_url).toBeNull();
+        });
+
+        // resolveDockerHost keeps the endpoint on the local branch on purpose;
+        // dropping the spread to plain LOCAL_DOCKER_HOST used to pass.
+        test('local host → the detected endpoint is still reported', async () => {
+            const handler = remoteHandler({
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.file_location.docker_endpoint).toBe('unix:///var/run/docker.sock');
+        });
+
+        // installRelayer.js and checkPrerequisites.js both send the user to a
+        // README heading by name. Renaming the heading would strand all three
+        // pointers with nothing failing.
+        test('the README heading the response points at actually exists', () => {
+            const readme = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'README.md'), 'utf8');
+            expect(readme).toMatch(/^### Moving the install files to the Docker host$/m);
+        });
+
+        test('remote host → move_files names both machines, both paths and the endpoint', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.move_files).toMatchObject({
+                source_path: '/opt/xns-relayer',
+                destination_machine: 'docker-box.lan',
+                destination_path: '/opt/xns-relayer',
+                docker_endpoint: 'ssh://admin@docker-box.lan',
+                files: ['docker-compose.yml', '.env'],
+            });
+            expect(parsed.move_files.source_machine).toMatch(/this machine/i);
+        });
+
+        // The escape hatch for a Docker host with no ssh route at all: the two
+        // files can be recreated by hand, so the env body has to come back.
+        test('remote host → move_files carries the env contents verbatim', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer', ui_port: 9999, s3_port: 7777 })).content[0].text);
+
+            expect(parsed.move_files.env_contents).toBe('UI_PORT=9999\nS3_PORT=7777\nBIND_ADDRESS=\n');
+        });
+
+        // The compose_url override path writes no env file, so there is nothing
+        // to hand back and nothing to claim was written.
+        test('compose_url override → env contents null and .env not listed', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({
+                install_path: '/opt/xns-relayer',
+                compose_url: 'https://example.com/docker-compose.yml',
+            })).content[0].text);
+
+            expect(parsed.move_files.env_contents).toBeNull();
+            expect(parsed.move_files.files).toEqual(['docker-compose.yml']);
+            expect(parsed.action_required).toContain('docker-compose.yml was written');
+            expect(parsed.action_required).not.toContain('and the env file');
+        });
+
+        test('local host → no move_files block', async () => {
+            const handler = remoteHandler({
+                getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.move_files).toBeUndefined();
+        });
+
+        test('remote host → file_location separates where files landed from where containers run', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.file_location.same_machine).toBe(false);
+            expect(parsed.file_location.docker_host).toBe('docker-box.lan');
+            expect(parsed.file_location.files_written_on).toMatch(/not the docker host/i);
+        });
+
+        test('remote host → the top-level message points at action_required', async () => {
+            const handler = remoteHandler();
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.message).toContain('action_required');
+            expect(parsed.message).toContain('docker-box.lan');
+        });
+
+        test('local host → no action_required, file_location says same machine', async () => {
+            const handler = registerWithOptions({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+                fs: { readFile: jest.fn(), writeFile: jest.fn().mockResolvedValue() },
+                dockerUtil: {
+                    composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                    getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                },
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.action_required).toBeUndefined();
+            expect(parsed.file_location.same_machine).toBe(true);
+        });
+
+        // "remote" with no nameable host is incomplete metadata, not a remote
+        // install. Same rule checkPrerequisites already applies — do not warn
+        // about a machine we cannot name.
+        test('remote flag without a usable host → treated as local', async () => {
+            const handler = remoteHandler({
+                getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: '  ', endpoint: 'tcp://' }),
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.action_required).toBeUndefined();
+            expect(parsed.file_location.same_machine).toBe(true);
+        });
+
+        // Host detection is advisory. It must never be the reason an install fails.
+        test('getDockerHost throwing does not fail the install', async () => {
+            const handler = remoteHandler({
+                getDockerHost: jest.fn().mockRejectedValue(new Error('docker context inspect exploded')),
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.success).toBe(true);
+            expect(parsed.file_location.same_machine).toBe(true);
+        });
+
+        // Older injected dockerUtil mocks (and any caller predating the helper)
+        // have no getDockerHost at all.
+        test('dockerUtil without getDockerHost does not fail the install', async () => {
+            const handler = registerWithOptions({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+                fs: { readFile: jest.fn(), writeFile: jest.fn().mockResolvedValue() },
+                dockerUtil: {
+                    composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                },
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.success).toBe(true);
+            expect(parsed.file_location.same_machine).toBe(true);
+        });
+
+        // mkdir runs on the MCP machine. On a laptop driving a remote daemon,
+        // /opt needs root and this is the first thing that fails — the error has
+        // to name which machine refused.
+        test('mkdir failure under a remote host names the local machine', async () => {
+            const failingHandler = registerWithOptions({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'mkdir' ? new Error('EACCES: permission denied') : null, '', '')),
+                dockerUtil: {
+                    composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                    getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }),
+                },
+            });
+            const parsed = JSON.parse((await failingHandler({ install_path: '/opt/xns-relayer' })).content[0].text);
+
+            expect(parsed.success).toBe(false);
+            expect(parsed.error).toContain('docker-box.lan');
+            expect(parsed.error).toContain('this machine');
+            expect(parsed.error).toContain('NOT the Docker host docker-box.lan');
+        });
+    });
 });

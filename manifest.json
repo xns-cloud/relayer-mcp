@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "relayer-mcp",
   "display_name": "XNS Relayer",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Set up and manage a self-hosted XNS Relayer — S3-compatible object storage — conversationally.",
   "long_description": "XNS Relayer is S3-compatible object storage you host yourself: $0 egress, uncapped, on hardware you control. This extension gives Claude 15 tools that walk the whole lifecycle — check prerequisites, register an XNS account, install the Relayer via Docker Compose, claim it to your account, choose which hosts store your data (VPD), verify an S3 round trip, provision CLI credentials, then handle day-2 work: settings, service restarts, and configuration backups.\n\nThe server runs locally on your machine and talks to your Relayer over loopback or your private network only — connections to public addresses are refused by design. Sign-in happens in your browser against XNS's identity service; the agent never sees your password.",
   "author": {

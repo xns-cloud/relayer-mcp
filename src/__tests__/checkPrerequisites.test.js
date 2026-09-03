@@ -433,4 +433,90 @@ describe('check_prerequisites', () => {
             expect(portCheck.passed).toBe(true);
         }
     });
+
+    // BUG-230: check_prerequisites is the last point where the user can still
+    // choose to run the MCP on the Docker host instead. If it detects a remote
+    // daemon it has to say what that costs BEFORE install_relayer writes a file.
+    describe('remote Docker host — install file location warning', () => {
+        function remoteOpts(dockerHostResult) {
+            return {
+                dockerUtil: {
+                    docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
+                    getDockerHost: jest.fn().mockResolvedValue(dockerHostResult),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                },
+                httpClient: { get: jest.fn().mockResolvedValue({ status: 200, data: {} }), post: jest.fn() },
+                checkPort: jest.fn().mockResolvedValue(true),
+            };
+        }
+
+        test('remote host → warns that install files land on the MCP machine', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            expect(check).toBeDefined();
+            expect(check.warning).toBe(true);
+            expect(check.passed).toBe(true);           // a warning, never a blocker
+            expect(check.detail).toContain('docker-box.lan');
+            expect(check.remediation).toContain('docker-box.lan');
+        });
+
+        test('remote host → the warning offers both fixes and points at the README', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            expect(check.remediation).toMatch(/run the mcp on docker-box\.lan/i);
+            expect(check.remediation).toContain('Moving the install files to the Docker host');
+        });
+
+        // Same rule as install_relayer: no generated shell command, because the
+        // correct one depends on configuration this tool cannot see.
+        test('remote host → warning contains no generated shell command', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan:2222' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'install_file_location');
+            // Named tools, not one prior flag shape — and the endpoint carries a
+            // non-default port precisely so a regression that starts building a
+            // command from it would show up here.
+            for (const tool of [/\bscp\b/, /\brsync\b/, /\bsftp\b/, /\bdocker cp\b/]) {
+                expect(check.remediation).not.toMatch(tool);
+            }
+            expect(check.remediation).not.toContain('2222');
+            expect(check.remediation).not.toContain('admin@');
+        });
+
+        // The ephemeral remediation is the text that recommends the ssh context
+        // in the first place. Its new half — that the install files stay in the
+        // ephemeral environment — had no assertion, so reverting the diff line
+        // left the suite green.
+        test('ephemeral + remote → remediation says the install files stay here', async () => {
+            const handler = registerWithOptions({
+                ...remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }),
+                environmentProbe: () => ({ ephemeral: true, signals: ['/.dockerenv present'] }),
+            });
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'ephemeral_environment');
+            expect(check.warning).toBe(true);
+            expect(check.remediation).toContain('not on docker-box.lan');
+            expect(check.remediation).toMatch(/gone when this environment exits|Move them to docker-box\.lan/);
+        });
+
+        test('local host → no install_file_location warning', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            expect(parsed.checks.find((c) => c.name === 'install_file_location')).toBeUndefined();
+        });
+
+        test('warning does not fail the overall check', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
+            const parsed = JSON.parse((await handler({})).content[0].text);
+
+            expect(parsed.success).toBe(true);
+        });
+    });
 });

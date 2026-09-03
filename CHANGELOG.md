@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.10.2] — 2026-09-02
+
+### Fixed
+
+- **The install response no longer implies the compose file is on the Docker host when it
+  isn't.** With `DOCKER_HOST` or an `ssh://` Docker context the MCP and the Docker daemon are
+  different machines: `install_relayer` writes `docker-compose.yml` and `.env` locally with
+  `mkdir`/`curl`/`fs` while `docker compose up` starts the containers remotely. The install
+  works and no data is at risk — the compose uses named volumes, so everything is stored on
+  the Docker host — but restarting, changing ports, or upgrading from that host needs files
+  that are not there, and from an ephemeral sandbox the only copy exits with the sandbox.
+  The old response reported one `install_path`, true on one machine only.
+  - `check_prerequisites` raises an `install_file_location` warning when the daemon is remote,
+    before anything is written, offering both fixes (run the MCP on the Docker host, or copy
+    the directory after installing). It warns; it never blocks.
+  - The ephemeral-environment remediation, which recommends the SSH context in the first
+    place, now states that the install files stay in the ephemeral environment.
+  - `install_relayer` returns `action_required` as the first field after `success` when the
+    daemon is remote, plus a `file_location` block that states where files landed, where
+    containers run, and where data lives as separate facts. `compose_path` and `install_path`
+    are unchanged for existing callers.
+  - Neither tool generates a shell command for the move. Getting one right means guessing the
+    scp version, shell, ssh port, bastion, sudo policy and path in use, and a wrong command
+    that looks right is worse than none. The response names the README section
+    "Moving the install files to the Docker host", which carries three worked examples — an
+    ssh Docker context, a non-standard port or bastion, and a host with no ssh route from the
+    MCP machine — with the three footguns spelled out: keep the same directory name, copy to
+    the parent directory, and create the destination first because scp will not create a
+    missing parent.
+  - `move_files` carries what a person substitutes into whichever example matches: source and
+    destination machine and path, the detected Docker endpoint, the file list, the env-file
+    contents, and `compose_source` / `compose_url` naming where the compose file came from.
+    That last pair matters because the three sources need different recovery: the channel has
+    a URL to re-fetch, a `compose_url` override is the caller's own file, and the bundled
+    fallback exists only inside the npm package on the MCP machine, so that file has to travel.
+  - **The destination directory must keep the same name.** Compose derives its project name
+    from the directory it runs in and prefixes volume names with it, so landing the files in a
+    differently-named directory makes `docker compose` there a different project: it would not
+    see the running containers, and `docker compose up` would create a second set of empty
+    volumes and then fail with a 409, because `container_name: xns-relayer` is pinned and that
+    name is already taken. The response and the README both say so now.
+  - A failed `mkdir` now names the machine that refused it — this is the first thing to fail
+    when a workstation drives a remote daemon and the path is under `/opt`.
+  - Both tool descriptions say the install spans two machines, so an agent choosing tools
+    reads it before it runs them.
+
+  Host detection is advisory throughout: a missing `getDockerHost`, a throwing one, or a
+  remote flag with no nameable host all fall back to local rather than failing an install.
+
+  Remote file staging over the same SSH connection, and a `data_path` option for dedicated
+  data disks, remain unimplemented — see the tracker.
+
 ## [0.10.1] — 2026-08-19
 
 ### Added
