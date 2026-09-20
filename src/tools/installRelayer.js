@@ -99,7 +99,7 @@ async function resolveDockerHost(docker) {
  * install still completes and the response says it fell back.
  *
  * `compose_url` stays as an optional override for internal/custom installs;
- * when given, the old download-a-URL behaviour is preserved.
+ * when given, the old download-a-URL behavior is preserved.
  */
 module.exports = function registerInstallRelayer(server, options = {}) {
     const docker = options.dockerUtil || createDockerUtil(options);

@@ -7,7 +7,7 @@ const { execFile: nodeExecFile } = require('child_process');
  *
  * unix:// and npipe:// sockets are local by definition. ssh:// and tcp://
  * point at another machine — unless the hostname is loopback. Anything
- * unparseable falls back to local, matching pre-context behaviour.
+ * unparseable falls back to local, matching pre-context behavior.
  *
  * @param {string} endpoint - e.g. 'unix:///var/run/docker.sock', 'ssh://user@host'
  * @returns {{remote: boolean, host: string}}
