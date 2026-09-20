@@ -4,7 +4,7 @@
  * Input-boundary regression tests for the fixes made in MR !33 (CodeRabbit review).
  *
  * Each test here pins a boundary that was previously open. They are grouped by the
- * defect they prevent rather than by tool, because the point is the behaviour, not the
+ * defect they prevent rather than by tool, because the point is the behavior, not the
  * file it lives in.
  */
 

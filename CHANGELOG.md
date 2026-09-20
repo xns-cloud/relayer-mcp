@@ -151,7 +151,7 @@
 ### Changed
 
 - **Migrated all 15 tools from the deprecated `server.tool` to `registerTool`.** Handler
-  behaviour is unchanged — every handler body is byte-identical, as are all 15 tool
+  behavior is unchanged — every handler body is byte-identical, as are all 15 tool
   descriptions and input schemas. Only the registration call and its metadata moved.
 - The runtime server now announces `tech.xns/relayer`, matching the name published to the
   MCP registry and to npm. That name and the version are both read from `package.json`, so
@@ -228,7 +228,7 @@
   listens on the loopback callback), and registrations made this way do not carry an
   affiliate referral code (the old Console2 path did; accepted for this release).
 
-- **`check_prerequisites` now recognises an environment that cannot keep your
+- **`check_prerequisites` now recognizes an environment that cannot keep your
   install.** Inside an ephemeral container (sandbox, CI runner) it reports the
   environment as ephemeral — as a warning with a concrete next step (point Docker at
   a persistent host over an SSH context, or hand the install to an operator), never
@@ -253,7 +253,7 @@
     from any machine on the LAN with no configuration. Set `127.0.0.1` for
     loopback-only.
   - `ui_tls_enabled` / `s3_tls_enabled` — both default off, both **described only**.
-    They are named here so the decision is visible; they are not wired to behaviour in
+    They are named here so the decision is visible; they are not wired to behavior in
     this release, and the description and success JSON both say so plainly rather than
     letting a caller believe setting one did something.
 
@@ -273,9 +273,9 @@
 
 - **`install_relayer` states the binding it composed.** The success JSON now carries a
   `binding` block: the UI and S3 host→container port pairs, where those values were
-  written, and an explicitly labelled `reachability` note. The installer is one of the
+  written, and an explicitly labeled `reachability` note. The installer is one of the
   three out-of-band channels an operator can consult when a connection is refused, so
-  it now says what it published instead of staying silent. Reachability is labelled
+  it now says what it published instead of staying silent. Reachability is labeled
   *configured — not verified from this process* and points at `docker port xns-relayer`
   on the host, rather than asserting a publication this process cannot see.
   Container ports are reported only where they are known: on the normal install they

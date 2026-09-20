@@ -10,7 +10,7 @@
  * the mock captures the call as:
  *   server.registerTool.mock.calls[i] = [name, config, handler]
  *
- * This helper normalises access so a future SDK signature change
+ * This helper normalizes access so a future SDK signature change
  * requires one edit, not 18 files.
  */
 
