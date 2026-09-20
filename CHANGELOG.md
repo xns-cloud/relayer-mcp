@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.3] — 2026-09-20
+
+### Changed
+
+- **British spellings removed from source comments and changelog prose (BUG-903).** The
+  pre-push `us-spelling` gate is file-scoped, not line-scoped, so the nine pre-existing
+  occurrences across five files — `src/tools/installRelayer.js`, `src/lib/dockerUtil.js`, two test files
+  and five historical CHANGELOG entries — made every future change to those files inherit a
+  blocking finding it did not cause. Comment and prose text only — no code path,
+  identifier, or output string changed, and no test behavior changed.
+
 ## [0.10.2] — 2026-09-02
 
 ### Fixed
