@@ -1,6 +1,32 @@
 'use strict';
 
+const net = require('net');
 const { execFile: nodeExecFile } = require('child_process');
+
+// Every loopback spelling a Docker endpoint can carry: localhost, the whole
+// 127/8 block, the 0.0.0.0 / [::] wildcards, [::1], and IPv4-mapped 127/8
+// ([::ffff:127.0.0.1], which URL normalizes to [::ffff:7f00:1]).
+function isLoopbackHost(name) {
+    if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
+    if (net.isIPv4(name)) return name.startsWith('127.');
+    const mapped = /^\[::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}\]$/.exec(name);
+    return Boolean(mapped) && (parseInt(mapped[1], 16) >> 8) === 127;
+}
+
+/**
+ * Replace the password in an endpoint URL's userinfo with ***. An ssh:// or
+ * tcp:// DOCKER_HOST can carry one, and tools echo the endpoint back to the
+ * client. The password runs to the LAST '@' before the path, query or
+ * fragment, as URL parsers (and Docker's own) read it, so a password
+ * containing '@' is fully masked and an '@' after the authority is left alone.
+ *
+ * @param {string|null|undefined} endpoint
+ * @returns {string|null}
+ */
+function redactEndpoint(endpoint) {
+    if (typeof endpoint !== 'string') return endpoint ?? null;
+    return endpoint.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/?#]*):[^/?#]*@/i, '$1:***@');
+}
 
 /**
  * Parse a Docker endpoint URL into { remote, host }.
@@ -18,8 +44,12 @@ function parseDockerEndpoint(endpoint) {
     if (endpoint.startsWith('unix://') || endpoint.startsWith('npipe://')) return local;
     try {
         const { hostname } = new URL(endpoint);
-        // URL.hostname keeps IPv6 brackets: 'tcp://[::1]:2375' → '[::1]'
-        if (!hostname || ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return local;
+        // URL.hostname keeps IPv6 brackets ('tcp://[::1]:2375' → '[::1]') and
+        // does not lowercase tcp:// or ssh:// hosts, so compare lowercased.
+        // install_relayer refuses a remote daemon, so every loopback form —
+        // the whole 127/8 block, the 0.0.0.0 / [::] wildcards — must read local.
+        const name = hostname.toLowerCase();
+        if (!name || isLoopbackHost(name)) return local;
         return { remote: true, host: hostname };
     } catch {
         return local;
@@ -146,4 +176,4 @@ function createDockerUtil(options = {}) {
     return { docker, composeUp, isContainerRunning, findContainer, getDockerHost };
 }
 
-module.exports = { createDockerUtil, parseDockerEndpoint };
+module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint };

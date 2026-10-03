@@ -1,6 +1,6 @@
 'use strict';
 
-const { createDockerUtil, parseDockerEndpoint } = require('../lib/dockerUtil');
+const { createDockerUtil, parseDockerEndpoint, redactEndpoint } = require('../lib/dockerUtil');
 
 describe('parseDockerEndpoint', () => {
     test.each([
@@ -12,10 +12,40 @@ describe('parseDockerEndpoint', () => {
         ['tcp://127.0.0.1:2375', false, 'localhost'],   // loopback tcp = local
         ['tcp://[::1]:2375', false, 'localhost'],       // IPv6 loopback = local
         ['tcp://localhost:2375', false, 'localhost'],
+        // install_relayer refuses a remote daemon, so every loopback spelling must read local
+        ['tcp://LOCALHOST:2375', false, 'localhost'],   // tcp:// hosts are not lowercased by URL
+        ['ssh://user@LocalHost', false, 'localhost'],
+        ['tcp://127.0.0.2:2375', false, 'localhost'],   // whole 127/8 block is loopback
+        ['tcp://127.255.255.254:2375', false, 'localhost'],
+        ['tcp://0.0.0.0:2375', false, 'localhost'],     // wildcard bind address used as a target
+        ['tcp://[::]:2375', false, 'localhost'],
+        ['tcp://128.0.0.1:2375', true, '128.0.0.1'],    // just outside 127/8
+        ['tcp://127.example.com:2375', true, '127.example.com'], // a hostname, not a 127.x address
+        ['tcp://[::ffff:127.0.0.1]:2375', false, 'localhost'], // IPv4-mapped loopback
+        ['tcp://[::ffff:128.0.0.1]:2375', true, '[::ffff:8000:1]'], // IPv4-mapped, outside 127/8
         ['', false, 'localhost'],
         ['not a url at all', false, 'localhost'],        // unparseable → local fallback
     ])('%s → remote=%s host=%s', (endpoint, remote, host) => {
         expect(parseDockerEndpoint(endpoint)).toEqual({ remote, host });
+    });
+});
+
+describe('redactEndpoint', () => {
+    test.each([
+        ['ssh://user:s3cret@box', 'ssh://user:***@box'],
+        ['ssh://user:pa@ss@box:2222', 'ssh://user:***@box:2222'],   // password runs to the LAST '@'
+        ['tcp://u:p@10.0.0.5:2376/path@x', 'tcp://u:***@10.0.0.5:2376/path@x'], // '@' in the path is not userinfo
+        ['tcp://u:p@10.0.0.5:2376?x=a@b', 'tcp://u:***@10.0.0.5:2376?x=a@b'], // '@' in the query is not userinfo
+        ['tcp://u:p@10.0.0.5:2376#a@b', 'tcp://u:***@10.0.0.5:2376#a@b'],     // nor in the fragment
+        ['ssh://user@box', 'ssh://user@box'],                     // no password → unchanged
+        ['unix:///var/run/docker.sock', 'unix:///var/run/docker.sock'],
+        ['', ''],
+    ])('%s → %s', (endpoint, expected) => {
+        expect(redactEndpoint(endpoint)).toBe(expected);
+    });
+
+    test.each([[null], [undefined]])('%s → null', (endpoint) => {
+        expect(redactEndpoint(endpoint)).toBeNull();
     });
 });
 

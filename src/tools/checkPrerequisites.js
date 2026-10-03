@@ -2,7 +2,7 @@
 
 const net = require('net');
 const { createHttpClient } = require('../lib/httpClient');
-const { createDockerUtil } = require('../lib/dockerUtil');
+const { createDockerUtil, redactEndpoint } = require('../lib/dockerUtil');
 const { environmentProbe: defaultEnvironmentProbe } = require('../lib/environmentProbe');
 
 /**
@@ -39,7 +39,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
         'check_prerequisites',
         {
             title: 'check_prerequisites',
-            description: 'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Also reports where install_relayer will write its files: on a remote Docker daemon the files land on this machine while the containers run on the remote host, raised as an install_file_location warning. Run this first before any other relayer tool.',
+            description: 'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
             inputSchema: {
                 /* no parameters */
             },
@@ -69,7 +69,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 dockerHost = {
                     remote: isRemote,
                     host: isRemote ? remoteHost : 'localhost',
-                    endpoint: raw?.endpoint ?? null,
+                    endpoint: redactEndpoint(raw?.endpoint),  // echoed in the docker check detail
                 };
                 checks.push({
                     name: 'docker',
@@ -84,27 +84,20 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     name: 'docker',
                     passed: false,
                     detail: 'Docker is not available or not running',
-                    remediation: 'Install Docker Engine (https://docs.docker.com/engine/install/) and ensure the Docker daemon is running. On Linux: sudo systemctl start docker. Remote daemon: create an SSH context — docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
+                    remediation: 'Install Docker Engine (https://docs.docker.com/engine/install/) and ensure the Docker daemon is running. On Linux: sudo systemctl start docker. To install on a persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.',
                 });
             }
 
-            // 1b. WHERE the install files will land. This is the last point at
-            // which the user can still choose to run the MCP on the Docker host
-            // instead — install_relayer writes its docker-compose.yml and .env
-            // with local mkdir/curl/fs while starting the containers remotely,
-            // so on a remote daemon the deployment and the files that define it
-            // end up on different machines. Nothing is lost (named volumes keep
-            // the data on the Docker host), but nobody can restart, re-port, or
-            // upgrade it from the Docker host without those files — and if this
-            // machine is a sandbox, the only copy dies with it. Say so BEFORE a
-            // file is written, not in the success payload afterwards.
+            // 1b. install_relayer refuses when the daemon is on another machine
+            // (it writes docker-compose.yml and .env on THIS machine). Fail here
+            // so a passing check is never followed by a refused install.
             if (dockerHost.remote) {
+                allPassed = false;
                 checks.push({
                     name: 'install_file_location',
-                    passed: true,
-                    warning: true,
-                    detail: `install_relayer runs on THIS machine and writes docker-compose.yml and .env here, but the Docker daemon is on ${dockerHost.host} — so the containers and the files that define them will end up on different machines. The install itself works and the data is safe (Docker named volumes on ${dockerHost.host}); what will not work is restarting, changing ports, or upgrading from ${dockerHost.host}, because that host has no compose file.`,
-                    remediation: `Preferred: run the MCP on ${dockerHost.host} itself (install Node.js 20 there and point your MCP client at it) so the files and the containers stay together. Otherwise install from here and move the install directory to ${dockerHost.host} immediately afterwards, before you need to restart or upgrade — see "Moving the install files to the Docker host" in the relayer-mcp README for worked examples. If this machine is a sandbox, CI runner, or throwaway VM, move them before the session ends: the only copy of your compose file leaves with it.`
+                    passed: false,
+                    detail: `The Docker daemon is on ${dockerHost.host}, not this machine. install_relayer will refuse: it writes docker-compose.yml and .env on this machine, not on ${dockerHost.host}.`,
+                    remediation: `Run the MCP on ${dockerHost.host} (install Node.js 20 there and point your MCP client at it), then run check_prerequisites and install_relayer from there. Or unset DOCKER_HOST / switch to the default Docker context to install on this machine.`,
                 });
             }
 
@@ -173,8 +166,8 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                             ? `This environment appears to be ephemeral (${probe.signals.join('; ')}), but Docker targets a remote host (${dockerHost.host}). Persistence depends on the remote Docker host.`
                             : `This environment appears to be ephemeral (${probe.signals.join('; ')}). A Relayer installed here will be lost when the container exits.`,
                         remediation: remoteDocker
-                            ? `The Relayer will be installed on the remote Docker host — verify that host has persistent storage. Note also that install_relayer writes docker-compose.yml and .env HERE, in this ephemeral environment, not on ${dockerHost.host}. Move them to ${dockerHost.host} straight after the install or they are gone when this environment exits, leaving a running deployment nobody can restart or upgrade.`
-                            : 'Install on a persistent Docker host instead. If you are running from a sandbox or CI, use an SSH Docker context to target a persistent machine: docker context create relayer --docker "host=ssh://user@host" && docker context use relayer',
+                            ? `install_relayer will refuse while Docker targets ${dockerHost.host}. Run the MCP on ${dockerHost.host} (a persistent Docker host) instead of from this ephemeral environment.`
+                            : 'Install on a persistent Docker host instead. If you are running from a sandbox or CI, run the MCP on a persistent Docker host rather than here.',
                     });
                 } else {
                     checks.push({ name: 'ephemeral_environment', passed: true, detail: 'Environment appears persistent — install will survive restarts' });

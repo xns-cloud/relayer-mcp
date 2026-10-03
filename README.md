@@ -15,7 +15,7 @@ npx @xns-cloud/relayer-mcp@latest
 ## Requirements
 
 - **Node.js 20+** — see [Installing Node.js 20](#installing-nodejs-20) if your distro ships an older version.
-- **Docker Engine** — on the same machine, or on a remote host via a Docker context (see [Remote Docker hosts](#remote-docker-hosts)).
+- **Docker Engine** — on the same machine that runs the MCP. `install_relayer` refuses when the Docker daemon is on another machine (see [Remote Docker hosts](#remote-docker-hosts)).
 
 ### Installing Node.js 20
 
@@ -36,74 +36,7 @@ If you start the MCP on an older Node, it exits immediately with this same guida
 
 The Relayer runs as a Docker container and persists its data in a Docker volume. If the MCP is running inside an ephemeral environment (a sandbox container, a CI runner, or a throwaway VM), any installation performed there will be lost when that environment exits. `check_prerequisites` detects this automatically and reports it as a warning with a concrete next step — it never blocks the flow.
 
-**If your environment is ephemeral**, install on a persistent Docker host instead. The easiest path from an ephemeral sandbox is an SSH Docker context:
-
-```bash
-docker context create relayer --docker "host=ssh://user@persistent-host"
-docker context use relayer
-```
-
-The MCP then drives the install on the persistent host through the SSH context. Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
-
-**Know the tradeoff before you take this path.** With an SSH context the containers start on the remote host and the data lives in Docker volumes there, but `install_relayer` writes `docker-compose.yml` and `.env` on the machine running the MCP — not on the Docker host. That is fine for the install and fine for your data; it is not fine for day 2. Restarting, changing ports, and upgrading from the Docker host all need a compose file that host does not have. From an ephemeral sandbox it is worse: the only copy of those files exits with the sandbox, leaving a running Relayer nobody can administer.
-
-`check_prerequisites` warns about this before anything is written, and `install_relayer` returns an `action_required` field plus a `move_files` block carrying the source machine and path, the destination machine and path, the Docker endpoint it detected, where the compose file came from, and the contents of the env file it wrote. Either run the MCP on the Docker host, or [move the install directory across](#moving-the-install-files-to-the-docker-host) as soon as the install finishes.
-
-### Moving the install files to the Docker host
-
-The MCP does **not** generate a copy command for you. Getting one right means guessing your scp version, shell, ssh port, bastion, sudo policy and path, and a wrong command that looks right is worse than no command. Below are three worked examples covering the common shapes — take the one that matches your setup and substitute the values from `move_files`.
-
-Three things to know before you adapt any of them:
-
-- **Keep the same directory name on both machines.** Compose takes the project name from the directory it runs in, and volume names are prefixed with it. Land the files in `/srv/relayer` instead of `/opt/xns-relayer` and `docker compose` there is a *different project*: it will not see the running containers, and `docker compose up` would create a second set of empty volumes and then fail, because `container_name: xns-relayer` is pinned in the compose file and that name is already taken. You get a `409 Conflict` rather than a working Relayer, plus stray empty volumes to clean up. Use the last path segment from `move_files.destination_path`. Keeping the whole path identical is safest — a compose file that binds a relative host path resolves it against the project directory.
-- **Copy to the parent directory.** `scp -r /opt/xns-relayer host:/opt/xns-relayer` copies *into* an existing target, leaving the files at `/opt/xns-relayer/xns-relayer/` where `docker compose` will not find them.
-- **`/opt` needs root.** If your ssh user cannot write the destination, create it first — `scp` will not create a missing parent.
-
-**1 — SSH Docker context, default path.** The common case.
-
-```bash
-ssh -t user@docker-box 'sudo install -d -o $USER /opt/xns-relayer'
-scp -r /opt/xns-relayer user@docker-box:/opt
-```
-
-**2 — Non-standard ssh port, or the Docker host behind a bastion.** Note `ssh` takes `-p` for the port and `scp` takes `-P`; `-J` is the jump host.
-
-```bash
-ssh -t -p 2222 user@docker-box 'sudo install -d -o $USER /opt/xns-relayer'
-scp -P 2222 -r /opt/xns-relayer user@docker-box:/opt
-
-# via a bastion — the prepare step needs the same -J
-ssh -t -J user@bastion user@docker-box 'sudo install -d -o $USER /opt/xns-relayer'
-scp -J user@bastion -r /opt/xns-relayer user@docker-box:/opt
-```
-
-**3 — No ssh route from this machine.** A `tcp://` Docker context, a key only the Docker CLI can use, or a locked-down sandbox. There are only two small files, so recreate them on the Docker host by hand.
-
-Check `move_files.compose_source` in the response first — it tells you where your compose file came from, and the three cases need different handling:
-
-| `compose_source` | Where to get `docker-compose.yml` |
-|---|---|
-| `channel` | `curl -fsSLO <compose_url>`, using the URL from `move_files.compose_url` |
-| `bundled-fallback` | It came from inside the npm package on the MCP machine, not from a URL. Copy that one file across by any means you have — a clipboard paste is fine, it is a few dozen lines. |
-| `compose_url` | Your own custom compose, from wherever you supplied it. |
-
-Then, in a directory whose **last path segment matches** `move_files.destination_path`:
-
-```bash
-# on the Docker host
-sudo install -d -o $USER /opt/xns-relayer
-cd /opt/xns-relayer
-# put docker-compose.yml here per the table above, then write the env file:
-printf 'UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n' > .env
-```
-
-Use the values from `move_files.env_contents`, not the defaults above, if you installed with custom ports or a bind address. If `env_contents` is `null` the install wrote no env file (the `compose_url` path) — your compose file supplies its own values, or you export them before `docker compose up`.
-
-Verify from the Docker host afterwards — this should list the running services rather than an error about a missing configuration file, and should show the containers that are *already up*, not propose new ones:
-
-```bash
-cd /opt/xns-relayer && docker compose ps
-```
+**If your environment is ephemeral**, run the MCP on a persistent Docker host instead (install Node.js 20 there and point your MCP client at it). Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
 
 ## Install
 
@@ -194,23 +127,11 @@ then run `install_relayer` again. To keep the existing deployment, skip `install
 
 ## Remote Docker hosts
 
-Claude Code doesn't have to run on the Docker machine. If you run it on a management node or jump host, point the Docker CLI at the remote server with an SSH context:
+`install_relayer` writes `docker-compose.yml` and `.env` on the machine running the MCP, then runs `docker compose up` against whichever daemon the Docker CLI points at. When that daemon is on another machine (`DOCKER_HOST=ssh://…` or `tcp://…`, or an SSH Docker context), it refuses before writing or starting anything, and the error names the Docker host.
 
-```bash
-docker context create relayer --docker "host=ssh://user@docker-box"
-docker context use relayer
-```
+To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed at it) and run `install_relayer` again. Or unset `DOCKER_HOST` / switch to the default Docker context to install on the machine running the MCP.
 
-(Requires the `docker` CLI on the management node — the [static binary](https://docs.docker.com/engine/install/binaries/) is enough — and SSH key access to the Docker host.)
-
-The MCP detects this automatically (it honors `DOCKER_HOST` and the active Docker context):
-
-- `install_relayer` runs `docker compose` against the remote daemon.
-- `check_relayer_health` and `verify_storage` probe the **remote host's** ports 8888/9000 instead of localhost — make sure those are reachable from the management node.
-- `check_prerequisites` skips the local port-availability probes (the containers bind ports on the remote host) and reports them as skipped with instructions.
-- `check_prerequisites` also raises an `install_file_location` warning, and `install_relayer` returns `action_required` plus a `file_location` block naming both machines — because the install files are written on the management node while the containers run on the Docker host. See [Environment](#environment) for what to do about it.
-
-`check_relayer_health` accepts a `host` override, and `verify_storage` an `endpoint` override, for setups the auto-detection can't see (port forwards, NAT).
+`check_prerequisites` reports the same condition as a failed `install_file_location` check. Health checks still work against a remote daemon: the MCP honors `DOCKER_HOST` and the active Docker context, `check_relayer_health` and `verify_storage` probe the remote host's ports 8888/9000 instead of localhost, and `check_prerequisites` skips the local port probes. `check_relayer_health` accepts a `host` override, and `verify_storage` an `endpoint` override, for setups the auto-detection can't see (port forwards, NAT).
 
 ## Troubleshooting
 
@@ -220,8 +141,8 @@ The MCP detects this automatically (it honors `DOCKER_HOST` and the active Docke
 | `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
 | Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same) |
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
-| `docker compose` on the Docker host says no configuration file found, after a successful install | The MCP ran on another machine, so the compose and env files were written there | [Moving the install files to the Docker host](#moving-the-install-files-to-the-docker-host), or reinstall with the MCP running on the Docker host |
-| `install_relayer` fails with "Failed to create directory … on this machine" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`) | Pass a writable `install_path`, or run the MCP on the Docker host |
+| `install_relayer` fails with "The Docker daemon is on <host>, not this machine" | `DOCKER_HOST` or an SSH/TCP Docker context points at another machine, and the install files would be written here instead | Run the MCP on that host and re-run, or unset `DOCKER_HOST` / use the default Docker context ([Remote Docker hosts](#remote-docker-hosts)) |
+| `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`), or a regular file sits at or along it | Pass a writable `install_path`; the exact OS error is in the MCP server's stderr log |
 
 ## Authentication
 
