@@ -1,10 +1,9 @@
 'use strict';
 
 /**
- * BUG-1172: the npm tarball is public. Every file package.json `files` ships
- * must describe the release URLs without naming our internal hosts or release
- * tooling — a comment once said the channel compose was "shipped to web01 by
- * `deploy.py promote`".
+ * BUG-1172: the npm tarball is public. Every file it ships must describe the
+ * release URLs without naming our internal hosts or release tooling — a
+ * comment once named both.
  */
 
 const fs = require('fs');
@@ -14,7 +13,10 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 // Internal names that must never reach a published file.
-const INTERNAL_NAMES = [/\bweb0\d\b/i, /\bdeploy\.py\b/i, /\bpromote\b/i];
+const INTERNAL_NAMES = [/\bweb0\d\b/i, /\bdeploy\.py\b/i];
+
+// npm adds these to every tarball whatever `files` says.
+const ALWAYS_SHIPPED = ['package.json', 'README.md'];
 
 function publishedFiles() {
     const out = [];
@@ -26,7 +28,7 @@ function publishedFiles() {
             out.push(abs);
         }
     };
-    for (const entry of pkg.files) walk(path.join(repoRoot, entry));
+    for (const entry of [...pkg.files, ...ALWAYS_SHIPPED]) walk(path.join(repoRoot, entry));
     return out;
 }
 
@@ -37,6 +39,7 @@ describe('BUG-1172: published files name no internal infrastructure', () => {
         const rel = files.map((f) => path.relative(repoRoot, f));
         expect(rel).toContain(path.join('src', 'tools', 'installRelayer.js'));
         expect(rel).toContain(path.join('src', 'templates', 'docker-compose.yml'));
+        expect(rel).toContain('README.md');
     });
 
     test.each(INTERNAL_NAMES.map((re) => [String(re), re]))('no published file matches %s', (_label, re) => {

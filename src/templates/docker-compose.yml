@@ -4,7 +4,8 @@
 # fetches that URL by default and only writes this copy when the fetch fails,
 # so this file MUST keep service parity with the channel bundle: relayer + the
 # monitoring stack (Prometheus + Grafana + node-exporter) that powers the
-# dashboards under Monitoring in the web UI. The jest contract tests enforce the parity.
+# dashboards under Monitoring in the web UI. The jest contract tests enforce
+# the parity.
 #
 # NEVER point an image at Docker Hub scprime/* — those are production fleet
 # tags, not a release channel. The one allowed upstream image is
