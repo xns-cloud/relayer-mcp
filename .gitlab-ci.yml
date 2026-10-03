@@ -173,21 +173,23 @@ mcp-registry:
     - curl -fsSL --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 5 --retry-connrefused -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
     - echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
     - tar xzf mcp-publisher.tar.gz mcp-publisher
-    # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
-    # verifies it against the public key served at the .well-known URL on xns.tech.
-    - ./mcp-publisher login http --domain=xns.tech --private-key="${MCP_REGISTRY_KEY}"
     # The registry looks the version up on npm itself, and npm can take a minute
     # or more to serve a version the publish job just pushed (0.11.0 and 0.11.1
     # both failed here with "version ... was not found"). Retry only that
     # rejection, for up to five minutes; any other failure stops at once.
+    # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
+    # verifies it against the public key served at the .well-known URL on xns.tech.
+    # Login runs each attempt: the registry token it saves lasts five minutes.
     - |
       published=0
       for attempt in $(seq 1 10); do
+        ./mcp-publisher login http --domain=xns.tech --private-key="${MCP_REGISTRY_KEY}"
         if ./mcp-publisher publish > publish.log 2>&1; then
           cat publish.log; published=1; break
         fi
         cat publish.log
         grep -q 'was not found' publish.log || break
+        [ "${attempt}" -lt 10 ] || { echo "npm still not serving ${SRV_VERSION} to the registry after 10 attempts — aborting."; break; }
         echo "Registry cannot see ${SRV_VERSION} on npm yet (attempt ${attempt}/10); retrying in 30s."
         sleep 30
       done
