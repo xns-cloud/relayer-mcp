@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.11.0] — 2026-10-03
+
+### Changed
+
+- **`install_relayer` refuses when the Docker daemon is on another machine (BUG-229).** With
+  `DOCKER_HOST=ssh://…`/`tcp://…` or an ssh Docker context, it used to write
+  `docker-compose.yml` and `.env` on the machine running the MCP and start the containers on the
+  Docker host, then report `action_required`/`move_files`. It now returns `isError` naming the
+  Docker host before it creates a directory, downloads, writes or starts anything, and says to run
+  the MCP on that host. The `action_required`, `move_files` and `file_location` response fields
+  are gone. A failed or incomplete host detection still installs locally. Every loopback endpoint
+  (`tcp://0.0.0.0`, the whole `127.0.0.0/8` block, `[::]`, IPv4-mapped `[::ffff:127.x.x.x]`,
+  upper-case `localhost`) counts as local, so a local daemon reached over tcp is not refused. The
+  refusal's `docker_endpoint` and `check_prerequisites`' docker check detail replace any password
+  in the endpoint URL with `***`.
+  - `check_prerequisites` fails its `install_file_location` check for a remote daemon (it used to
+    warn and pass), and its remediation text no longer recommends an SSH Docker context as the way
+    to install.
+  - README: the "Moving the install files to the Docker host" section is removed; "Remote Docker
+    hosts" and the troubleshooting table describe the refusal.
+
 ## [0.10.3] — 2026-09-20
 
 ### Changed
