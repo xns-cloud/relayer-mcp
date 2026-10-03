@@ -15,6 +15,8 @@
   upper-case `localhost`) counts as local, so a local daemon reached over tcp is not refused. The
   refusal's `docker_endpoint` and `check_prerequisites`' docker check detail replace any password
   in the endpoint URL with `***`.
+  - `install_relayer` no longer returns caught `mkdir`/`curl`/`docker compose` error text to the
+    client: the response carries a fixed message and the detail goes to the MCP server log (stderr).
   - `check_prerequisites` fails its `install_file_location` check for a remote daemon (it used to
     warn and pass), and its remediation text no longer recommends an SSH Docker context as the way
     to install.
