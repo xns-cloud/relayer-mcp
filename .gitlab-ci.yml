@@ -176,7 +176,22 @@ mcp-registry:
     # Domain proof: the CLI signs a challenge with MCP_REGISTRY_KEY; the registry
     # verifies it against the public key served at the .well-known URL on xns.tech.
     - ./mcp-publisher login http --domain=xns.tech --private-key="${MCP_REGISTRY_KEY}"
-    - ./mcp-publisher publish
+    # The registry looks the version up on npm itself, and npm can take a minute
+    # or more to serve a version the publish job just pushed (0.11.0 and 0.11.1
+    # both failed here with "version ... was not found"). Retry only that
+    # rejection, for up to five minutes; any other failure stops at once.
+    - |
+      published=0
+      for attempt in $(seq 1 10); do
+        if ./mcp-publisher publish > publish.log 2>&1; then
+          cat publish.log; published=1; break
+        fi
+        cat publish.log
+        grep -q 'was not found' publish.log || break
+        echo "Registry cannot see ${SRV_VERSION} on npm yet (attempt ${attempt}/10); retrying in 30s."
+        sleep 30
+      done
+      [ "${published}" = 1 ]
   variables:
     MCP_PUBLISHER_VERSION: "1.8.1"
     # sha256 of mcp-publisher_linux_amd64.tar.gz at the version above.
