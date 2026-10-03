@@ -1,11 +1,11 @@
 # Bundled by @xns-cloud/relayer-mcp — OFFLINE FALLBACK for the released install.
 # Source of truth: the beta channel bundle on the XNS releases registry —
-# https://releases.scpri.me/relayer/beta/docker-compose.yml (versioned in the
-# deploy repo, shipped by `deploy.py promote`). install_relayer fetches that URL
-# by default and only writes this copy when the fetch fails, so this file MUST
-# keep service parity with the channel bundle: relayer + the monitoring stack
-# (Prometheus + Grafana + node-exporter) that powers the dashboards under
-# Monitoring in the web UI. The jest contract tests enforce the parity.
+# https://releases.scpri.me/relayer/beta/docker-compose.yml. install_relayer
+# fetches that URL by default and only writes this copy when the fetch fails,
+# so this file MUST keep service parity with the channel bundle: relayer + the
+# monitoring stack (Prometheus + Grafana + node-exporter) that powers the
+# dashboards under Monitoring in the web UI. The jest contract tests enforce
+# the parity.
 #
 # NEVER point an image at Docker Hub scprime/* — those are production fleet
 # tags, not a release channel. The one allowed upstream image is
