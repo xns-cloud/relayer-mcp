@@ -35,6 +35,8 @@ describe('redactEndpoint', () => {
         ['ssh://user:s3cret@box', 'ssh://user:***@box'],
         ['ssh://user:pa@ss@box:2222', 'ssh://user:***@box:2222'],   // password runs to the LAST '@'
         ['tcp://u:p@10.0.0.5:2376/path@x', 'tcp://u:***@10.0.0.5:2376/path@x'], // '@' in the path is not userinfo
+        ['tcp://u:p@10.0.0.5:2376?x=a@b', 'tcp://u:***@10.0.0.5:2376?x=a@b'], // '@' in the query is not userinfo
+        ['tcp://u:p@10.0.0.5:2376#a@b', 'tcp://u:***@10.0.0.5:2376#a@b'],     // nor in the fragment
         ['ssh://user@box', 'ssh://user@box'],                     // no password → unchanged
         ['unix:///var/run/docker.sock', 'unix:///var/run/docker.sock'],
         ['', ''],

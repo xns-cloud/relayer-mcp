@@ -16,15 +16,16 @@ function isLoopbackHost(name) {
 /**
  * Replace the password in an endpoint URL's userinfo with ***. An ssh:// or
  * tcp:// DOCKER_HOST can carry one, and tools echo the endpoint back to the
- * client. The password runs to the LAST '@' before the path, as URL parsers
- * (and Docker's own) read it, so a password containing '@' is fully masked.
+ * client. The password runs to the LAST '@' before the path, query or
+ * fragment, as URL parsers (and Docker's own) read it, so a password
+ * containing '@' is fully masked and an '@' after the authority is left alone.
  *
  * @param {string|null|undefined} endpoint
  * @returns {string|null}
  */
 function redactEndpoint(endpoint) {
     if (typeof endpoint !== 'string') return endpoint ?? null;
-    return endpoint.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/]*):[^/]*@/i, '$1:***@');
+    return endpoint.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/?#]*):[^/?#]*@/i, '$1:***@');
 }
 
 /**

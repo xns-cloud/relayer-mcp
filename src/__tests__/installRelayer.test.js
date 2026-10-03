@@ -684,6 +684,70 @@ describe('install_relayer', () => {
     // BUG-229: install_relayer writes its files on the machine running the MCP
     // but compose up runs on the Docker host. With a remote daemon it refuses
     // before touching anything.
+    describe('caught error text never reaches the client', () => {
+        const RAW = 'EACCES: permission denied, open /home/alice/.secret/thing';
+        let errSpy;
+        beforeEach(() => { errSpy = jest.spyOn(console, 'error').mockImplementation(() => {}); });
+        afterEach(() => errSpy.mockRestore());
+
+        function handlerWith({ execFile, composeUp }) {
+            return registerWithOptions({
+                execFile,
+                fs: { readFile: jest.fn().mockResolvedValue('services: {}'), writeFile: jest.fn().mockResolvedValue() },
+                dockerUtil: {
+                    composeUp: composeUp || jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                    findContainer: jest.fn().mockResolvedValue(null),
+                },
+            });
+        }
+
+        test('mkdir failure → fixed message to the client, raw error only in the server log', async () => {
+            const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'mkdir' ? new Error(RAW) : null, '', '')) });
+            const result = await handler({ install_path: '/opt/xns-relayer' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(result.isError).toBe(true);
+            expect(parsed.error).toMatch(/^Relayer installation failed: Failed to create directory \/opt\/xns-relayer/);
+            expect(result.content[0].text).not.toContain('EACCES');
+            expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
+        });
+
+        test('compose up failure → generic message, raw error only in the server log', async () => {
+            const handler = handlerWith({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+                composeUp: jest.fn().mockRejectedValue(new Error(RAW)),
+            });
+            const result = await handler({ install_path: '/opt/xns-relayer' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(result.isError).toBe(true);
+            expect(parsed.error).toBe('Relayer installation failed: see the MCP server log for details');
+            expect(result.content[0].text).not.toContain('EACCES');
+            expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
+        });
+
+        test('compose_url download failure → fixed message, no curl text', async () => {
+            const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'curl' ? new Error(RAW) : null, '', '')) });
+            const result = await handler({ install_path: '/opt/xns-relayer', compose_url: 'https://example.com/dc.yml' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(parsed.error).toBe('Relayer installation failed: Failed to download compose file');
+            expect(result.content[0].text).not.toContain('EACCES');
+        });
+
+        test('channel fetch failure → fallback note carries no curl text', async () => {
+            const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'curl' ? new Error(RAW) : null, '', '')) });
+            const result = await handler({ install_path: '/opt/xns-relayer' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(parsed.success).toBe(true);
+            expect(parsed.source).toBe('bundled-fallback');
+            expect(parsed.note).toMatch(/fell back/);
+            expect(result.content[0].text).not.toContain('EACCES');
+            expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
+        });
+    });
+
     describe('remote Docker host — install refuses', () => {
         const { createDockerUtil } = require('../lib/dockerUtil');
 
