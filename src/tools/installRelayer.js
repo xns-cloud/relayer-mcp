@@ -78,11 +78,10 @@ async function resolveDockerHost(docker) {
 
 // Caught error text never goes back to the MCP client (.coderabbit.yaml path
 // rule): execFile and OS messages can carry paths and system detail. A failure
-// this file raises carries a fixed clientMessage; the cause is logged to stderr.
-function clientError(clientMessage, cause) {
-    const error = new Error(clientMessage, { cause });
-    error.clientMessage = clientMessage;
-    return error;
+// this file raises is marked userSafe (same convention as verifyStorage.js) and
+// its cause is logged to stderr.
+function safeError(message, cause) {
+    return Object.assign(new Error(message, { cause }), { userSafe: true });
 }
 
 /**
@@ -178,14 +177,14 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // Create install directory (execFile, no shell)
                 await new Promise((resolve, reject) => {
                     execFileFn('mkdir', ['-p', install_path], {}, (err) => {
-                        if (err) return reject(clientError(`Failed to create directory ${install_path} — check that it is writable on this machine`, err));
+                        if (err) return reject(safeError(`Failed to create directory ${install_path} — check that the path is writable on this machine and no file sits at or along it`, err));
                         resolve();
                     });
                 });
 
                 const fetchCompose = (url) => new Promise((resolve, reject) => {
                     execFileFn('curl', ['-fsSL', '-o', composePath, url], { timeout: 60000 }, (err) => {
-                        if (err) return reject(clientError('Failed to download compose file', err));
+                        if (err) return reject(safeError('Failed to download compose file', err));
                         resolve();
                     });
                 });
@@ -273,7 +272,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Relayer installation failed: ${err.clientMessage || 'see the MCP server log for details'}`,
+                            error: `Relayer installation failed: ${err.userSafe ? err.message : 'See server log for detail.'}`,
                         }),
                     }],
                     isError: true,

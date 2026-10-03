@@ -721,7 +721,7 @@ describe('install_relayer', () => {
             const parsed = JSON.parse(result.content[0].text);
 
             expect(result.isError).toBe(true);
-            expect(parsed.error).toBe('Relayer installation failed: see the MCP server log for details');
+            expect(parsed.error).toBe('Relayer installation failed: See server log for detail.');
             expect(result.content[0].text).not.toContain('EACCES');
             expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
         });
@@ -731,8 +731,10 @@ describe('install_relayer', () => {
             const result = await handler({ install_path: '/opt/xns-relayer', compose_url: 'https://example.com/dc.yml' });
             const parsed = JSON.parse(result.content[0].text);
 
+            expect(result.isError).toBe(true);
             expect(parsed.error).toBe('Relayer installation failed: Failed to download compose file');
             expect(result.content[0].text).not.toContain('EACCES');
+            expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
         });
 
         test('channel fetch failure → fallback note carries no curl text', async () => {
