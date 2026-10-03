@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.1] — 2026-10-03
+
+### Changed
+
+- **Published source no longer names internal release hosts or tooling (BUG-1172).** Comments in
+  `src/tools/installRelayer.js` and `src/templates/docker-compose.yml` (both in the npm tarball)
+  named the internal web host and the release command that ship the channel compose. They now
+  say only that the compose is published on the XNS releases registry. A test fails if any file
+  in package.json `files` names them again. The 0.5.2 entry below drops the same names.
+  Comment-only; no behavior change.
+
 ## [0.11.0] — 2026-10-03
 
 ### Changed
@@ -438,8 +449,7 @@ agree; publishing 0.7.0 to npm therefore also needs the registry entry republish
   leaving the dashboards under Monitoring in the web UI dead. The default path
   now fetches the canonical beta channel compose
   (`https://releases.scpri.me/relayer/beta/docker-compose.yml` — relayer +
-  Prometheus + Grafana + node-exporter, versioned in the deploy repo and
-  shipped by `deploy.py promote`) instead of writing a relayer-only bundled
+  Prometheus + Grafana + node-exporter) instead of writing a relayer-only bundled
   template. The bundled template remains as an **offline fallback** only, is
   reconciled to service parity with the channel bundle (monitoring stack +
   `privileged: true`), and jest contract tests now enforce that parity so the

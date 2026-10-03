@@ -665,8 +665,7 @@ describe('install_relayer', () => {
     // installed a 10-month-stale image. A Hub (or any non-releases-registry)
     // image reference must never return to the bundled install. The ONE allowed
     // upstream image is prom/node-exporter (public multi-arch, matches the
-    // channel bundle — deploy.py: "node-exporter is upstream multi-arch,
-    // nothing to build").
+    // channel bundle).
     test('fallback template never references Docker Hub or fleet images', () => {
         const template = readTemplate();
 

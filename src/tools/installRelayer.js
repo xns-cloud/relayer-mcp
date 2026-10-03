@@ -32,8 +32,8 @@ function isValidBindAddress(value) {
 }
 
 // Canonical released install — the full beta channel bundle (relayer +
-// monitoring stack). Versioned in the deploy repo, shipped to web01 by
-// `deploy.py promote`, served login-free. THE default install source.
+// monitoring stack), published on the XNS releases registry and served
+// login-free. THE default install source.
 const CHANNEL_COMPOSE_URL = 'https://releases.scpri.me/relayer/beta/docker-compose.yml';
 
 // Bundled OFFLINE FALLBACK template (ships in the npm package; package.json
