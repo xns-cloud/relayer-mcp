@@ -741,6 +741,27 @@ describe('install_relayer', () => {
             expectNothingHappened(ctx);
         });
 
+        test('DOCKER_HOST with a password → refusal never echoes the password', async () => {
+            const ctx = build({ env: { DOCKER_HOST: 'ssh://user:s3cret@box' } });
+            const result = await ctx.handler({ install_path: '/opt/xns-relayer' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(result.isError).toBe(true);
+            expect(parsed.docker_endpoint).toBe('ssh://user:***@box');
+            expect(result.content[0].text).not.toContain('s3cret');
+            expectNothingHappened(ctx);
+        });
+
+        test('DOCKER_HOST=tcp://0.0.0.0 → a local daemon, installs', async () => {
+            const ctx = build({ env: { DOCKER_HOST: 'tcp://0.0.0.0:2375' } });
+            const result = await ctx.handler({ install_path: '/opt/xns-relayer' });
+            const parsed = JSON.parse(result.content[0].text);
+
+            expect(result.isError).toBeUndefined();
+            expect(parsed.success).toBe(true);
+            expect(ctx.dockerUtil.composeUp).toHaveBeenCalled();
+        });
+
         test('ssh Docker context (DOCKER_HOST unset) → same refusal, touches nothing', async () => {
             const ctx = build({ env: {}, contextEndpoint: 'ssh://deploy@ctx-box.lan:2222' });
             const result = await ctx.handler({ install_path: '/opt/xns-relayer' });

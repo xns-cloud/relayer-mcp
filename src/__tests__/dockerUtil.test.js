@@ -12,6 +12,15 @@ describe('parseDockerEndpoint', () => {
         ['tcp://127.0.0.1:2375', false, 'localhost'],   // loopback tcp = local
         ['tcp://[::1]:2375', false, 'localhost'],       // IPv6 loopback = local
         ['tcp://localhost:2375', false, 'localhost'],
+        // install_relayer refuses a remote daemon, so every loopback spelling must read local
+        ['tcp://LOCALHOST:2375', false, 'localhost'],   // tcp:// hosts are not lowercased by URL
+        ['ssh://user@LocalHost', false, 'localhost'],
+        ['tcp://127.0.0.2:2375', false, 'localhost'],   // whole 127/8 block is loopback
+        ['tcp://127.255.255.254:2375', false, 'localhost'],
+        ['tcp://0.0.0.0:2375', false, 'localhost'],     // wildcard bind address used as a target
+        ['tcp://[::]:2375', false, 'localhost'],
+        ['tcp://128.0.0.1:2375', true, '128.0.0.1'],    // just outside 127/8
+        ['tcp://127.example.com:2375', true, '127.example.com'], // a hostname, not a 127.x address
         ['', false, 'localhost'],
         ['not a url at all', false, 'localhost'],        // unparseable → local fallback
     ])('%s → remote=%s host=%s', (endpoint, remote, host) => {

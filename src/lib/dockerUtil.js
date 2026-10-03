@@ -1,5 +1,6 @@
 'use strict';
 
+const net = require('net');
 const { execFile: nodeExecFile } = require('child_process');
 
 /**
@@ -12,14 +13,23 @@ const { execFile: nodeExecFile } = require('child_process');
  * @param {string} endpoint - e.g. 'unix:///var/run/docker.sock', 'ssh://user@host'
  * @returns {{remote: boolean, host: string}}
  */
+function isLoopbackHost(name) {
+    if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
+    return net.isIPv4(name) && name.startsWith('127.');
+}
+
 function parseDockerEndpoint(endpoint) {
     const local = { remote: false, host: 'localhost' };
     if (!endpoint) return local;
     if (endpoint.startsWith('unix://') || endpoint.startsWith('npipe://')) return local;
     try {
         const { hostname } = new URL(endpoint);
-        // URL.hostname keeps IPv6 brackets: 'tcp://[::1]:2375' → '[::1]'
-        if (!hostname || ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return local;
+        // URL.hostname keeps IPv6 brackets ('tcp://[::1]:2375' → '[::1]') and
+        // does not lowercase tcp:// or ssh:// hosts, so compare lowercased.
+        // install_relayer refuses a remote daemon, so every loopback form —
+        // the whole 127/8 block, the 0.0.0.0 / [::] wildcards — must read local.
+        const name = hostname.toLowerCase();
+        if (!name || isLoopbackHost(name)) return local;
         return { remote: true, host: hostname };
     } catch {
         return local;

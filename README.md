@@ -142,7 +142,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 | Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same) |
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 | `install_relayer` fails with "The Docker daemon is on <host>, not this machine" | `DOCKER_HOST` or an SSH/TCP Docker context points at another machine, and the install files would be written here instead | Run the MCP on that host and re-run, or unset `DOCKER_HOST` / use the default Docker context ([Remote Docker hosts](#remote-docker-hosts)) |
-| `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`) | Pass a writable `install_path`, or run the MCP on the Docker host |
+| `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`) | Pass a writable `install_path` |
 
 ## Authentication
 
