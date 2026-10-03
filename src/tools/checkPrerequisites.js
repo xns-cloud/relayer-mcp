@@ -2,7 +2,7 @@
 
 const net = require('net');
 const { createHttpClient } = require('../lib/httpClient');
-const { createDockerUtil } = require('../lib/dockerUtil');
+const { createDockerUtil, redactEndpoint } = require('../lib/dockerUtil');
 const { environmentProbe: defaultEnvironmentProbe } = require('../lib/environmentProbe');
 
 /**
@@ -69,7 +69,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 dockerHost = {
                     remote: isRemote,
                     host: isRemote ? remoteHost : 'localhost',
-                    endpoint: raw?.endpoint ?? null,
+                    endpoint: redactEndpoint(raw?.endpoint),  // echoed in the docker check detail
                 };
                 checks.push({
                     name: 'docker',

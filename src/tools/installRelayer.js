@@ -3,7 +3,7 @@
 const { z } = require('zod');
 const path = require('path');
 const net = require('net');
-const { createDockerUtil } = require('../lib/dockerUtil');
+const { createDockerUtil, redactEndpoint } = require('../lib/dockerUtil');
 
 const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address (e.g. "127.0.0.1"), or a bracketed IPv6 address (e.g. "[::1]") — the Compose ports host component is an IP address, not a hostname';
 
@@ -76,13 +76,6 @@ async function resolveDockerHost(docker) {
     }
 }
 
-// The refusal echoes the endpoint back to the client. An ssh:// or tcp://
-// DOCKER_HOST can carry a password in its userinfo; never return it.
-function redactEndpointPassword(endpoint) {
-    if (typeof endpoint !== 'string') return endpoint ?? null;
-    return endpoint.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/]*):[^@/]*@/i, '$1:***@');
-}
-
 /**
  * Tool 4: install_relayer
  * AC-12: confirms "containers starting"; no manual shell.
@@ -145,7 +138,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                                 success: false,
                                 error: `The Docker daemon is on ${dockerHost.host}, not this machine. install_relayer would write docker-compose.yml and .env on this machine instead of on ${dockerHost.host}, so nothing was written and nothing was started.`,
                                 docker_host: dockerHost.host,
-                                docker_endpoint: redactEndpointPassword(dockerHost.endpoint),
+                                docker_endpoint: redactEndpoint(dockerHost.endpoint),
                                 remediation: `Run the MCP on ${dockerHost.host} (install Node.js 20 there and point your MCP client at it), then run install_relayer again. Or, to install on this machine, unset DOCKER_HOST or switch to the default Docker context.`,
                             }, null, 2),
                         }],

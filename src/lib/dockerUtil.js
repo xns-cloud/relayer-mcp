@@ -3,6 +3,30 @@
 const net = require('net');
 const { execFile: nodeExecFile } = require('child_process');
 
+// Every loopback spelling a Docker endpoint can carry: localhost, the whole
+// 127/8 block, the 0.0.0.0 / [::] wildcards, [::1], and IPv4-mapped 127/8
+// ([::ffff:127.0.0.1], which URL normalizes to [::ffff:7f00:1]).
+function isLoopbackHost(name) {
+    if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
+    if (net.isIPv4(name)) return name.startsWith('127.');
+    const mapped = /^\[::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}\]$/.exec(name);
+    return Boolean(mapped) && (parseInt(mapped[1], 16) >> 8) === 127;
+}
+
+/**
+ * Replace the password in an endpoint URL's userinfo with ***. An ssh:// or
+ * tcp:// DOCKER_HOST can carry one, and tools echo the endpoint back to the
+ * client. The password runs to the LAST '@' before the path, as URL parsers
+ * (and Docker's own) read it, so a password containing '@' is fully masked.
+ *
+ * @param {string|null|undefined} endpoint
+ * @returns {string|null}
+ */
+function redactEndpoint(endpoint) {
+    if (typeof endpoint !== 'string') return endpoint ?? null;
+    return endpoint.replace(/^([a-z][a-z0-9+.-]*:\/\/[^:@/]*):[^/]*@/i, '$1:***@');
+}
+
 /**
  * Parse a Docker endpoint URL into { remote, host }.
  *
@@ -13,11 +37,6 @@ const { execFile: nodeExecFile } = require('child_process');
  * @param {string} endpoint - e.g. 'unix:///var/run/docker.sock', 'ssh://user@host'
  * @returns {{remote: boolean, host: string}}
  */
-function isLoopbackHost(name) {
-    if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
-    return net.isIPv4(name) && name.startsWith('127.');
-}
-
 function parseDockerEndpoint(endpoint) {
     const local = { remote: false, host: 'localhost' };
     if (!endpoint) return local;
@@ -156,4 +175,4 @@ function createDockerUtil(options = {}) {
     return { docker, composeUp, isContainerRunning, findContainer, getDockerHost };
 }
 
-module.exports = { createDockerUtil, parseDockerEndpoint };
+module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint };

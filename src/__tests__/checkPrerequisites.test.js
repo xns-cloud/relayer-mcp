@@ -463,6 +463,16 @@ describe('check_prerequisites', () => {
             expect(check.remediation).toMatch(/run the MCP on docker-box\.lan/i);
         });
 
+        test('remote endpoint with a password → the docker check never echoes it', async () => {
+            const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin:pa@ss@docker-box.lan' }));
+            const result = await handler({});
+            const parsed = JSON.parse(result.content[0].text);
+
+            const check = parsed.checks.find((c) => c.name === 'docker');
+            expect(check.detail).toContain('ssh://admin:***@docker-box.lan');
+            expect(result.content[0].text).not.toContain('pa@ss');
+        });
+
         test('remote host → overall result is not ready', async () => {
             const handler = registerWithOptions(remoteOpts({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://admin@docker-box.lan' }));
             const parsed = JSON.parse((await handler({})).content[0].text);
