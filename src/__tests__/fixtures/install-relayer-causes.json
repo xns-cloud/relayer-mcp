@@ -1,0 +1,61 @@
+{
+  "_doc": "install_relayer failure causes (AC-24, PRD.md:54). Matched from error.stderr set by dockerUtil.js:83-86; classifier is a new pure function in dockerUtil.js. Response carries ONLY the fixed sentence, never Docker's text (.coderabbit.yaml:127-131; installRelayer.test.js:723 pins the unmatched line). In-repo copy: src/__tests__/fixtures/install-relayer-causes.json (the sprint copy is not readable from CI).",
+  "response_shape": {
+    "success": false,
+    "error": "Relayer installation failed: <fixed sentence>",
+    "isError": true
+  },
+  "order_matters": "first match wins in this order: permission_denied, daemon_stopped, out_of_disk, pull_refused, port_in_use; a pull failure that mentions a port must not classify as port_in_use (M-44); stderr only, never err.message (M-L14)",
+  "causes": [
+    {
+      "key": "permission_denied",
+      "stderr_matches": [
+        "permission denied while trying to connect to the Docker daemon socket",
+        "permission denied"
+      ],
+      "sentence_names": "log out and back in (or the add-group command); no files are written and no existing-container refusal is reached (AC-24, SR-4)",
+      "preflight": "installRelayer runs `docker info` before the existing-install check; a rejection that classifies as permission_denied returns this sentence, before any write; any other rejection continues as today"
+    },
+    {
+      "key": "daemon_stopped",
+      "stderr_matches": [
+        "Cannot connect to the Docker daemon",
+        "Is the docker daemon running"
+      ],
+      "sentence_names": "sudo systemctl start docker"
+    },
+    {
+      "key": "out_of_disk",
+      "stderr_matches": [
+        "no space left on device"
+      ],
+      "sentence_names": "free disk space and the Docker root"
+    },
+    {
+      "key": "pull_refused",
+      "stderr_matches": [
+        "pull access denied",
+        "requested access to the resource is denied",
+        "unauthorized",
+        "manifest unknown"
+      ],
+      "sentence_names": "releases.scpri.me"
+    },
+    {
+      "key": "port_in_use",
+      "stderr_matches": [
+        "port is already allocated",
+        "address already in use"
+      ],
+      "port_from": "the host port in the bind text, matched against ui_port / s3_port; sentence names that port (8888 or 9000 by default) and ui_port / s3_port as the alternative",
+      "sentence_names": "the port, ui_port / s3_port as the alternative, and `docker rm xns-relayer` (the leftover Created container) before retrying (AC-24, SR-13)"
+    },
+    {
+      "key": "unmatched",
+      "sentence": "See server log for detail.",
+      "exact_response": "Relayer installation failed: See server log for detail."
+    }
+  ],
+  "raw_text_rule": "no response field contains Docker's stderr or err.message; both go to console.error as today (installRelayer.js:269)",
+  "six_distinct": "permission_denied, daemon_stopped, out_of_disk, pull_refused, port_in_use (8888 and 9000 name different ports in one phrase shape) - six phrases pairwise different incl. the generic line"
+}
