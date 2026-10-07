@@ -140,6 +140,7 @@ async function installFailure({ upStderr, infoStderr, uiPort, s3Port }) {
     const fs = {
         readFile: jest.fn(async (p) => (p.endsWith('.env') ? 'COMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n' : 'services: {}\n')),
         writeFile: jest.fn(async () => {}),
+        chmod: jest.fn(async () => {}),
     };
     const server = { registerTool: jest.fn() };
     require('../tools/installRelayer')(server, {

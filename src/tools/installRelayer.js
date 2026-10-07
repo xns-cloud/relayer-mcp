@@ -49,6 +49,9 @@ const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'docker-compose.ym
 // any channel — makes `docker compose up` fail with a name conflict.
 const CONTAINER_NAME = 'xns-relayer';
 
+// Owner read/write only for the .env this tool writes.
+const ENV_FILE_MODE = 0o600;
+
 // The machine running this MCP and the machine running the Docker daemon can
 // differ (DOCKER_HOST=ssh://..., tcp://..., or an ssh Docker context). This tool
 // writes docker-compose.yml and .env on THIS machine, while compose up runs on
@@ -91,18 +94,27 @@ const DOCKER_GROUP_SENTENCE = 'The Docker socket refused this user, so nothing w
 
 // Fixed sentences per classified Docker failure (dockerUtil FAILURE_PATTERNS).
 // They never quote Docker's text: that goes to the server log only.
+// port_in_use is not here: its sentence depends on the port (portSentence).
 const FAILURE_SENTENCES = {
-    permission_denied: () => DOCKER_GROUP_SENTENCE,
-    daemon_stopped: () => 'Docker is not running on this machine. Start it with sudo systemctl start docker, then run install_relayer again.',
-    out_of_disk: () => 'Docker ran out of disk space while pulling the Relayer images. Free disk space on the filesystem holding the Docker root (docker info --format {{.DockerRootDir}} shows where it is), then run install_relayer again.',
-    pull_refused: () => 'The Relayer images could not be pulled from releases.scpri.me. Check that this machine reaches https://releases.scpri.me and that no stale registry login is stored (docker logout releases.scpri.me), then run install_relayer again.',
-    port_in_use: portSentence,
+    permission_denied: DOCKER_GROUP_SENTENCE,
+    daemon_stopped: 'Docker is not running on this machine. Start it with sudo systemctl start docker, then run install_relayer again.',
+    out_of_disk: 'Docker ran out of disk space while pulling the Relayer images. Free disk space on the filesystem holding the Docker root (docker info --format {{.DockerRootDir}} shows where it is), then run install_relayer again.',
+    pull_refused: 'The Relayer images could not be pulled from releases.scpri.me. Check that this machine reaches https://releases.scpri.me and that no stale registry login is stored (docker logout releases.scpri.me), then run install_relayer again.',
 };
+
+// The release compose also publishes the S3 HTTPS port. No install_relayer
+// parameter moves it.
+const S3_TLS_PORT = 9443;
 
 // Port in use: name the port, the parameter that moves it, and the leftover
 // Created container compose leaves behind, which a retry would collide with.
 function portSentence({ port }, { ui_port, s3_port }) {
     const retry = `remove the leftover container with docker rm ${CONTAINER_NAME} and run install_relayer again`;
+    // DECISION: no new parameter for the 9443 port. Appending S3_TLS_PORT to the
+    // .env would fix one install only (the channel .env is re-fetched each run)
+    // and the schema has no other per-port knob for a port the Relayer does not
+    // serve plain traffic on. The sentence says to free it.
+    if (port === S3_TLS_PORT) return `Port ${port} (the S3 HTTPS port) is already in use on this machine. Free it, ui_port and s3_port do not move it, then ${retry}.`;
     if (port === ui_port) return `Port ${port} is already in use on this machine. Free it or pass a different ui_port, then ${retry}.`;
     if (port === s3_port) return `Port ${port} is already in use on this machine. Free it or pass a different s3_port, then ${retry}.`;
     return `A port this install publishes is already in use on this machine. Free it or pass a different ui_port / s3_port, then ${retry}.`;
@@ -114,7 +126,8 @@ function portSentence({ port }, { ui_port, s3_port }) {
 function failureReason(err, ports) {
     if (err.userSafe) return err.message;
     const cause = classifyDockerFailure(err);
-    if (cause) return FAILURE_SENTENCES[cause.key](cause, ports);
+    if (cause?.key === 'port_in_use') return portSentence(cause, ports);
+    if (cause) return FAILURE_SENTENCES[cause.key];
     return 'See server log for detail.';
 }
 
@@ -176,7 +189,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         'install_relayer',
         {
             title: 'install_relayer',
-            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.scpri.me (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose.\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 20 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. The bundled fallback compose does; the channel compose and any compose_url override are fetched remotely and may not. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
+            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.scpri.me (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. Falls back to a bundled copy of the bundle if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose.\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 20 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. When bind_address is set and the channel compose does not reference BIND_ADDRESS, the tool installs the bundled compose instead (source bundled-fallback, with a reason), because the bundled one honors it. A compose_url override is fetched remotely and may not honor it. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
             inputSchema: {
                 install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888). Docker publishes this port on the interface chosen by bind_address.'),
@@ -184,7 +197,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
                 // R5 input boundary — see isValidBindAddress above for why each
                 // documented address form is validated whole rather than by charset.
-                bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, or a bracketed IPv6 address (e.g. "[::1]"). Hostnames are rejected — the Compose ports host component is an IP address. This value is passed to docker compose via env, and on the channel and bundled-fallback paths it is also written into the .env this installer authors (the compose_url override path writes no .env). It is honored in the bundled fallback compose (which uses BIND_ADDRESS in its port declarations). On the default channel path and on the compose_url path, the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
+                bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, or a bracketed IPv6 address (e.g. "[::1]"). Hostnames are rejected — the Compose ports host component is an IP address. This value is passed to docker compose via env, and on the channel and bundled-fallback paths it is also written into the .env this installer authors (the compose_url override path writes no .env). It is honored in the bundled fallback compose (which uses BIND_ADDRESS in its port declarations). On the default path the installer checks the fetched channel compose for BIND_ADDRESS and uses the bundled fallback compose when it is absent. On the compose_url path the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
                 ui_tls_enabled: z.boolean().optional().default(false).describe('Whether the admin UI should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.'),
                 s3_tls_enabled: z.boolean().optional().default(false).describe('Whether the S3 gateway should listen on HTTPS in addition to HTTP. Default: false (off — HTTP only). NOT WIRED in this version: accepted but has no effect until a future release ships the TLS listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.'),
             },
@@ -267,6 +280,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 let envContents = null;
                 let source;
                 let note;
+                let reason;
                 if (compose_url) {
                     // Override path: download a custom compose (execFile, no shell).
                     await fetchCompose(compose_url);
@@ -281,6 +295,13 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     const portLines = `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\nBIND_ADDRESS=${bindPrefix}\n`;
                     try {
                         await fetchCompose(channelComposeUrl);
+                        // DECISION: the release compose has no BIND_ADDRESS in its
+                        // ports, so a bind_address would be silently ignored and the
+                        // ports published on all interfaces. Use the bundled compose,
+                        // which honors it, and say so.
+                        if (bind_address && !(await fsp.readFile(composePath, 'utf8')).includes('BIND_ADDRESS')) {
+                            throw Object.assign(new Error('channel compose does not reference BIND_ADDRESS'), { bindUnsupported: true });
+                        }
                         await download(channelEnvUrl, envPath, 'release .env');
                         envContents = withPortLines(await fsp.readFile(envPath, 'utf8'), portLines);
                         source = 'channel';
@@ -290,9 +311,17 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         envContents = portLines;
                         source = 'bundled-fallback';
                         console.error(`[install_relayer] channel bundle fetch failed: ${fetchErr.message}${fetchErr.cause ? `: ${fetchErr.cause.message}` : ''}`);
-                        note = 'Channel bundle fetch failed — fell back to the bundled compose. Same services; re-running install later is not required.';
+                        if (fetchErr.bindUnsupported) {
+                            reason = 'The release channel compose does not support bind_address, so the bundled compose, which does, was used. Same services.';
+                        } else {
+                            reason = 'Channel bundle fetch failed.';
+                            note = 'Channel bundle fetch failed — fell back to the bundled compose. Same services; re-running install later is not required.';
+                        }
                     }
-                    await fsp.writeFile(envPath, envContents);
+                    // The .env holds webhook/SMTP secrets: owner-only. The mode on
+                    // writeFile covers a new file; chmod covers the one curl made.
+                    await fsp.writeFile(envPath, envContents, { mode: ENV_FILE_MODE });
+                    await fsp.chmod(envPath, ENV_FILE_MODE);
                 }
 
                 // Run docker compose up -d. cwd + env so ${UI_PORT}/${S3_PORT}
@@ -312,6 +341,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             compose_path: composePath,
                             install_path,
                             source,
+                            ...(reason ? { reason } : {}),
                             // D5/W5: state the binding at install time, out-of-band, so a
                             // refused connection is explainable later. Two statements, never
                             // merged (PRD §7): `composed_from` is what this installer asserts

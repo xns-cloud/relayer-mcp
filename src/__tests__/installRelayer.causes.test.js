@@ -81,6 +81,7 @@ function build({ infoStderr = null, composeStderr = null, installPath = '/opt/xn
             return 'services: {}\n';
         }),
         writeFile: jest.fn(async (p, data) => { store[p] = data; }),
+        chmod: jest.fn(async () => {}),
     };
     const dockerUtil = createDockerUtil({ execFile: dockerExec, env: {} });
     const server = { registerTool: jest.fn() };
@@ -185,6 +186,35 @@ describe('install_relayer failure causes (AC-24, TP-30)', () => {
         expect(dockerExec.mock.calls.map((c) => c[1][0])).not.toContain('ps');
         expect(dockerExec.mock.calls.map((c) => c[1][0])).not.toContain('compose');
         expectNoStderrSubstring(result, STDERR.permissionDenied);
+    });
+
+    // A bind-mount permission error from compose up is not a socket denial, so
+    // it must not say "nothing was written" or send the user to the docker group.
+    test('permission denied on a bind-mount path from compose up → the generic line, not the group sentence', async () => {
+        const stderr = "Error response from daemon: error while creating mount source path '/opt/xns-relayer/data': mkdir /opt/xns-relayer/data: permission denied";
+        const { parsed } = await errorFor({ composeStderr: stderr });
+
+        expect(parsed.error).toBe(GENERIC);
+        expect(parsed.error).not.toContain('usermod');
+    });
+
+    test('Docker 29 "docker API" denial at the preflight → the group sentence, nothing written', async () => {
+        const stderr = 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock';
+        const { parsed, fs } = await errorFor({ infoStderr: stderr });
+
+        expect(parsed.error).toContain('usermod -aG docker');
+        expect(fs.writeFile).not.toHaveBeenCalled();
+    });
+
+    // The release compose also publishes 9443; ui_port / s3_port do not move it.
+    test('port 9443 in use → its own sentence, no ui_port / s3_port advice', async () => {
+        const stderr = 'Error response from daemon: driver failed programming external connectivity on endpoint xns-relayer (8f0c): Bind for 0.0.0.0:9443 failed: port is already allocated';
+        const { parsed } = await errorFor({ composeStderr: stderr });
+
+        expect(parsed.error).toContain('9443');
+        expect(parsed.error).toContain('S3 HTTPS');
+        expect(parsed.error).not.toMatch(/pass a different/);
+        expect(parsed.error).toContain('docker rm xns-relayer');
     });
 
     test('docker info failing for another reason → the install continues as before', async () => {
