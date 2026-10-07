@@ -1,9 +1,26 @@
 'use strict';
 
 const net = require('net');
+const os = require('os');
+const path = require('path');
 const { createHttpClient } = require('../lib/httpClient');
-const { createDockerUtil, redactEndpoint } = require('../lib/dockerUtil');
+const { createDockerUtil, redactEndpoint, classifyDockerFailure } = require('../lib/dockerUtil');
 const { environmentProbe: defaultEnvironmentProbe } = require('../lib/environmentProbe');
+
+// The one-command install (installs Docker, the compose plugin and the Relayer).
+const INSTALL_COMMAND = 'curl -fsSL https://releases.scpri.me/relayer/install.sh | sh';
+
+// The container the install script and install_relayer start.
+const RELAYER_CONTAINER = 'xns-relayer';
+
+// install_relayer's default install_path; the install script uses the same dir.
+const DEFAULT_INSTALL_DIR = '/opt/xns-relayer';
+
+// 10 GB in decimal bytes: fails at 10*10^9 - 1, passes at 10*10^9.
+const MIN_FREE_BYTES = 10 * 10 ** 9;
+const BYTES_PER_GB = 10 ** 9;
+
+const GROUP_NOTE = 'the Docker socket refuses this user until the docker group applies (see docker_group)';
 
 /**
  * Tool 1: check_prerequisites
@@ -29,17 +46,156 @@ function checkPort(port) {
     });
 }
 
+/**
+ * Free space as "9.99 GB", rounded DOWN so a figure just under the threshold
+ * never prints as "10.00 GB".
+ */
+function formatGb(bytes) {
+    return `${(Math.floor(bytes / (BYTES_PER_GB / 100)) / 100).toFixed(2)} GB`;
+}
+
+/**
+ * statfs the nearest existing ancestor of `target` (the install dir usually
+ * does not exist before the install). Only ENOENT walks up; any other error
+ * propagates so the caller reports the leg as unreadable, never as passed.
+ *
+ * @returns {Promise<{path: string, freeBytes: number}>}
+ */
+async function freeBytesAt(statfs, target) {
+    let current = path.resolve(target);
+    for (;;) {
+        try {
+            const stats = await statfs(current);
+            return { path: current, freeBytes: Number(stats.bavail) * Number(stats.bsize) };
+        } catch (err) {
+            const parent = path.dirname(current);
+            if (err?.code !== 'ENOENT' || parent === current) throw err;
+            current = parent;
+        }
+    }
+}
+
+/**
+ * True when /etc/group's docker line lists the user. An unreadable file reads
+ * as "not listed", which names the add-group command (safe either way).
+ */
+async function isInDockerGroup(readFile, username) {
+    try {
+        const groupFile = await readFile('/etc/group', 'utf8');
+        const line = String(groupFile).split('\n').find((l) => l.startsWith('docker:'));
+        if (!line) return false;
+        const members = (line.split(':')[3] || '').split(',').map((m) => m.trim());
+        return members.includes(username);
+    } catch (err) {
+        console.error(`[check_prerequisites] could not read /etc/group: ${err.message}`);
+        return false;
+    }
+}
+
 module.exports = function registerCheckPrerequisites(server, options = {}) {
     const docker = options.dockerUtil || createDockerUtil(options);
     const http = options.httpClient || createHttpClient(options);
     const _checkPort = options.checkPort || checkPort;
     const _environmentProbe = options.environmentProbe || defaultEnvironmentProbe;
+    const _statfs = options.statfs || require('fs').promises.statfs;
+    const _readFile = options.fs?.readFile || require('fs').promises.readFile;
+    const _userInfo = options.userInfo || os.userInfo;
+
+    /**
+     * install_relayer is fresh-install only; an existing xns-relayer container
+     * (running or stopped, any channel) would fail it with a name conflict.
+     * A RUNNING one (e.g. the one the install script started) is ready to use,
+     * so its remediation never says to stop or remove it.
+     */
+    async function checkExistingInstall(dockerState) {
+        if (dockerState === 'denied') {
+            return { name: 'existing_install', passed: true, skipped: true, detail: `Existing-install check skipped — ${GROUP_NOTE}.` };
+        }
+        let existing;
+        try {
+            existing = await docker.findContainer(RELAYER_CONTAINER);
+        } catch {
+            return { name: 'existing_install', passed: true, detail: 'Existing-install check skipped (Docker not reachable)' };
+        }
+        if (!existing) {
+            return { name: 'existing_install', passed: true, detail: 'No existing xns-relayer container — ready for a fresh install' };
+        }
+        const detail = `An existing 'xns-relayer' container was found (status: ${existing.status}; image: ${existing.image}).`;
+        if (existing.running) {
+            return {
+                name: 'existing_install',
+                passed: true,
+                warning: true,
+                detail,
+                remediation: 'This Relayer is already installed and running, and install_relayer performs fresh installs only, so skip install_relayer and continue onboarding with check_relayer_health against it.',
+            };
+        }
+        return {
+            name: 'existing_install',
+            passed: true,
+            warning: true,
+            detail,
+            remediation: 'install_relayer performs fresh installs only. To replace the existing deployment: docker stop xns-relayer && docker rm xns-relayer (data directory is preserved), then install. To keep it, skip install_relayer and continue onboarding against the existing deployment.',
+        };
+    }
+
+    /** One filesystem leg of the disk check. */
+    async function diskLeg(which, target) {
+        try {
+            const { path: fsPath, freeBytes } = await freeBytesAt(_statfs, target);
+            return { which, path: fsPath, free_bytes: freeBytes, passed: freeBytes >= MIN_FREE_BYTES };
+        } catch (err) {
+            console.error(`[check_prerequisites] statfs ${target} failed: ${err.message}`);
+            return { which, path: target, passed: true, skipped: true, detail: `Free space on the ${which} could not be read` };
+        }
+    }
+
+    /** The Docker root leg: only for a local daemon whose `docker info` answered. */
+    async function dockerRootLeg(dockerState, dockerHost) {
+        const which = 'Docker root';
+        if (dockerHost.remote) {
+            return { which, passed: true, skipped: true, detail: `Docker root check skipped — the Docker daemon runs on ${dockerHost.host}, so its disk must be checked there` };
+        }
+        if (dockerState !== 'ok') {
+            return { which, passed: true, skipped: true, detail: 'Docker root check skipped — docker info is not readable' };
+        }
+        let rootDir = '';
+        try {
+            const { stdout } = await docker.docker(['info', '--format', '{{.DockerRootDir}}']);
+            rootDir = String(stdout).trim();
+        } catch (err) {
+            console.error(`[check_prerequisites] docker info DockerRootDir failed: ${err.message}`);
+        }
+        if (!path.isAbsolute(rootDir)) {
+            return { which, passed: true, skipped: true, detail: 'Docker root check skipped — docker info gave no Docker root directory' };
+        }
+        return diskLeg(which, rootDir);
+    }
+
+    async function checkDisk(dockerState, dockerHost) {
+        const filesystems = [
+            await dockerRootLeg(dockerState, dockerHost),
+            await diskLeg('install dir', DEFAULT_INSTALL_DIR),
+        ];
+        const short = filesystems.filter((f) => !f.passed);
+        if (short.length === 0) {
+            return { name: 'disk', passed: true, detail: 'At least 10 GB is free on the Docker root and the install dir', filesystems };
+        }
+        const where = short.map((f) => `${formatGb(f.free_bytes)} free on the ${f.which} (${f.path})`).join(' and ');
+        return {
+            name: 'disk',
+            passed: false,
+            detail: `Not enough disk space: ${where}; the Relayer needs at least 10 GB free on each`,
+            remediation: `Free up space until at least 10 GB is free on ${short.map((f) => `${f.path} (${f.which})`).join(' and ')}, then re-run check_prerequisites. Check with: df -h ${short.map((f) => f.path).join(' ')}`,
+            filesystems,
+        };
+    }
 
     server.registerTool(
         'check_prerequisites',
         {
             title: 'check_prerequisites',
-            description: 'Check system prerequisites for XNS Relayer installation: Docker availability (local or remote via DOCKER_HOST / ssh:// context), required ports (8888, 9000), an existing xns-relayer installation, disk space, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
+            description: 'Check system prerequisites for XNS Relayer installation: Docker installed and its daemon running (local or remote via DOCKER_HOST / ssh:// context), the Docker compose plugin, docker group access for this user, required ports (8888, 9000; a port held by the running xns-relayer container passes), an existing xns-relayer installation, at least 10 GB free on the Docker root and the install directory, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
             inputSchema: {
                 /* no parameters */
             },
@@ -58,6 +214,9 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             // on another machine and the local checks below must adapt.
             const DEFAULT_DOCKER_HOST = { remote: false, host: 'localhost', endpoint: null };
             let dockerHost = DEFAULT_DOCKER_HOST;
+            // 'ok' | 'missing' (no docker CLI) | 'stopped' (daemon unreachable) |
+            // 'denied' (socket refuses this user: the daemon runs).
+            let dockerState = 'ok';
             try {
                 await docker.docker(['info', '--format', '{{.ServerVersion}}']);
                 const raw = await docker.getDockerHost();
@@ -79,13 +238,84 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                         : 'Docker is running',
                 });
             } catch (err) {
+                // Missing is decided by the spawn code, never by message text:
+                // a daemon error can say "no such file or directory" too.
+                if (err?.code === 'ENOENT') {
+                    dockerState = 'missing';
+                    allPassed = false;
+                    checks.push({
+                        name: 'docker',
+                        passed: false,
+                        detail: 'Docker is not installed on this machine',
+                        remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.`,
+                    });
+                } else if (classifyDockerFailure(err)?.key === 'permission_denied') {
+                    // The daemon answered and refused this user: Docker is fine,
+                    // the docker_group check below carries the one failure.
+                    dockerState = 'denied';
+                    checks.push({
+                        name: 'docker',
+                        passed: true,
+                        detail: 'Docker is installed and its daemon is running, but the Docker socket refuses this user',
+                    });
+                } else {
+                    dockerState = 'stopped';
+                    allPassed = false;
+                    checks.push({
+                        name: 'docker',
+                        passed: false,
+                        detail: 'Docker is installed, but the Docker daemon is not running',
+                        remediation: 'Start the Docker daemon: sudo systemctl start docker',
+                    });
+                }
+            }
+
+            // 1a. Compose plugin. `docker compose version` needs no daemon, so it
+            // runs when the daemon is down or the socket refuses; only a missing
+            // docker CLI skips it (Docker-missing is then the one failure).
+            if (dockerState === 'missing') {
+                checks.push({ name: 'docker_compose', passed: true, skipped: true, detail: 'Compose plugin check skipped — Docker is not installed (the one-command install adds both)' });
+            } else {
+                try {
+                    await docker.docker(['compose', 'version']);
+                    checks.push({ name: 'docker_compose', passed: true, detail: 'The Docker compose plugin is installed' });
+                } catch {
+                    allPassed = false;
+                    checks.push({
+                        name: 'docker_compose',
+                        passed: false,
+                        detail: 'The Docker compose plugin is missing',
+                        remediation: "Install it from Docker's apt repository: sudo apt-get install docker-compose-plugin",
+                    });
+                }
+            }
+
+            // 1b. docker group. Decided by `docker info` itself: only a denied
+            // socket is a group problem (root and rootless Docker answer without
+            // the group). /etc/group then tells "not added" from "added, but this
+            // session predates it".
+            if (dockerState === 'denied') {
                 allPassed = false;
-                checks.push({
-                    name: 'docker',
-                    passed: false,
-                    detail: 'Docker is not available or not running',
-                    remediation: 'Install Docker Engine (https://docs.docker.com/engine/install/) and ensure the Docker daemon is running. On Linux: sudo systemctl start docker. To install on a persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.',
-                });
+                const username = _userInfo().username;
+                if (await isInDockerGroup(_readFile, username)) {
+                    checks.push({
+                        name: 'docker_group',
+                        passed: false,
+                        detail: `${username} is in the docker group, but this session started before the group was added, so the Docker socket still refuses it`,
+                        remediation: 'Your session predates the group change: log out and back in (or reboot), then re-run check_prerequisites. Nothing needs reinstalling.',
+                    });
+                } else {
+                    checks.push({
+                        name: 'docker_group',
+                        passed: false,
+                        detail: `${username} is not in the docker group, so the Docker socket refuses it`,
+                        remediation: `Add yourself to the docker group: sudo usermod -aG docker ${username} — then log out and back in and re-run check_prerequisites.`,
+                    });
+                }
+            } else if (dockerState === 'ok') {
+                checks.push({ name: 'docker_group', passed: true, detail: 'This user can reach the Docker daemon' });
+            } else {
+                checks.push({ name: 'docker_group', passed: true, skipped: true, detail: 'Docker group check skipped — the Docker daemon is not reachable' });
             }
 
             // 1b. install_relayer refuses when the daemon is on another machine
@@ -109,7 +339,30 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port, or install with a different port via install_relayer ui_port.' },
                 { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: another S3-compatible service), or install with a different port via install_relayer s3_port.' },
             ];
+            // The install script leaves its own xns-relayer holding 8888/9000.
+            // Those ports are "in use" by the Relayer itself: a pass, not a
+            // conflict. Looked up once, only when a bind-probe finds a port held.
+            let ownPorts = null;
+            const relayerHostPorts = async () => {
+                if (ownPorts) return ownPorts;
+                ownPorts = [];
+                const container = await docker.findContainer(RELAYER_CONTAINER);
+                if (container?.running) {
+                    try {
+                        ownPorts = await docker.containerHostPorts(RELAYER_CONTAINER);
+                    } catch (err) {
+                        console.error(`[check_prerequisites] docker port ${RELAYER_CONTAINER} failed: ${err.message}`);
+                    }
+                }
+                return ownPorts;
+            };
             for (const { port, name, inUseRemediation } of requiredPorts) {
+                if (dockerState === 'denied') {
+                    // Who holds the port cannot be read through a refused socket,
+                    // and right after the install script it is our own Relayer.
+                    checks.push({ name, passed: true, skipped: true, detail: `Port ${port} check skipped — ${GROUP_NOTE}.` });
+                    continue;
+                }
                 if (dockerHost.remote) {
                     checks.push({
                         name,
@@ -123,6 +376,8 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     const available = await _checkPort(port);
                     if (available) {
                         checks.push({ name, passed: true, detail: `Port ${port} is available` });
+                    } else if (dockerState === 'ok' && (await relayerHostPorts()).includes(port)) {
+                        checks.push({ name, passed: true, detail: `Port ${port} is in use by the running ${RELAYER_CONTAINER} container (this Relayer), which is expected` });
                     } else {
                         allPassed = false;
                         checks.push({ name, passed: false, detail: `Port ${port} is already in use`, remediation: inUseRemediation });
@@ -133,25 +388,8 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 }
             }
 
-            // 3b. Existing installation. install_relayer is fresh-install only;
-            // an existing xns-relayer container (running or stopped, any
-            // channel) would fail it with a name conflict. Warn early, here.
-            try {
-                const existing = await docker.findContainer('xns-relayer');
-                if (existing) {
-                    checks.push({
-                        name: 'existing_install',
-                        passed: true,
-                        warning: true,
-                        detail: `An existing 'xns-relayer' container was found (status: ${existing.status}; image: ${existing.image}).`,
-                        remediation: 'install_relayer performs fresh installs only. To replace the existing deployment: docker stop xns-relayer && docker rm xns-relayer (data directory is preserved), then install. To keep it, skip install_relayer and continue onboarding against the running deployment.',
-                    });
-                } else {
-                    checks.push({ name: 'existing_install', passed: true, detail: 'No existing xns-relayer container — ready for a fresh install' });
-                }
-            } catch {
-                checks.push({ name: 'existing_install', passed: true, detail: 'Existing-install check skipped (Docker not reachable)' });
-            }
+            // 3b. Existing installation — warn early, here.
+            checks.push(await checkExistingInstall(dockerState));
 
             // 3c. Ephemeral environment — finding, never a failure.
             try {
@@ -176,21 +414,17 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 checks.push({ name: 'ephemeral_environment', passed: true, detail: 'Ephemeral-environment check skipped (probe error)' });
             }
 
-            // 4. Disk space (need at least 10 GB free — basic docker images + data)
-            try {
-                await docker.docker(['system', 'df', '--format', '{{.TotalCount}}']);
-                // If docker works, disk is implicitly accessible. We check via df on root.
-                checks.push({ name: 'disk', passed: true, detail: 'Docker storage is accessible' });
-            } catch {
-                // If docker system df fails but docker info succeeded, still note it
-                checks.push({ name: 'disk', passed: true, detail: 'Disk check skipped (Docker storage stats unavailable)' });
-            }
+            // 4. Disk space: at least 10 GB free on BOTH the Docker root (images
+            // land there; often its own volume) and the install dir's filesystem.
+            const diskCheck = await checkDisk(dockerState, dockerHost);
+            if (!diskCheck.passed) allPassed = false;
+            checks.push(diskCheck);
 
             // 5-6. Network connectivity
             const connectivityChecks = [
                 { url: 'https://console.xns.tech/health', name: 'connectivity_console', host: 'console.xns.tech' },
                 { url: 'https://auth.xns.tech/auth/realms/scprime/.well-known/openid-configuration', name: 'connectivity_auth', host: 'auth.xns.tech' },
-                // The registry install_relayer pulls from (beta channel, anonymous).
+                // The registry install_relayer pulls from (release channel, anonymous).
                 // /v2/ is the registry version probe — 200 without credentials.
                 { url: 'https://releases.scpri.me/v2/', name: 'connectivity_registry', host: 'releases.scpri.me' },
             ];
