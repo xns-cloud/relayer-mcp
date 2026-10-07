@@ -274,3 +274,29 @@ describe('dockerUtil.containerHostPorts', () => {
         expect(await util.containerHostPorts('xns-relayer')).toEqual([]);
     });
 });
+
+describe('dockerUtil.containerProject', () => {
+    test('reads the compose project label of an exact container name', async () => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '/prometheus\tmonitoring\n', ''));
+        const util = createDockerUtil({ execFile, env: {} });
+
+        expect(await util.containerProject('prometheus')).toBe('monitoring');
+        expect(execFile.mock.calls[0][1].slice(0, 3)).toEqual(['inspect', '--type', 'container']);
+        expect(execFile.mock.calls[0][1].at(-1)).toBe('prometheus');
+    });
+
+    test('a container without the label → empty string', async () => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '/prometheus\t\n', ''));
+        const util = createDockerUtil({ execFile, env: {} });
+
+        expect(await util.containerProject('prometheus')).toBe('');
+    });
+
+    test('no such container, or empty output → null', async () => {
+        const missing = rejectingUtil('Error response from daemon: No such container: prometheus');
+        const empty = createDockerUtil({ execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')), env: {} });
+
+        expect(await missing.containerProject('prometheus')).toBeNull();
+        expect(await empty.containerProject('prometheus')).toBeNull();
+    });
+});

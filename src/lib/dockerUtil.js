@@ -219,12 +219,16 @@ function createDockerUtil(options = {}) {
      */
     async function containerProject(name) {
         try {
+            // The name leads the output so that a container always prints a
+            // non-empty line, whatever its label.
             const { stdout } = await docker([
                 'inspect', '--type', 'container',
-                '-f', '{{index .Config.Labels "com.docker.compose.project"}}',
+                '-f', '{{.Name}}\t{{index .Config.Labels "com.docker.compose.project"}}',
                 String(name),
             ]);
-            return stdout.trim();
+            const line = stdout.trim().split('\n').filter(Boolean)[0];
+            if (!line) return null;
+            return (line.split('\t')[1] || '').trim();
         } catch {
             return null;
         }

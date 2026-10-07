@@ -41,6 +41,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -69,6 +70,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockRejectedValue(Object.assign(new Error('docker info failed: spawn docker ENOENT'), { code: 'ENOENT', stderr: '' })),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: null }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockRejectedValue(new Error('not found')),
             },
             httpClient: {
@@ -94,6 +96,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -120,6 +123,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -146,6 +150,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -170,6 +175,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -199,6 +205,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -230,6 +237,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue({
                     name: 'xns-relayer',
                     status: 'Up 5 days',
@@ -260,6 +268,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -290,6 +299,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true, host: 'docker-box.lan', endpoint: 'ssh://user@docker-box.lan' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -321,6 +331,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -346,6 +357,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -371,6 +383,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue(null),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -393,6 +406,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue(undefined),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -413,6 +427,7 @@ describe('check_prerequisites', () => {
             dockerUtil: {
                 docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                 getDockerHost: jest.fn().mockResolvedValue({ remote: true }),
+                containerProject: jest.fn().mockResolvedValue(null),
                 findContainer: jest.fn().mockResolvedValue(null),
             },
             httpClient: {
@@ -447,6 +462,7 @@ describe('check_prerequisites', () => {
                 dockerUtil: {
                     docker: jest.fn().mockResolvedValue({ stdout: '24.0.0', stderr: '' }),
                     getDockerHost: jest.fn().mockResolvedValue(dockerHostResult),
+                    containerProject: jest.fn().mockResolvedValue(null),
                     findContainer: jest.fn().mockResolvedValue(null),
                 },
                 httpClient: { get: jest.fn().mockResolvedValue({ status: 200, data: {} }), post: jest.fn() },
@@ -523,6 +539,7 @@ describe('check_prerequisites', () => {
                 dockerUtil: {
                     docker: jest.fn().mockRejectedValue(Object.assign(new Error('docker info failed: spawn docker ENOENT'), { code: 'ENOENT', stderr: '' })),
                     getDockerHost: jest.fn(),
+                    containerProject: jest.fn().mockResolvedValue(null),
                     findContainer: jest.fn().mockResolvedValue(null),
                 },
                 httpClient: { get: jest.fn().mockResolvedValue({ status: 200, data: {} }), post: jest.fn() },
@@ -602,6 +619,7 @@ describe('check_prerequisites', () => {
             dockerHost = { remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' },
             container = null,
             hostPorts = [],
+            projects = {},
             portFree = () => true,
             statfs = statfsFor({ [DOCKER_ROOT]: 500 * GB, [INSTALL_DIR]: 500 * GB }),
             username = 'alice',
@@ -611,6 +629,7 @@ describe('check_prerequisites', () => {
             const util = dockerUtil || {
                 docker: docker || fakeDocker({ info, compose, rootDir }),
                 getDockerHost: jest.fn().mockResolvedValue(dockerHost),
+                containerProject: jest.fn(async (name) => (name in projects ? projects[name] : null)),
                 findContainer: jest.fn().mockResolvedValue(container),
                 containerHostPorts: jest.fn().mockResolvedValue(hostPorts),
             };
@@ -915,6 +934,93 @@ describe('check_prerequisites', () => {
             for (const r of remediations) expect(typeof r).toBe('string');
         });
 
+        // CONTRACT-1: the release compose names two containers outright.
+        describe('foreign containers named prometheus / alertmanager', () => {
+            test('another project\'s prometheus → fails naming the container and how to rename it', async () => {
+                const ctx = build({ projects: { prometheus: 'monitoring' } });
+                const { parsed } = await run(ctx);
+
+                const c = check(parsed, 'fixed_container_names');
+                expect(c.passed).toBe(false);
+                expect(c.detail).toContain('prometheus');
+                expect(c.detail).not.toContain('alertmanager');
+                expect(c.remediation).toContain('docker rename prometheus prometheus-old');
+                expect(failed(parsed).map((f) => f.name)).toEqual(['fixed_container_names']);
+                expect(parsed.success).toBe(false);
+            });
+
+            test('an unlabeled container with the name counts as foreign; both names are reported', async () => {
+                const { parsed } = await run(build({ projects: { prometheus: '', alertmanager: 'other' } }));
+
+                expect(check(parsed, 'fixed_container_names').detail).toContain('prometheus and alertmanager');
+            });
+
+            test('the Relayer\'s own prometheus and alertmanager (project xns-relayer) pass', async () => {
+                const { parsed } = await run(build({ projects: { prometheus: 'xns-relayer', alertmanager: 'xns-relayer' } }));
+
+                expect(check(parsed, 'fixed_container_names')).toMatchObject({ passed: true });
+                expect(parsed.success).toBe(true);
+            });
+
+            test('no such containers → passes', async () => {
+                const { parsed } = await run(build());
+
+                expect(check(parsed, 'fixed_container_names')).toMatchObject({ passed: true });
+            });
+
+            test('denied socket or remote daemon → skipped, never looked up', async () => {
+                const denied = build({ info: 'denied' });
+                expect(check((await run(denied)).parsed, 'fixed_container_names')).toMatchObject({ passed: true, skipped: true });
+                expect(denied.util.containerProject).not.toHaveBeenCalled();
+
+                const remote = build({ dockerHost: { remote: true, host: 'build-box', endpoint: 'ssh://build-box' } });
+                expect(check((await run(remote)).parsed, 'fixed_container_names')).toMatchObject({ passed: true, skipped: true });
+                expect(remote.util.containerProject).not.toHaveBeenCalled();
+            });
+        });
+
+        // BUG-6: a failing remote daemon is not a local group problem.
+        describe('unreachable remote ssh:// daemon', () => {
+            test('docker info denied against an ssh:// host → one docker failure naming the host, no group advice', async () => {
+                const ctx = build({
+                    info: 'denied',
+                    dockerHost: { remote: true, host: 'build-box', endpoint: 'ssh://deploy@build-box' },
+                });
+                const { parsed, text } = await run(ctx);
+
+                const docker = check(parsed, 'docker');
+                expect(docker.passed).toBe(false);
+                expect(docker.detail).toContain('build-box');
+                expect(docker.remediation).toContain('build-box');
+                expect(text).not.toContain('usermod');
+                expect(text).not.toContain('systemctl start docker');
+                expect(check(parsed, 'docker_group')).toMatchObject({ passed: true, skipped: true });
+                expect(check(parsed, 'install_file_location').passed).toBe(false);
+                expect(check(parsed, 'port_8888')).toMatchObject({ passed: true, skipped: true });
+            });
+
+            test('daemon stopped against an ssh:// host → names the host, not the local start command', async () => {
+                const ctx = build({
+                    info: 'stopped',
+                    dockerHost: { remote: true, host: 'build-box', endpoint: 'ssh://build-box' },
+                });
+                const { parsed } = await run(ctx);
+
+                expect(check(parsed, 'docker').detail).toContain('build-box');
+                expect(check(parsed, 'docker').remediation).not.toContain('sudo systemctl start docker');
+            });
+
+            test('a password in the ssh endpoint is never echoed', async () => {
+                const ctx = build({
+                    info: 'stopped',
+                    dockerHost: { remote: true, host: 'build-box', endpoint: 'ssh://deploy:hunter2@build-box' },
+                });
+                const { text } = await run(ctx);
+
+                expect(text).not.toContain('hunter2');
+            });
+        });
+
         // CR-1, AC-27, TP-51 (M-48, M-L12)
         describe('ports held by the Relayer the install script started (CR-1, AC-27, TP-51)', () => {
             const RUNNING = { name: 'xns-relayer', status: 'Up 4 minutes', image: 'releases.scpri.me/xns-relayer:release-latest', running: true };
@@ -956,6 +1062,35 @@ describe('check_prerequisites', () => {
 
                 expect(check(parsed, 'port_8888').passed).toBe(false);
                 expect(check(parsed, 'port_9000').passed).toBe(true);
+            });
+
+            // CONTRACT-1: the release compose publishes 9443 as well.
+            test('9443 held by the running xns-relayer → port_9443 passes naming it', async () => {
+                const ctx = build({ portFree: () => false, container: RUNNING, hostPorts: [8888, 9000, 9443] });
+                const { parsed } = await run(ctx);
+
+                expect(check(parsed, 'port_9443')).toMatchObject({ passed: true });
+                expect(check(parsed, 'port_9443').detail).toContain('xns-relayer');
+                expect(parsed.success).toBe(true);
+            });
+
+            test('9443 held by another program → fails without suggesting ui_port or s3_port', async () => {
+                const ctx = build({ portFree: (p) => p !== 9443 });
+                const { parsed } = await run(ctx);
+
+                const c = check(parsed, 'port_9443');
+                expect(c.passed).toBe(false);
+                expect(c.remediation).toContain('Port 9443');
+                expect(c.remediation).toContain('do not move it');
+                expect(failed(parsed).map((f) => f.name)).toEqual(['port_9443']);
+            });
+
+            test('9443 free → passes; denied socket → skipped with the group note', async () => {
+                const free = await run(build());
+                expect(check(free.parsed, 'port_9443')).toMatchObject({ passed: true, detail: 'Port 9443 is available' });
+
+                const denied = await run(build({ info: 'denied', portFree: () => false }));
+                expect(check(denied.parsed, 'port_9443')).toMatchObject({ passed: true, skipped: true });
             });
 
             test('no xns-relayer container → a held port fails as before', async () => {

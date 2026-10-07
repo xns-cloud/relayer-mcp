@@ -13,6 +13,13 @@ const INSTALL_COMMAND = 'curl -fsSL https://releases.scpri.me/relayer/install.sh
 // The container the install script and install_relayer start.
 const RELAYER_CONTAINER = 'xns-relayer';
 
+// The Compose project the install script and install_relayer start the stack
+// under, and the two monitoring containers the release compose names outright
+// (container_name). A container with one of these names that belongs to some
+// other project makes `docker compose up` fail with a name conflict.
+const RELAYER_PROJECT = 'xns-relayer';
+const FIXED_CONTAINER_NAMES = ['prometheus', 'alertmanager'];
+
 // install_relayer's default install_path; the install script uses the same dir.
 const DEFAULT_INSTALL_DIR = '/opt/xns-relayer';
 
@@ -139,6 +146,43 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
         };
     }
 
+    /**
+     * The remote Docker host a failed `docker info` was aimed at, or null when
+     * the daemon is local or the host cannot be resolved.
+     */
+    async function remoteHostOf() {
+        try {
+            const raw = await docker.getDockerHost();
+            const host = typeof raw?.host === 'string' ? raw.host.trim() : '';
+            if (!raw?.remote || host === '' || host === 'localhost') return null;
+            return { remote: true, host, endpoint: redactEndpoint(raw.endpoint) };
+        } catch {
+            return null;
+        }
+    }
+
+    /** Containers named prometheus/alertmanager that are not this Relayer's. */
+    async function checkFixedNames(dockerState, dockerHost) {
+        const name = 'fixed_container_names';
+        if (dockerState !== 'ok' || dockerHost.remote) {
+            return { name, passed: true, skipped: true, detail: 'Container-name check skipped — Docker is not readable on this machine.' };
+        }
+        const foreign = [];
+        for (const containerName of FIXED_CONTAINER_NAMES) {
+            const project = await docker.containerProject(containerName);
+            if (project !== null && project !== RELAYER_PROJECT) foreign.push(containerName);
+        }
+        if (foreign.length === 0) {
+            return { name, passed: true, detail: 'No other container is named prometheus or alertmanager' };
+        }
+        return {
+            name,
+            passed: false,
+            detail: `A container named ${foreign.join(' and ')} already exists and is not part of the Relayer; the Relayer needs those names`,
+            remediation: `Rename it (docker rename ${foreign[0]} ${foreign[0]}-old) or remove it, then re-run check_prerequisites.`,
+        };
+    }
+
     /** One filesystem leg of the disk check. */
     async function diskLeg(which, target) {
         try {
@@ -195,7 +239,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
         'check_prerequisites',
         {
             title: 'check_prerequisites',
-            description: 'Check system prerequisites for XNS Relayer installation: Docker installed and its daemon running (local or remote via DOCKER_HOST / ssh:// context), the Docker compose plugin, docker group access for this user, required ports (8888, 9000; a port held by the running xns-relayer container passes), an existing xns-relayer installation, at least 10 GB free on the Docker root and the install directory, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
+            description: 'Check system prerequisites for XNS Relayer installation: Docker installed and its daemon running (local or remote via DOCKER_HOST / ssh:// context), the Docker compose plugin, docker group access for this user, required ports (8888, 9000, 9443; a port held by the running xns-relayer container passes), no container from another project named prometheus or alertmanager, an existing xns-relayer installation, at least 10 GB free on the Docker root and the install directory, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
             inputSchema: {
                 /* no parameters */
             },
@@ -240,6 +284,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             } catch (err) {
                 // Missing is decided by the spawn code, never by message text:
                 // a daemon error can say "no such file or directory" too.
+                const remote = err?.code === 'ENOENT' ? null : await remoteHostOf();
                 if (err?.code === 'ENOENT') {
                     dockerState = 'missing';
                     allPassed = false;
@@ -248,6 +293,21 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                         passed: false,
                         detail: 'Docker is not installed on this machine',
                         remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.`,
+                    });
+                } else if (remote) {
+                    // DECISION: a failing `docker info` against an ssh:// or tcp://
+                    // DOCKER_HOST is a problem with that host, not with this user's
+                    // docker group, and the daemon-stopped command would be run on
+                    // the wrong machine. Name the host; the remote checks that
+                    // follow (install_file_location, ports skipped) then apply.
+                    dockerState = 'stopped';
+                    dockerHost = remote;
+                    allPassed = false;
+                    checks.push({
+                        name: 'docker',
+                        passed: false,
+                        detail: `The Docker daemon on ${remote.host} (via ${remote.endpoint}) could not be reached`,
+                        remediation: `Check the connection and that Docker is running on ${remote.host}, and that your user there can use it (docker group on ${remote.host}, not on this machine). Or unset DOCKER_HOST / switch to the default Docker context to use this machine.`,
                     });
                 } else if (classifyDockerFailure(err)?.key === 'permission_denied') {
                     // The daemon answered and refused this user: Docker is fine,
@@ -338,6 +398,9 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             const requiredPorts = [
                 { port: 8888, name: 'port_8888', service: 'the Relayer UI', inUseRemediation: 'Port 8888 is required for the Relayer UI. Stop the service using this port, or install with a different port via install_relayer ui_port.' },
                 { port: 9000, name: 'port_9000', service: 'the S3 gateway', inUseRemediation: 'Port 9000 is required for the S3 gateway. Stop the service using this port (common conflict: another S3-compatible service), or install with a different port via install_relayer s3_port.' },
+                // The release compose publishes the S3 HTTPS port too. install_relayer
+                // has no parameter for it, so the only fix is to free it.
+                { port: 9443, name: 'port_9443', service: 'the S3 HTTPS port', inUseRemediation: 'Port 9443 is required for the S3 HTTPS port. Stop the service using this port; install_relayer ui_port and s3_port do not move it.' },
             ];
             // The install script leaves its own xns-relayer holding 8888/9000.
             // Those ports are "in use" by the Relayer itself: a pass, not a
@@ -348,11 +411,8 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 ownPorts = [];
                 const container = await docker.findContainer(RELAYER_CONTAINER);
                 if (container?.running) {
-                    try {
-                        ownPorts = await docker.containerHostPorts(RELAYER_CONTAINER);
-                    } catch (err) {
-                        console.error(`[check_prerequisites] docker port ${RELAYER_CONTAINER} failed: ${err.message}`);
-                    }
+                    // containerHostPorts answers [] on any docker failure.
+                    ownPorts = await docker.containerHostPorts(RELAYER_CONTAINER);
                 }
                 return ownPorts;
             };
@@ -387,6 +447,12 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     checks.push({ name, passed: false, detail: `Could not check port ${port}`, remediation: 'Ensure you have permission to bind ports. On Linux, non-root users may need to use ports above 1024.' });
                 }
             }
+
+            // 3a. The release compose fixes the names prometheus and alertmanager.
+            // A container of that name from another Compose project stops the install.
+            const fixedNames = await checkFixedNames(dockerState, dockerHost);
+            if (!fixedNames.passed) allPassed = false;
+            checks.push(fixedNames);
 
             // 3b. Existing installation — warn early, here.
             checks.push(await checkExistingInstall(dockerState));
