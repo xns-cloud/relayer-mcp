@@ -1,19 +1,18 @@
 # Bundled by @xns-cloud/relayer-mcp — OFFLINE FALLBACK for the released install.
-# Source of truth: the beta channel bundle on the XNS releases registry —
-# https://releases.scpri.me/relayer/beta/docker-compose.yml. install_relayer
-# fetches that URL by default and only writes this copy when the fetch fails,
-# so this file MUST keep service parity with the channel bundle: relayer + the
-# monitoring stack (Prometheus + Grafana + node-exporter) that powers the
-# dashboards under Monitoring in the web UI. The jest contract tests enforce
-# the parity.
+# Source of truth: the release channel bundle on the XNS releases registry —
+# https://releases.scpri.me/relayer/release/docker-compose.yml and the .env
+# beside it; publish-release ships both. install_relayer fetches those URLs by
+# default and only writes this copy when either fetch fails, so this file MUST
+# keep service parity with the channel bundle: relayer + the monitoring stack
+# (Prometheus + Grafana + node-exporter) that powers the dashboards under
+# Monitoring in the web UI. The jest contract tests enforce the parity.
 #
-# NEVER point an image at Docker Hub scprime/* — those are production fleet
-# tags, not a release channel. The one allowed upstream image is
+# Every Relayer image comes from releases.scpri.me — never a Docker Hub fleet
+# tag, which is not a release channel. The one allowed upstream image is
 # prom/node-exporter (public, multi-arch, version-pinned — matches the channel
-# bundle; nothing to rebuild).
+# bundle; nothing to rebuild). No service mounts the host's Docker socket.
 #
-# Pre-release: pinned to :beta-latest so beta testers exercise the current
-# Relayer agentically. Flip these tags to :stable-latest at general release.
+# Pinned to the release-latest tag, the channel standalone Relayer customers install.
 #
 # A first-time user never hand-writes this file or the .env — install_relayer
 # writes both.
@@ -30,14 +29,14 @@
 # Other differences from the channel compose, by design:
 #   - SMB ports 139/445 are intentionally NOT exposed: 445 is held by Windows
 #     SMB on consumer hosts and would fail the install. S3 onboarding uses :9000.
-#   - pull_policy: always so `docker compose up -d` fetches the current beta
+#   - pull_policy: always so `docker compose up -d` fetches the current release
 #     images without a separate `docker compose pull` step.
 services:
   xns:
     # container_name is load-bearing: the baked-in prometheus.yml scrapes the
     # relayer by this name, and the install preflight keys on it.
     container_name: xns-relayer
-    image: releases.scpri.me/xns-relayer:beta-latest
+    image: releases.scpri.me/xns-relayer:release-latest
     pull_policy: always
     restart: unless-stopped
     privileged: true            # samba / fuse / disk management (matches channel compose)
@@ -53,14 +52,14 @@ services:
   # Not host-exposed: Grafana is reached only through the relayer's /grafana
   # reverse proxy and the in-network Prometheus scrape.
   prometheus:
-    image: releases.scpri.me/relayer-prometheus:beta-latest
+    image: releases.scpri.me/relayer-prometheus:release-latest
     pull_policy: always
     restart: unless-stopped
     volumes:
       - prometheus_data:/prometheus
 
   grafana:
-    image: releases.scpri.me/relayer-grafana:beta-latest
+    image: releases.scpri.me/relayer-grafana:release-latest
     pull_policy: always
     restart: unless-stopped
     environment:
