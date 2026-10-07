@@ -19,8 +19,9 @@
   `:release-latest` images. A failure returns one fixed sentence per cause (port in use, 9443 in
   use, image pull refused, Docker stopped, out of disk, Docker socket permission) with the fixing
   command, and never Docker's raw text. Docker 29 wording is recognized.
-- **`bind_address` is honored on every path.** When it is set and the channel compose does not
-  use `BIND_ADDRESS`, the bundled compose is installed and the response says why.
+- **`bind_address` is honored on the default install.** When it is set and the channel compose
+  does not use `BIND_ADDRESS` in its ports, the bundled compose is installed and the response says
+  why. A `compose_url` override is unchanged: its compose must use `BIND_ADDRESS` itself.
 - **`.env` is written at mode 0600** (it can hold webhook and SMTP secrets).
 - README opens with the one-command install and the MCP registration line.
 

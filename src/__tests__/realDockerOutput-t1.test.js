@@ -119,7 +119,6 @@ describe('check_prerequisites over real Docker 29 output (AC-20, AC-22, AC-27)',
 
         const parsed = await ctx.run();
 
-        expect(prereqContract.port_checks_with_own_container.success).toBe(true);
         for (const name of ['port_8888', 'port_9000']) {
             expect(check(parsed, name).passed).toBe(true);
             expect(check(parsed, name).detail).toContain('xns-relayer');

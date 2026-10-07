@@ -7,6 +7,23 @@ const { createDockerUtil, redactEndpoint, classifyDockerFailure } = require('../
 
 const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address (e.g. "127.0.0.1"), or a bracketed IPv6 address (e.g. "[::1]") — the Compose ports host component is an IP address, not a hostname';
 
+// A ports list item that uses ${BIND_ADDRESS...}; a comment naming it does not count.
+const PORTS_USE_BIND_ADDRESS = /^[ \t]*-[^#\n]*\$\{BIND_ADDRESS\b/m;
+
+/** What the response says about bind_address, per compose source. */
+function bindAddressApplied(source, bindAddress) {
+    if (source === 'bundled-fallback') {
+        return 'yes — the bundled fallback compose references BIND_ADDRESS in its port declarations';
+    }
+    if (source === 'channel' && bindAddress) {
+        return 'yes — the channel compose references BIND_ADDRESS in its port declarations (checked before install)';
+    }
+    if (source === 'channel') {
+        return 'not needed — no bind_address was set, so ports are published on all interfaces';
+    }
+    return 'unknown — the compose_url compose may or may not reference BIND_ADDRESS in its port declarations; this installer does not read that file';
+}
+
 // R5 input boundary: this value is written verbatim into the .env the installer
 // authors, and Compose auto-loads that file. An unvalidated newline injects
 // further KEY=VALUE lines — including a second UI_PORT, which wins last-value
@@ -299,7 +316,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         // ports, so a bind_address would be silently ignored and the
                         // ports published on all interfaces. Use the bundled compose,
                         // which honors it, and say so.
-                        if (bind_address && !(await fsp.readFile(composePath, 'utf8')).includes('BIND_ADDRESS')) {
+                        if (bind_address && !PORTS_USE_BIND_ADDRESS.test(await fsp.readFile(composePath, 'utf8'))) {
                             throw Object.assign(new Error('channel compose does not reference BIND_ADDRESS'), { bindUnsupported: true });
                         }
                         await download(channelEnvUrl, envPath, 'release .env');
@@ -356,9 +373,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             // behind (correct-or-absent, same rule as the port readout).
                             binding: {
                                 bind_address: bind_address || '0.0.0.0 (all interfaces)',
-                                bind_address_applied: source === 'bundled-fallback'
-                                    ? 'yes — the bundled fallback compose references BIND_ADDRESS in its port declarations'
-                                    : 'unknown — the fetched compose may or may not reference BIND_ADDRESS in its port declarations; this installer does not read the fetched file',
+                                bind_address_applied: bindAddressApplied(source, bind_address),
                                 ui: { host_port: ui_port, container_port: compose_url ? null : 8888 },
                                 s3: { host_port: s3_port, container_port: compose_url ? null : 9000 },
                                 composed_from: compose_url

@@ -534,7 +534,7 @@ describe('install_relayer', () => {
 
     // --- E-A3 / W12: bind_address_applied honesty per source path ---
 
-    test('channel path whose compose references BIND_ADDRESS → source channel, bind_address_applied says unknown', async () => {
+    test('channel path whose compose references BIND_ADDRESS → source channel, bind_address_applied says yes', async () => {
         const fs = fakeFs();
         const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888\n' });
         const handler = registerWithOptions({
@@ -550,8 +550,25 @@ describe('install_relayer', () => {
 
         expect(parsed.source).toBe('channel');
         expect(parsed.reason).toBeUndefined();
-        expect(parsed.binding.bind_address_applied).toMatch(/unknown/);
-        expect(parsed.binding.bind_address_applied).toMatch(/does not read the fetched file/);
+        expect(parsed.binding.bind_address_applied).toMatch(/^yes — the channel compose/);
+    });
+
+    test('bind_address set and the channel compose names BIND_ADDRESS only in a comment → bundled compose', async () => {
+        const fs = fakeFs();
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: '# set BIND_ADDRESS to narrow this\nports:\n  - "${UI_PORT:-8888}:8888"\n' });
+        const handler = registerWithOptions({
+            execFile,
+            fs,
+            dockerUtil: {
+                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+                findContainer: jest.fn().mockResolvedValue(null),
+            },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
+
+        expect(parsed.source).toBe('bundled-fallback');
+        expect(parsed.binding.bind_address_applied).toMatch(/^yes — the bundled/);
     });
 
     // CONTRACT-2: the release compose has no BIND_ADDRESS, so a bind_address
