@@ -104,7 +104,29 @@ describe('check_prerequisites over real Docker 29 output (AC-20, AC-22, AC-27)',
             expect(failedNames(parsed)).toEqual(['docker_group']);
             expect(`${check(parsed, 'docker_group').detail} ${check(parsed, 'docker_group').remediation}`).toContain('log out and back in');
         } finally {
-            process.env.USER = saved;
+            if (saved === undefined) delete process.env.USER; else process.env.USER = saved;
+            errSpy.mockRestore();
+        }
+    });
+
+    test('no passwd entry and no $USER → the group command names $USER, never an empty account', async () => {
+        const denied = { stdout: real.stdout.info_format_on_failure, stderr: real.stderr.permission_denied };
+        const saved = process.env.USER;
+        delete process.env.USER;
+        const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const ctx = checkPrerequisites({
+                answers: { info: denied, ps: denied, port: denied, 'compose version': { stdout: real.stdout.compose_version } },
+                groupFile: 'docker:x:999:\n',
+                userInfo: () => { throw new Error('uv_os_get_passwd'); },
+            });
+
+            const text = JSON.stringify(await ctx.run());
+
+            expect(text).not.toMatch(/usermod -aG docker\s*["\\]/);
+            expect(text).toContain('usermod -aG docker $USER');
+        } finally {
+            if (saved === undefined) delete process.env.USER; else process.env.USER = saved;
             errSpy.mockRestore();
         }
     });

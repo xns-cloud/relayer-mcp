@@ -358,7 +358,9 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 allPassed = false;
                 // os.userInfo() throws when the UID has no passwd entry (arbitrary-UID
                 // containers); fall back to $USER rather than failing the whole tool.
-                let username = process.env.USER || '';
+                // With no name at all, '$USER' goes into the command as written:
+                // the user's own shell expands it.
+                let username = process.env.USER || '$USER';
                 try {
                     username = _userInfo().username || username;
                 } catch (err) {
