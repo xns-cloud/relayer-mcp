@@ -180,7 +180,10 @@ async function rejectionOf(promise) {
 describe('classifyDockerFailure', () => {
     test.each([
         ['permission_denied', 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info": dial unix /var/run/docker.sock: connect: permission denied'],
+        ['permission_denied', 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock'],
         ['daemon_stopped', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?'],
+        ['daemon_stopped', 'failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory'],
+        ['pull_refused', 'failed to resolve reference "releases.scpri.me/xns-relayer:release-latest": releases.scpri.me/xns-relayer:release-latest: not found'],
         ['out_of_disk', 'failed to register layer: write /var/lib/docker/overlay2/abc/diff/usr/bin/node: no space left on device'],
         ['pull_refused', 'Error response from daemon: pull access denied for releases.scpri.me/xns-relayer, repository does not exist or may require \'docker login\''],
         ['pull_refused', 'Error response from daemon: manifest unknown'],
@@ -214,6 +217,14 @@ describe('classifyDockerFailure', () => {
         const stderr = 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock. Is the docker daemon running?';
         const err = await rejectionOf(rejectingUtil(stderr).docker(['info']));
         expect(classifyDockerFailure(err).key).toBe('permission_denied');
+    });
+
+    // A bind-mount or file permission error is not a socket denial: the group
+    // advice and "nothing was written" would both be wrong for it.
+    test('a permission denied that is not the Docker connection is not classified', async () => {
+        const stderr = 'Error response from daemon: error while creating mount source path \'/opt/xns-relayer/data\': mkdir /opt/xns-relayer/data: permission denied';
+        const err = await rejectionOf(rejectingUtil(stderr).composeUp('/x/docker-compose.yml'));
+        expect(classifyDockerFailure(err)).toBeNull();
     });
 
     // M-L14: err.message embeds the compose path; only stderr may decide.

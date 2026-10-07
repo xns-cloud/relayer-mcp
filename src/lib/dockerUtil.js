@@ -60,10 +60,13 @@ function parseDockerEndpoint(endpoint) {
 // stopped: a denied socket can also print "Is the docker daemon running?"; pull
 // refused before port in use: a pull error may mention a port).
 const FAILURE_PATTERNS = [
-    { key: 'permission_denied', pattern: /permission denied/i },
-    { key: 'daemon_stopped', pattern: /cannot connect to the docker daemon|is the docker daemon running/i },
+    // Only a refused connection to the Docker API is a socket denial. Docker 28
+    // and older word it "...to the Docker daemon socket", Docker 29 "...to the
+    // docker API"; a bind-mount "permission denied" must not match.
+    { key: 'permission_denied', pattern: /permission denied while trying to connect to the docker/i },
+    { key: 'daemon_stopped', pattern: /cannot connect to the docker daemon|is the docker daemon running|failed to connect to the docker API/i },
     { key: 'out_of_disk', pattern: /no space left on device/i },
-    { key: 'pull_refused', pattern: /pull access denied|requested access to the resource is denied|unauthorized|manifest unknown/i },
+    { key: 'pull_refused', pattern: /pull access denied|requested access to the resource is denied|unauthorized|manifest unknown|failed to resolve reference/i },
     { key: 'port_in_use', pattern: /port is already allocated|address already in use/i },
 ];
 
@@ -207,6 +210,27 @@ function createDockerUtil(options = {}) {
     }
 
     /**
+     * The Compose project a container belongs to, by exact name (the
+     * `com.docker.compose.project` label). Returns '' for a container with no
+     * label, and null when no such container exists or docker is unreachable.
+     *
+     * @param {string} name - Exact container name
+     * @returns {Promise<string|null>}
+     */
+    async function containerProject(name) {
+        try {
+            const { stdout } = await docker([
+                'inspect', '--type', 'container',
+                '-f', '{{index .Config.Labels "com.docker.compose.project"}}',
+                String(name),
+            ]);
+            return stdout.trim();
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Resolve which machine the Docker daemon actually runs on.
      *
      * Claude Code may run on a management node with the Docker CLI pointed at a
@@ -231,7 +255,7 @@ function createDockerUtil(options = {}) {
         }
     }
 
-    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, getDockerHost };
+    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, containerProject, getDockerHost };
 }
 
 module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint, classifyDockerFailure };

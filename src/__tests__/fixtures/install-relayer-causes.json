@@ -11,7 +11,7 @@
       "key": "permission_denied",
       "stderr_matches": [
         "permission denied while trying to connect to the Docker daemon socket",
-        "permission denied"
+        "permission denied while trying to connect to the docker API"
       ],
       "sentence_names": "log out and back in (or the add-group command); no files are written and no existing-container refusal is reached (AC-24, SR-4)",
       "preflight": "installRelayer runs `docker info` before the existing-install check; a rejection that classifies as permission_denied returns this sentence, before any write; any other rejection continues as today"
@@ -20,7 +20,8 @@
       "key": "daemon_stopped",
       "stderr_matches": [
         "Cannot connect to the Docker daemon",
-        "Is the docker daemon running"
+        "Is the docker daemon running",
+        "failed to connect to the docker API"
       ],
       "sentence_names": "sudo systemctl start docker"
     },
@@ -37,7 +38,8 @@
         "pull access denied",
         "requested access to the resource is denied",
         "unauthorized",
-        "manifest unknown"
+        "manifest unknown",
+        "failed to resolve reference"
       ],
       "sentence_names": "releases.scpri.me"
     },
