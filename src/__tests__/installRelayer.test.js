@@ -474,7 +474,9 @@ describe('install_relayer', () => {
         });
 
         for (const addr of ['127.0.0.1', '192.168.1.221', '0.0.0.0', '[::1]', '[2001:db8::1]', '']) {
-            await expect(handler({ install_path: '/tmp/xns', bind_address: addr })).resolves.toBeDefined();
+            const res = await handler({ install_path: '/tmp/xns', bind_address: addr });
+            expect(res.isError).not.toBe(true);
+            expect(JSON.parse(res.content[0].text).success).toBe(true);
         }
     });
 
