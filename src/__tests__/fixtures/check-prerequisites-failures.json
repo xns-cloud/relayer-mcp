@@ -1,0 +1,74 @@
+{
+  "_doc": "check_prerequisites contract E-A9 produces (D6, PRD.md:52-54; AC-19..AC-23, AC-27). Check names are the response `checks[].name`. Wording is the builder's; the content tokens and exclusivity are the contract. Existing names/fields kept: success, checks[], summary, per-check passed/detail/remediation/warning/skipped.",
+  "failures": [
+    {
+      "name": "docker",
+      "variant": "missing",
+      "trigger": "docker info rejects with error.code === 'ENOENT' (dockerUtil.js:86 copies err.code)",
+      "must_name": "the D5 command: curl -fsSL https://releases.scpri.me/relayer/install.sh | sh",
+      "excludes": [
+        "docker_compose",
+        "docker_group",
+        "daemon-stopped text"
+      ]
+    },
+    {
+      "name": "docker",
+      "variant": "daemon_stopped",
+      "trigger": "docker info fails, error.stderr does not match /permission denied while trying to connect to the docker/i, code not ENOENT, and DOCKER_HOST / the context is not a remote host",
+      "must_name": "sudo systemctl start docker",
+      "never_when": "stderr says permission denied while trying to connect to the docker (daemon socket or API)"
+    },
+    {
+      "name": "docker_compose",
+      "trigger": "docker compose version fails (runs even when the daemon is down; skipped only when docker is missing)",
+      "must_name": "the fix command (apt: sudo apt-get install docker-compose-plugin, from Docker's repo)"
+    },
+    {
+      "name": "docker_group",
+      "trigger": "docker info fails with permission denied while trying to connect to the docker (daemon socket or API) against a local daemon",
+      "if_user_in_docker_line_of_/etc/group": "must contain 'log out and back in'",
+      "if_not": "must name sudo usermod -aG docker <user>",
+      "never_when": "docker info succeeds (root, rootless)"
+    },
+    {
+      "name": "docker",
+      "variant": "remote_unreachable",
+      "trigger": "docker info fails (any cause other than a missing CLI) and DOCKER_HOST or the context is a remote ssh:// or tcp:// host",
+      "must_name": "the remote host (never the redacted password); the failure is not a docker_group problem and does not name sudo systemctl start docker, which would run on the wrong machine. docker_group is skipped; install_file_location fails; port checks are skipped"
+    },
+    {
+      "name": "fixed_container_names",
+      "trigger": "a container named prometheus or alertmanager exists (docker inspect) whose com.docker.compose.project label is not xns-relayer; the release compose fixes both names",
+      "must_name": "the container name(s) and a docker rename command",
+      "skipped_when": "the socket is denied, the daemon is stopped/missing or the daemon is remote"
+    },
+    {
+      "name": "disk",
+      "trigger": "free bytes under 10 GB on DockerRootDir (docker info --format '{{.DockerRootDir}}') or on the filesystem of the install dir (nearest existing ancestor of /opt/xns-relayer)",
+      "must_state": "free space and which filesystem (Docker root / install dir)",
+      "threshold": "10 GB = 10 * 10^9 bytes (AC-23 DECISION; fails at 10*10^9 - 1, passes at 10*10^9, on each filesystem separately). Docker-root leg skipped when the daemon is remote (DOCKER_HOST) or `docker info` was refused (permission denied); install-dir leg still runs"
+    }
+  ],
+  "pairwise_distinct": "the five failure messages (detail) differ from each other and from the retired shared text 'Docker is not available or not running'",
+  "port_checks_with_own_container": {
+    "when": "findContainer('xns-relayer').running and `docker port xns-relayer` publishes 8888/tcp, 9000/tcp and 9443/tcp on host ports 8888, 9000 and 9443 (only when docker info was permitted; on permission denied the port checks are skipped, see permission_denied)",
+    "port_8888": {
+      "passed": true,
+      "detail_names": "xns-relayer container"
+    },
+    "port_9000": {
+      "passed": true,
+      "detail_names": "xns-relayer container"
+    },
+    "port_9443": {
+      "passed": true,
+      "detail_names": "xns-relayer container; the S3 HTTPS port the release compose publishes. When another program holds it the failure remediation does not suggest ui_port / s3_port"
+    },
+    "success": true,
+    "no_text": "Stop the service using this port",
+    "otherwise": "unchanged: bind-probe failure -> passed:false with today's remediation"
+  },
+  "existing_install_check": "still passed:true, warning:true (checkPrerequisites.js:139-154); the remediation text changes: it must not tell the visitor to stop or remove a running install the script made (AC-27 CR-1)",
+  "permission_denied": "docker check passed:true with a detail that the socket refuses this user; only docker_group fails (AC-22); Docker-root disk leg reports skipped; the 8888 and 9000 port checks report skipped with the group note (never failed, findContainer is not consulted: dockerUtil.js:146-148 returns null when denied); compose check still runs (docker compose version needs no socket)"
+}

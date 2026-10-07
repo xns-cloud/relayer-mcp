@@ -1,0 +1,18 @@
+{
+  "_doc": "Docker CLI output captured 2026-10-06 from Docker Engine 29.8.1 (client and server) with Docker Compose v5.5.1, the current docker-ce that the one-command install pulls from Docker's apt repo. Socket paths normalized to /var/run/docker.sock; container hashes kept as captured. Used by the E-A9 T1 tests to drive check_prerequisites and install_relayer with the text real Docker prints, not hand-written text.",
+  "docker_version": "29.8.1",
+  "compose_version": "v5.5.1",
+  "stderr": {
+    "daemon_unreachable": "failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory\n",
+    "permission_denied": "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock\n",
+    "compose_up_port_in_use": " Network xns-relayer_default Creating \n Network xns-relayer_default Created \n Container xns-relayer Creating \n Container xns-relayer Created \n Container xns-relayer Starting \nError response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint xns-relayer (05a694bd25ebe852970e84702668d8f61f8d7c44117cd797fc06e3c8b922774d): failed to bind host port 0.0.0.0:{PORT}/tcp: address already in use\n",
+    "compose_up_image_not_found": " Image releases.scpri.me/xns-relayer:release-latest Pulling \n Image releases.scpri.me/xns-relayer:release-latest Error failed to resolve reference \"releases.scpri.me/xns-relayer:release-latest\": releases.scpri.me/xns-relayer:release-latest: not found\nError response from daemon: failed to resolve reference \"releases.scpri.me/xns-relayer:release-latest\": releases.scpri.me/xns-relayer:release-latest: not found\n"
+  },
+  "stdout": {
+    "info_format_on_failure": "\n",
+    "ps_a_running_xns_relayer": "xns-relayer\tUp 4 minutes\treleases.scpri.me/xns-relayer:release-latest\n",
+    "port_xns_relayer": "8888/tcp -> 0.0.0.0:8888\n8888/tcp -> [::]:8888\n9000/tcp -> 0.0.0.0:9000\n9000/tcp -> [::]:9000\n9443/tcp -> 0.0.0.0:9443\n9443/tcp -> [::]:9443\n",
+    "info_docker_root_dir": "/var/lib/docker\n",
+    "compose_version": "Docker Compose version v5.5.1\n"
+  }
+}

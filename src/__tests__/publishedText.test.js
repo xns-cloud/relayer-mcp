@@ -13,7 +13,8 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 // Internal names that must never reach a published file.
-const INTERNAL_NAMES = [/\bweb0\d\b/i, /\bdeploy\.py\b/i];
+// publish-release / publish-install-script are deploy.py modes: internal tooling.
+const INTERNAL_NAMES = [/\bweb0\d\b/i, /\bdeploy\.py\b/i, /\bpublish-release\b/i, /\bpublish-install-script\b/i];
 
 // npm adds these to every tarball whatever `files` says.
 const ALWAYS_SHIPPED = ['package.json', 'README.md'];
