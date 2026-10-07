@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0] — 2026-10-06
+
+### Added
+
+- **`check_prerequisites` names each Docker problem separately.** Docker missing gives the
+  one-line install command; daemon stopped gives `sudo systemctl start docker`; compose plugin
+  missing, a docker group that is not live yet (ports then reported `skipped`), and less than
+  10 GB free on the Docker root or install dir are separate checks. Port 9443 is probed with 8888
+  and 9000. A port held by this Relayer's own running `xns-relayer` container passes. A foreign
+  container named `prometheus` or `alertmanager` fails, naming it. A failing remote `ssh://`
+  Docker host is named instead of the local group.
+
+### Changed
+
+- **`install_relayer` installs from the release channel.** It fetches the release compose and its
+  `.env` from releases.scpri.me and appends the port lines; the bundled fallback compose now uses
+  `:release-latest` images. A failure returns one fixed sentence per cause (port in use, 9443 in
+  use, image pull refused, Docker stopped, out of disk, Docker socket permission) with the fixing
+  command, and never Docker's raw text. Docker 29 wording is recognized.
+- **`bind_address` is honored on every path.** When it is set and the channel compose does not
+  use `BIND_ADDRESS`, the bundled compose is installed and the response says why.
+- **`.env` is written at mode 0600** (it can hold webhook and SMTP secrets).
+- README opens with the one-command install and the MCP registration line.
+
 ## [0.11.1] — 2026-10-03
 
 ### Changed
