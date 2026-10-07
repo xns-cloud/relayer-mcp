@@ -96,7 +96,7 @@ No separate install step required — npx fetches the package on demand.
 
 | # | Tool | Purpose |
 |---|------|---------|
-| 1 | `check_prerequisites` | Verify Docker (local or remote), the compose plugin, `docker` group membership, ports (8888, 9000), an existing installation, free disk (10 GB on the Docker root and the install directory), and network connectivity. Each failure names the command that fixes it; ports held by a running `xns-relayer` pass. |
+| 1 | `check_prerequisites` | Verify Docker (local or remote), the compose plugin, `docker` group membership, ports (8888, 9000, 9443), an existing installation, free disk (10 GB on the Docker root and the install directory), and network connectivity. Each failure names the command that fixes it; ports held by a running `xns-relayer` pass. |
 | 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
 | 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.scpri.me/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. Falls back to a bundled service-parity copy if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
@@ -157,7 +157,8 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 |---|---|---|
 | MCP exits with "requires Node.js 20 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 20](#installing-nodejs-20) |
 | `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
-| Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same). After a failed `install_relayer`, remove the leftover container with `docker rm xns-relayer` before retrying |
+| Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same). After a failed `install_relayer`, remove the leftover container with `docker rm -f xns-relayer` before retrying |
+| Port 9443 already in use | Another service on the Docker host holds the S3 HTTPS port the release compose publishes | Stop that service (`sudo ss -ltnp 'sport = :9443'` names it); `ui_port` / `s3_port` do not move 9443. Then `docker rm -f xns-relayer` and retry |
 | Docker socket permission denied | You were added to the `docker` group after this session started, or not at all | `sudo usermod -aG docker $USER` if needed, then log out and back in |
 | Docker is not running | The Docker daemon is stopped | `sudo systemctl start docker` |
 | Not enough disk space | Under 10 GB free on the Docker root or the install directory | Free space there, then re-run |

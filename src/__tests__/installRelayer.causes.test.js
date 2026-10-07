@@ -135,7 +135,7 @@ describe('install_relayer failure causes (AC-24, TP-30)', () => {
 
         expect(parsed.error).toContain(`Port ${port}`);
         expect(parsed.error).toContain(param);
-        expect(parsed.error).toContain('docker rm xns-relayer');
+        expect(parsed.error).toContain('docker rm -f xns-relayer');
         expectNoStderrSubstring(result, stderr);
     });
 
@@ -151,7 +151,7 @@ describe('install_relayer failure causes (AC-24, TP-30)', () => {
         const { parsed, result } = await errorFor({ composeStderr: STDERR.pullWithPort });
 
         expect(parsed.error).toContain('releases.scpri.me');
-        expect(parsed.error).not.toContain('docker rm xns-relayer');
+        expect(parsed.error).not.toContain('docker rm -f xns-relayer');
         expect(parsed.error).not.toMatch(/Port \d+/);
         expectNoStderrSubstring(result, STDERR.pullWithPort);
     });
@@ -214,7 +214,7 @@ describe('install_relayer failure causes (AC-24, TP-30)', () => {
         expect(parsed.error).toContain('9443');
         expect(parsed.error).toContain('S3 HTTPS');
         expect(parsed.error).not.toMatch(/pass a different/);
-        expect(parsed.error).toContain('docker rm xns-relayer');
+        expect(parsed.error).toContain('docker rm -f xns-relayer');
     });
 
     test('docker info failing for another reason → the install continues as before', async () => {

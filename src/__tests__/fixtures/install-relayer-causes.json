@@ -50,7 +50,7 @@
         "address already in use"
       ],
       "port_from": "the host port in the bind text, matched against ui_port / s3_port; sentence names that port (8888 or 9000 by default) and ui_port / s3_port as the alternative",
-      "sentence_names": "the port, ui_port / s3_port as the alternative, and `docker rm xns-relayer` (the leftover Created container) before retrying (AC-24, SR-13)"
+      "sentence_names": "the port, ui_port / s3_port as the alternative, and `docker rm -f xns-relayer` (the leftover Created container) before retrying (AC-24, SR-13)"
     },
     {
       "key": "unmatched",

@@ -42,7 +42,7 @@ function dockerExecFile(answers) {
     });
 }
 
-function checkPrerequisites({ answers, portFree = () => true, groupFile = 'docker:x:999:alice\n' }) {
+function checkPrerequisites({ answers, portFree = () => true, groupFile = 'docker:x:999:alice\n', userInfo = () => ({ username: 'alice' }) }) {
     const execFile = dockerExecFile(answers);
     const server = { registerTool: jest.fn() };
     require('../tools/checkPrerequisites')(server, {
@@ -51,7 +51,7 @@ function checkPrerequisites({ answers, portFree = () => true, groupFile = 'docke
         checkPort: jest.fn(async (port) => portFree(port)),
         environmentProbe: () => ({ ephemeral: false, signals: [] }),
         statfs: jest.fn(async () => ({ bavail: 500 * 10 ** 9, bsize: 1 })),
-        userInfo: () => ({ username: 'alice' }),
+        userInfo,
         fs: { readFile: jest.fn(async () => groupFile) },
     });
     const { handler } = readRegistration(server);
@@ -86,6 +86,27 @@ describe('check_prerequisites over real Docker 29 output (AC-20, AC-22, AC-27)',
         }
         expect(calledSubcommands(ctx.execFile)).not.toContain('port');
         expect(check(parsed, 'docker_compose').passed).toBe(true);
+    });
+
+    test('denied socket and no passwd entry for the UID → docker_group still reported from $USER, the tool does not throw', async () => {
+        const denied = { stdout: real.stdout.info_format_on_failure, stderr: real.stderr.permission_denied };
+        const saved = process.env.USER;
+        process.env.USER = 'alice';
+        const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const ctx = checkPrerequisites({
+                answers: { info: denied, ps: denied, port: denied, 'compose version': { stdout: real.stdout.compose_version } },
+                userInfo: () => { throw Object.assign(new Error('ENOENT: no such file or directory, uv_os_get_passwd'), { code: 'ENOENT' }); },
+            });
+
+            const parsed = await ctx.run();
+
+            expect(failedNames(parsed)).toEqual(['docker_group']);
+            expect(`${check(parsed, 'docker_group').detail} ${check(parsed, 'docker_group').remediation}`).toContain('log out and back in');
+        } finally {
+            process.env.USER = saved;
+            errSpy.mockRestore();
+        }
     });
 
     // AC-20: Docker 29's daemon-down text says "no such file or directory" and
@@ -177,7 +198,7 @@ describe('install_relayer causes over real Docker 29 output (AC-24)', () => {
 
         expect(parsed.error).toContain(`Port ${port}`);
         expect(parsed.error).toContain(param);
-        expect(parsed.error).toContain('docker rm xns-relayer');
+        expect(parsed.error).toContain('docker rm -f xns-relayer');
         expectNoStderrWindow(result, upStderr);
     });
 
@@ -210,6 +231,6 @@ describe('install_relayer causes over real Docker 29 output (AC-24)', () => {
 
         expect(parsed.error).not.toBe(GENERIC);
         expect(parsed.error).toContain('releases.scpri.me');
-        expect(parsed.error).not.toContain('docker rm xns-relayer');
+        expect(parsed.error).not.toContain('docker rm -f xns-relayer');
     });
 });

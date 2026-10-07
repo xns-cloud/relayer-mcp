@@ -126,7 +126,7 @@ const S3_TLS_PORT = 9443;
 // Port in use: name the port, the parameter that moves it, and the leftover
 // Created container compose leaves behind, which a retry would collide with.
 function portSentence({ port }, { ui_port, s3_port }) {
-    const retry = `remove the leftover container with docker rm ${CONTAINER_NAME} and run install_relayer again`;
+    const retry = `remove the leftover container with docker rm -f ${CONTAINER_NAME} and run install_relayer again`;
     // DECISION: no new parameter for the 9443 port. Appending S3_TLS_PORT to the
     // .env would fix one install only (the channel .env is re-fetched each run)
     // and the schema has no other per-port knob for a port the Relayer does not
@@ -320,6 +320,9 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             throw Object.assign(new Error('channel compose does not reference BIND_ADDRESS'), { bindUnsupported: true });
                         }
                         await download(channelEnvUrl, envPath, 'release .env');
+                        // curl creates the file with the default umask; close it before
+                        // any later step can throw and leave it world-readable.
+                        await fsp.chmod(envPath, ENV_FILE_MODE);
                         envContents = withPortLines(await fsp.readFile(envPath, 'utf8'), portLines);
                         source = 'channel';
                     } catch (fetchErr) {

@@ -356,7 +356,14 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             // session predates it".
             if (dockerState === 'denied') {
                 allPassed = false;
-                const username = _userInfo().username;
+                // os.userInfo() throws when the UID has no passwd entry (arbitrary-UID
+                // containers); fall back to $USER rather than failing the whole tool.
+                let username = process.env.USER || '';
+                try {
+                    username = _userInfo().username || username;
+                } catch (err) {
+                    console.error(`[check_prerequisites] userInfo failed: ${err.message}`);
+                }
                 if (await isInDockerGroup(_readFile, username)) {
                     checks.push({
                         name: 'docker_group',
