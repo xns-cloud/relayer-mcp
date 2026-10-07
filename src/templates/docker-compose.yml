@@ -1,7 +1,7 @@
 # Bundled by @xns-cloud/relayer-mcp — OFFLINE FALLBACK for the released install.
 # Source of truth: the release channel bundle on the XNS releases registry —
 # https://releases.scpri.me/relayer/release/docker-compose.yml and the .env
-# beside it; publish-release ships both. install_relayer fetches those URLs by
+# beside it; the release publisher ships both. install_relayer fetches those URLs by
 # default and only writes this copy when either fetch fails, so this file MUST
 # keep service parity with the channel bundle: relayer + the monitoring stack
 # (Prometheus + Grafana + node-exporter) that powers the dashboards under
