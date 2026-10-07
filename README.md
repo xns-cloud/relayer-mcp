@@ -10,7 +10,7 @@ MCP server for [XNS Relayer](https://xns.tech) — S3-compatible decentralized o
 npx @xns-cloud/relayer-mcp@latest
 ```
 
-**Pricing:** [$6.00 per TB-month](https://xns.tech/pricing) — one rate, protection included, [$0 egress uncapped](https://xns.tech/pricing), [30-day minimum retention](https://xns.tech/pricing) with no separate early-delete fee.
+**Pricing:** [$6.00 per TB per month](https://xns.tech/pricing) — one rate, protection included, [$0 egress uncapped](https://xns.tech/pricing), [30-day minimum retention](https://xns.tech/pricing) with no separate early-delete fee.
 
 ## Requirements
 
@@ -50,7 +50,13 @@ The Relayer runs as a Docker container and persists its data in a Docker volume.
 
 ## Install
 
-The install script above registers the MCP for you when Claude Code is present.
+On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers this MCP when Claude Code is present:
+
+```bash
+curl -fsSL https://releases.scpri.me/relayer/install.sh | sh
+```
+
+To register the MCP by hand instead:
 
 **Claude Code** (one command, if you registered nothing yet):
 
