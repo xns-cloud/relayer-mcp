@@ -56,6 +56,41 @@ function parseDockerEndpoint(endpoint) {
     }
 }
 
+// Docker failure causes, first match wins (permission denied before daemon
+// stopped: a denied socket can also print "Is the docker daemon running?"; pull
+// refused before port in use: a pull error may mention a port).
+const FAILURE_PATTERNS = [
+    { key: 'permission_denied', pattern: /permission denied/i },
+    { key: 'daemon_stopped', pattern: /cannot connect to the docker daemon|is the docker daemon running/i },
+    { key: 'out_of_disk', pattern: /no space left on device/i },
+    { key: 'pull_refused', pattern: /pull access denied|requested access to the resource is denied|unauthorized|manifest unknown/i },
+    { key: 'port_in_use', pattern: /port is already allocated|address already in use/i },
+];
+
+// The host side of a bind in Docker's text: "0.0.0.0:8888", "[::]:8888",
+// "0.0.0.0:9000:172.18.0.2:9000/tcp" (the first address is the host's).
+const BIND_HOST_PORT = /(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]*\]):(\d{1,5})\b/i;
+
+/**
+ * Classify a rejected docker() call into a known failure cause.
+ *
+ * Reads ONLY error.stderr (set by docker() below). error.message embeds the
+ * command line, so a compose path containing "8888" or "port" would otherwise
+ * be mistaken for that cause. The returned key never carries Docker's text.
+ *
+ * @param {Error|null|undefined} err - Rejection from docker()/composeUp()
+ * @returns {{key: string, port?: number|null}|null} null when nothing matches
+ */
+function classifyDockerFailure(err) {
+    const stderr = err?.stderr;
+    if (typeof stderr !== 'string' || stderr === '') return null;
+    const match = FAILURE_PATTERNS.find(({ pattern }) => pattern.test(stderr));
+    if (!match) return null;
+    if (match.key !== 'port_in_use') return { key: match.key };
+    const bind = BIND_HOST_PORT.exec(stderr);
+    return { key: match.key, port: bind ? Number(bind[1]) : null };
+}
+
 /**
  * Docker utility — runs Docker CLI commands using execFile (no shell).
  * Security non-negotiable: NEVER use exec() or spawn({ shell: true }).
@@ -149,6 +184,29 @@ function createDockerUtil(options = {}) {
     }
 
     /**
+     * Host ports a container publishes (`docker port <name>`), e.g.
+     * "8888/tcp -> 0.0.0.0:8888" and "8888/tcp -> [::]:8888" give [8888].
+     *
+     * Best-effort like findContainer: an unreachable daemon or an unknown
+     * container gives [], so the caller's port check stands as it was.
+     *
+     * @param {string} name - Exact container name
+     * @returns {Promise<number[]>} unique host ports, in output order
+     */
+    async function containerHostPorts(name) {
+        try {
+            const { stdout } = await docker(['port', String(name)]);
+            const ports = stdout.split('\n')
+                .map((line) => /->\s*\S*:(\d{1,5})\s*$/.exec(line.trim()))
+                .filter(Boolean)
+                .map((m) => Number(m[1]));
+            return [...new Set(ports)];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
      * Resolve which machine the Docker daemon actually runs on.
      *
      * Claude Code may run on a management node with the Docker CLI pointed at a
@@ -173,7 +231,7 @@ function createDockerUtil(options = {}) {
         }
     }
 
-    return { docker, composeUp, isContainerRunning, findContainer, getDockerHost };
+    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, getDockerHost };
 }
 
-module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint };
+module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint, classifyDockerFailure };
