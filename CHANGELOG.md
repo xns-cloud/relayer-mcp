@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1] — 2026-10-28
+
+### Removed
+
+- **`describe_settings` no longer returns `uploadTuning`.** The Relayer stopped measuring
+  its line, so the field it passed through is gone; the tool drops it even when an older
+  Relayer still sends it.
+
 ## [0.12.0] — 2026-10-06
 
 ### Added

@@ -11,7 +11,7 @@ const RELAYER_UI_BASE = 'http://localhost:8888';
  * Curated runtime catalog — the MCP exposes only the whitelist in
  * allowedSettings.js, never the full ~74-key advanced catalog (Ken,
  * 2026-06-11). Current values + defaults come from GET /api/v1/config
- * (relayer-ui Config.readConfig: { current, defaults, uploadTuning, ... }).
+ * (relayer-ui Config.readConfig: { current, defaults, ... }).
  */
 module.exports = function registerDescribeSettings(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
@@ -90,10 +90,6 @@ module.exports = function registerDescribeSettings(server, options = {}) {
                         text: JSON.stringify({
                             success: true,
                             settings,
-                            // uploadTuning: 'calculating' until a speedtest lands;
-                            // 'tuned' carries the resource-aware concurrency ceiling
-                            // that caps HOSTIO_SIMULTANEOUS_UPLOADS.
-                            uploadTuning: data.uploadTuning ?? null,
                             message: 'These are the only settings adjustable through this MCP. Apply changes with update_settings; most need restart_service afterwards. Changing CostCenter changes who is billed — always confirm with the operator first.',
                         }, null, 2),
                     }],
