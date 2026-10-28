@@ -101,7 +101,7 @@ describe('describe_settings', () => {
         expect(result.content[0].text).not.toContain('[REDACTED]');
     });
 
-    test('passes uploadTuning through (the ceiling that caps SIMULTANEOUS_UPLOADS)', async () => {
+    test('returns no uploadTuning key even when the config payload carries one', async () => {
         registerWithOptions({
             httpClient: {
                 get: jest.fn().mockResolvedValue({ status: 200, data: CONFIG_RESPONSE }),
@@ -112,7 +112,10 @@ describe('describe_settings', () => {
         const { readRegistration } = require('./helpers/mockRegistration');
         const handler = readRegistration(server).handler;
         const parsed = JSON.parse((await handler({})).content[0].text);
-        expect(parsed.uploadTuning).toEqual({ status: 'tuned', ceiling: 571 });
+        expect(parsed.success).toBe(true);
+        expect(Array.isArray(parsed.settings)).toBe(true);
+        expect(typeof parsed.message).toBe('string');
+        expect(parsed).not.toHaveProperty('uploadTuning');
     });
 
     test('401 → re-auth and retry', async () => {
