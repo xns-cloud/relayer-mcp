@@ -22,7 +22,7 @@ const real = require('./fixtures/docker-cli-stderr.json');
 const prereqContract = require('./fixtures/check-prerequisites-failures.json');
 const causesContract = require('./fixtures/install-relayer-causes.json');
 
-const D5_COMMAND = 'curl -fsSL https://releases.scpri.me/relayer/install.sh | sh';
+const D5_COMMAND = 'curl -fsSL https://releases.xns.tech/relayer/install.sh | sh';
 const GENERIC = causesContract.causes.find((c) => c.key === 'unmatched').exact_response;
 
 /**
@@ -247,12 +247,12 @@ describe('install_relayer causes over real Docker 29 output (AC-24)', () => {
     // AC-24 pull_refused: Docker 29 (containerd image store, the default on a fresh
     // install) reports a missing or refused image as "failed to resolve reference
     // ...: not found", with none of "pull access denied" / "manifest unknown".
-    test('image not resolvable on releases.scpri.me (Docker 29 wording) → names releases.scpri.me, not the generic line', async () => {
+    test('image not resolvable on releases.xns.tech (Docker 29 wording) → names releases.xns.tech, not the generic line', async () => {
         const stderr = real.stderr.compose_up_image_not_found;
         const { parsed } = await installFailure({ upStderr: stderr });
 
         expect(parsed.error).not.toBe(GENERIC);
-        expect(parsed.error).toContain('releases.scpri.me');
+        expect(parsed.error).toContain('releases.xns.tech');
         expect(parsed.error).not.toContain('docker rm -f xns-relayer');
     });
 });

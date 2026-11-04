@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.2] — 2026-11-03
+
+### Changed
+
+- **Relayer downloads and images come from releases.xns.tech.** `install_relayer` fetches the
+  release compose and its `.env` from `releases.xns.tech`, the bundled fallback compose pulls its
+  images from there, `check_prerequisites` probes `https://releases.xns.tech/v2/` and gives the
+  `releases.xns.tech` install command, and the image-pull error names that host. The README and
+  PRIVACY.md say the same. `releases.scpri.me` still serves the same files for existing installs.
+
 ## [0.12.1] — 2026-10-28
 
 ### Removed

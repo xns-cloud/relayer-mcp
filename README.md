@@ -17,7 +17,7 @@ npx @xns-cloud/relayer-mcp@latest
 On Ubuntu 24.04 or Debian 12, one command sets up everything:
 
 ```bash
-curl -fsSL https://releases.scpri.me/relayer/install.sh | sh
+curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
 The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 20 when Node is missing or older and registers this MCP. Log out and back in afterwards so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
@@ -53,7 +53,7 @@ The Relayer runs as a Docker container and persists its data in a Docker volume.
 On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers this MCP when Claude Code is present:
 
 ```bash
-curl -fsSL https://releases.scpri.me/relayer/install.sh | sh
+curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
 To register the MCP by hand instead:
@@ -99,7 +99,7 @@ No separate install step required — npx fetches the package on demand.
 | 1 | `check_prerequisites` | Verify Docker (local or remote), the compose plugin, Docker socket access (when it is denied, whether the `docker` group membership is missing or not yet live), ports (8888, 9000, 9443), an existing installation, free disk (10 GB on the Docker root and the install directory), and network connectivity. Each failure names the command that fixes it; ports held by a running `xns-relayer` pass. |
 | 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.scpri.me/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. Falls back to a bundled service-parity copy if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
+| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. Falls back to a bundled service-parity copy if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
 | 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
@@ -133,7 +133,7 @@ After onboarding, tools 12-15 cover routine adjustments: `describe_settings` →
 
 ## Fresh installs vs. existing deployments
 
-`install_relayer` performs **fresh installs only** — it does not upgrade an existing deployment in place. Docker container names are unique per daemon, so any existing `xns-relayer` container (running **or stopped**, any channel — including an alpha-channel install from `releases.scpri.me`) blocks the install. Both `check_prerequisites` and `install_relayer` detect this and tell you before anything breaks.
+`install_relayer` performs **fresh installs only** — it does not upgrade an existing deployment in place. Docker container names are unique per daemon, so any existing `xns-relayer` container (running **or stopped**, any channel — including an alpha-channel install from `releases.xns.tech`) blocks the install. Both `check_prerequisites` and `install_relayer` detect this and tell you before anything breaks.
 
 To replace an existing deployment:
 
@@ -162,7 +162,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 | Docker socket permission denied | You were added to the `docker` group after this session started, or not at all | `sudo usermod -aG docker $USER` if needed, then log out and back in |
 | Docker is not running | The Docker daemon is stopped | `sudo systemctl start docker` |
 | Not enough disk space | Under 10 GB free on the Docker root or the install directory | Free space there, then re-run |
-| Image pull refused | `releases.scpri.me` unreachable, or a stale registry login | Check the connection; `docker logout releases.scpri.me` |
+| Image pull refused | `releases.xns.tech` unreachable, or a stale registry login | Check the connection; `docker logout releases.xns.tech` |
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 | `install_relayer` fails with "The Docker daemon is on <host>, not this machine" | `DOCKER_HOST` or an SSH/TCP Docker context points at another machine, and the install files would be written here instead | Run the MCP on that host and re-run, or unset `DOCKER_HOST` / use the default Docker context ([Remote Docker hosts](#remote-docker-hosts)) |
 | `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`), or a regular file sits at or along it | Pass a writable `install_path`; the exact OS error is in the MCP server's stderr log |
@@ -196,7 +196,7 @@ The short version:
 - **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
-- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.scpri.me`.
+- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.xns.tech`.
 - **Your stored objects never pass through it.** The Relayer you host handles your data directly.
 
 ## Desktop extension (MCPB)

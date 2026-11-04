@@ -8,7 +8,7 @@ const { createDockerUtil, redactEndpoint, classifyDockerFailure } = require('../
 const { environmentProbe: defaultEnvironmentProbe } = require('../lib/environmentProbe');
 
 // The one-command install (installs Docker, the compose plugin and the Relayer).
-const INSTALL_COMMAND = 'curl -fsSL https://releases.scpri.me/relayer/install.sh | sh';
+const INSTALL_COMMAND = 'curl -fsSL https://releases.xns.tech/relayer/install.sh | sh';
 
 // The container the install script and install_relayer start.
 const RELAYER_CONTAINER = 'xns-relayer';
@@ -501,7 +501,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                 { url: 'https://auth.xns.tech/auth/realms/scprime/.well-known/openid-configuration', name: 'connectivity_auth', host: 'auth.xns.tech' },
                 // The registry install_relayer pulls from (release channel, anonymous).
                 // /v2/ is the registry version probe — 200 without credentials.
-                { url: 'https://releases.scpri.me/v2/', name: 'connectivity_registry', host: 'releases.scpri.me' },
+                { url: 'https://releases.xns.tech/v2/', name: 'connectivity_registry', host: 'releases.xns.tech' },
             ];
             for (const { url, name, host } of connectivityChecks) {
                 try {

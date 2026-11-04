@@ -27,7 +27,7 @@ const SUBSTRING_LENGTH = 20;
 const STDERR = {
     port8888: 'Error response from daemon: driver failed programming external connectivity on endpoint xns-relayer (8f0c2d9e1b7a): Bind for 0.0.0.0:8888 failed: port is already allocated',
     port9000: 'Error response from daemon: failed to bind host port for 0.0.0.0:9000:172.18.0.2:9000/tcp: address already in use',
-    pullWithPort: "Error response from daemon: pull access denied for releases.scpri.me:443/xns-relayer, repository does not exist or may require 'docker login': denied: requested access to the resource is denied (registry port 443)",
+    pullWithPort: "Error response from daemon: pull access denied for releases.xns.tech:443/xns-relayer, repository does not exist or may require 'docker login': denied: requested access to the resource is denied (registry port 443)",
     daemonStopped: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?',
     outOfDisk: 'failed to register layer: write /var/lib/docker/overlay2/4c1e0f6b2a/diff/usr/lib/node_modules/npm/index.js: no space left on device',
     permissionDenied: 'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info": dial unix /var/run/docker.sock: connect: permission denied',
@@ -150,7 +150,7 @@ describe('install_relayer failure causes (AC-24, TP-30)', () => {
     test('a pull refusal that mentions a port is reported as pull refused, not port in use', async () => {
         const { parsed, result } = await errorFor({ composeStderr: STDERR.pullWithPort });
 
-        expect(parsed.error).toContain('releases.scpri.me');
+        expect(parsed.error).toContain('releases.xns.tech');
         expect(parsed.error).not.toContain('docker rm -f xns-relayer');
         expect(parsed.error).not.toMatch(/Port \d+/);
         expectNoStderrSubstring(result, STDERR.pullWithPort);

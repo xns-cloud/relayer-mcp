@@ -5,7 +5,7 @@
       "name": "docker",
       "variant": "missing",
       "trigger": "docker info rejects with error.code === 'ENOENT' (dockerUtil.js:86 copies err.code)",
-      "must_name": "the D5 command: curl -fsSL https://releases.scpri.me/relayer/install.sh | sh",
+      "must_name": "the D5 command: curl -fsSL https://releases.xns.tech/relayer/install.sh | sh",
       "excludes": [
         "docker_compose",
         "docker_group",

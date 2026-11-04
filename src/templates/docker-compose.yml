@@ -1,13 +1,13 @@
 # Bundled by @xns-cloud/relayer-mcp — OFFLINE FALLBACK for the released install.
 # Source of truth: the release channel bundle on the XNS releases registry —
-# https://releases.scpri.me/relayer/release/docker-compose.yml and the .env
+# https://releases.xns.tech/relayer/release/docker-compose.yml and the .env
 # beside it; the release publisher ships both. install_relayer fetches those URLs by
 # default and only writes this copy when either fetch fails, so this file MUST
 # keep service parity with the channel bundle: relayer + the monitoring stack
 # (Prometheus + Grafana + node-exporter) that powers the dashboards under
 # Monitoring in the web UI. The jest contract tests enforce the parity.
 #
-# Every Relayer image comes from releases.scpri.me — never a Docker Hub fleet
+# Every Relayer image comes from releases.xns.tech — never a Docker Hub fleet
 # tag, which is not a release channel. The one allowed upstream image is
 # prom/node-exporter (public, multi-arch, version-pinned — matches the channel
 # bundle; nothing to rebuild). No service mounts the host's Docker socket.
@@ -36,7 +36,7 @@ services:
     # container_name is load-bearing: the baked-in prometheus.yml scrapes the
     # relayer by this name, and the install preflight keys on it.
     container_name: xns-relayer
-    image: releases.scpri.me/xns-relayer:release-latest
+    image: releases.xns.tech/xns-relayer:release-latest
     pull_policy: always
     restart: unless-stopped
     privileged: true            # samba / fuse / disk management (matches channel compose)
@@ -52,14 +52,14 @@ services:
   # Not host-exposed: Grafana is reached only through the relayer's /grafana
   # reverse proxy and the in-network Prometheus scrape.
   prometheus:
-    image: releases.scpri.me/relayer-prometheus:release-latest
+    image: releases.xns.tech/relayer-prometheus:release-latest
     pull_policy: always
     restart: unless-stopped
     volumes:
       - prometheus_data:/prometheus
 
   grafana:
-    image: releases.scpri.me/relayer-grafana:release-latest
+    image: releases.xns.tech/relayer-grafana:release-latest
     pull_policy: always
     restart: unless-stopped
     environment:

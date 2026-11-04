@@ -28,7 +28,7 @@ Only through the ordinary, visible operation of the tools you ask the agent to r
 | Creating an account, signing in | Your credentials, entered by you in your own browser | `auth.xns.tech` (Keycloak) |
 | Claiming a Relayer to your account | The claim session and the installation's identity | `console.xns.tech` |
 | Reading or changing settings, host selection, backups | The setting values you ask to read or change | `console.xns.tech` |
-| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images | `releases.scpri.me` |
+| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images | `releases.xns.tech` |
 
 The agent never handles your password. Sign-in happens in your browser against our identity
 service; the extension receives only a short-lived access token.
