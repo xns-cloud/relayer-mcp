@@ -87,7 +87,7 @@ describe('check_prerequisites', () => {
         const dockerCheck = parsed.checks.find((c) => c.name === 'docker');
         expect(dockerCheck.passed).toBe(false);
         expect(dockerCheck.remediation).toBeDefined();
-        expect(dockerCheck.remediation).toContain('curl -fsSL https://releases.scpri.me/relayer/install.sh | sh');
+        expect(dockerCheck.remediation).toContain('curl -fsSL https://releases.xns.tech/relayer/install.sh | sh');
     });
 
     // TP-7: port in use → failure + remediation (AC-4)
@@ -143,7 +143,7 @@ describe('check_prerequisites', () => {
     });
 
     // The registry install_relayer pulls from is part of connectivity: a host
-    // that can reach console/auth but not releases.scpri.me would pass checks
+    // that can reach console/auth but not releases.xns.tech would pass checks
     // and then fail mid-install on the image pull.
     test('probes the releases registry the install pulls from', async () => {
         const handler = registerWithOptions({
@@ -166,7 +166,7 @@ describe('check_prerequisites', () => {
         const registryCheck = parsed.checks.find((c) => c.name === 'connectivity_registry');
         expect(registryCheck).toBeDefined();
         expect(registryCheck.passed).toBe(true);
-        expect(registryCheck.detail).toContain('releases.scpri.me');
+        expect(registryCheck.detail).toContain('releases.xns.tech');
     });
 
     // AC-3: plain English descriptions
@@ -241,7 +241,7 @@ describe('check_prerequisites', () => {
                 findContainer: jest.fn().mockResolvedValue({
                     name: 'xns-relayer',
                     status: 'Up 5 days',
-                    image: 'releases.scpri.me/xns-relayer:alpha-latest',
+                    image: 'releases.xns.tech/xns-relayer:alpha-latest',
                     running: true,
                 }),
             },
@@ -564,7 +564,7 @@ describe('check_prerequisites', () => {
     // --- E-A9: five distinct failures, own-container port pass, real disk check ---
 
     describe('E-A9 prerequisite failures (AC-19..AC-23, AC-27)', () => {
-        const D5_COMMAND = 'curl -fsSL https://releases.scpri.me/relayer/install.sh | sh';
+        const D5_COMMAND = 'curl -fsSL https://releases.xns.tech/relayer/install.sh | sh';
         const GB = 10 ** 9;
         const UNIT = 10 * GB;
         const DOCKER_ROOT = '/var/lib/docker';
@@ -778,7 +778,7 @@ describe('check_prerequisites', () => {
                     info: 'denied',
                     groupFile: 'docker:x:999:alice\n',
                     portFree: () => false,
-                    container: { name: 'xns-relayer', status: 'Up 2 minutes', image: 'releases.scpri.me/xns-relayer:release-latest', running: true },
+                    container: { name: 'xns-relayer', status: 'Up 2 minutes', image: 'releases.xns.tech/xns-relayer:release-latest', running: true },
                     hostPorts: [8888, 9000],
                 });
                 const { parsed, text } = await run(ctx);
@@ -1023,7 +1023,7 @@ describe('check_prerequisites', () => {
 
         // CR-1, AC-27, TP-51 (M-48, M-L12)
         describe('ports held by the Relayer the install script started (CR-1, AC-27, TP-51)', () => {
-            const RUNNING = { name: 'xns-relayer', status: 'Up 4 minutes', image: 'releases.scpri.me/xns-relayer:release-latest', running: true };
+            const RUNNING = { name: 'xns-relayer', status: 'Up 4 minutes', image: 'releases.xns.tech/xns-relayer:release-latest', running: true };
 
             test('CR-1: xns-relayer running and publishing 8888/9000 → both port checks pass with a note naming it, success:true', async () => {
                 const ctx = build({ portFree: () => false, container: RUNNING, hostPorts: [8888, 9000, 9443] });

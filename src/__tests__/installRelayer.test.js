@@ -115,8 +115,8 @@ describe('install_relayer', () => {
 
     // --- Default path: fetch the channel bundle, user authors nothing ---------
 
-    const CHANNEL_COMPOSE_URL = 'https://releases.scpri.me/relayer/release/docker-compose.yml';
-    const CHANNEL_ENV_URL = 'https://releases.scpri.me/relayer/release/.env';
+    const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
+    const CHANNEL_ENV_URL = 'https://releases.xns.tech/relayer/release/.env';
     const TEMPLATE_PATH = require('path').join(__dirname, '..', 'templates', 'docker-compose.yml');
 
     // Per-path fake fs. The bundled template reads as BUNDLED_COMPOSE_TEMPLATE;
@@ -727,7 +727,7 @@ describe('install_relayer', () => {
                 findContainer: jest.fn().mockResolvedValue({
                     name: 'xns-relayer',
                     status: 'Up 3 days',
-                    image: 'releases.scpri.me/xns-relayer:alpha-latest',
+                    image: 'releases.xns.tech/xns-relayer:alpha-latest',
                     running: true,
                 }),
             },
@@ -802,9 +802,9 @@ describe('install_relayer', () => {
     test('fallback template pins the releases-registry release channel', () => {
         const template = readTemplate();
 
-        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/xns-relayer:release-latest\s*(#.*)?$/m);
-        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/relayer-prometheus:release-latest\s*(#.*)?$/m);
-        expect(template).toMatch(/^\s*image:\s*releases\.scpri\.me\/relayer-grafana:release-latest\s*(#.*)?$/m);
+        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/xns-relayer:release-latest\s*(#.*)?$/m);
+        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/relayer-prometheus:release-latest\s*(#.*)?$/m);
+        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/relayer-grafana:release-latest\s*(#.*)?$/m);
         expect(template.match(/:release-latest/g)).toHaveLength(3);
         expect(template).not.toContain('beta-latest');
         expect(template).not.toMatch(/^\s*image:.*:stable/m);
@@ -909,7 +909,7 @@ describe('install_relayer', () => {
         for (const line of imageLines) {
             expect(line).not.toContain('scprime/');
             expect(line).not.toContain('docker.io');
-            expect(line).toMatch(/releases\.scpri\.me\/|image:\s*prom\/node-exporter:v[\d.]+/);
+            expect(line).toMatch(/releases\.xns\.tech\/|image:\s*prom\/node-exporter:v[\d.]+/);
         }
         // node-exporter stays version-pinned, not :latest.
         expect(template).not.toMatch(/node-exporter:latest/);

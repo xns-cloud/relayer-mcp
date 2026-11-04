@@ -119,14 +119,14 @@ describe('dockerUtil.findContainer', () => {
     });
 
     test('running container → running: true with status and image', async () => {
-        const { util } = utilWithPsOutput('xns-relayer\tUp 3 days\treleases.scpri.me/xns-relayer:alpha-latest\n');
+        const { util } = utilWithPsOutput('xns-relayer\tUp 3 days\treleases.xns.tech/xns-relayer:alpha-latest\n');
 
         const result = await util.findContainer('xns-relayer');
 
         expect(result).toEqual({
             name: 'xns-relayer',
             status: 'Up 3 days',
-            image: 'releases.scpri.me/xns-relayer:alpha-latest',
+            image: 'releases.xns.tech/xns-relayer:alpha-latest',
             running: true,
         });
     });
@@ -183,11 +183,11 @@ describe('classifyDockerFailure', () => {
         ['permission_denied', 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock'],
         ['daemon_stopped', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?'],
         ['daemon_stopped', 'failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory'],
-        ['pull_refused', 'failed to resolve reference "releases.scpri.me/xns-relayer:release-latest": releases.scpri.me/xns-relayer:release-latest: not found'],
+        ['pull_refused', 'failed to resolve reference "releases.xns.tech/xns-relayer:release-latest": releases.xns.tech/xns-relayer:release-latest: not found'],
         ['out_of_disk', 'failed to register layer: write /var/lib/docker/overlay2/abc/diff/usr/bin/node: no space left on device'],
-        ['pull_refused', 'Error response from daemon: pull access denied for releases.scpri.me/xns-relayer, repository does not exist or may require \'docker login\''],
+        ['pull_refused', 'Error response from daemon: pull access denied for releases.xns.tech/xns-relayer, repository does not exist or may require \'docker login\''],
         ['pull_refused', 'Error response from daemon: manifest unknown'],
-        ['pull_refused', 'Error response from daemon: Head "https://releases.scpri.me/v2/xns-relayer/manifests/release-latest": unauthorized'],
+        ['pull_refused', 'Error response from daemon: Head "https://releases.xns.tech/v2/xns-relayer/manifests/release-latest": unauthorized'],
         ['port_in_use', 'Error response from daemon: driver failed programming external connectivity on endpoint xns-relayer (0f3c): Bind for 0.0.0.0:8888 failed: port is already allocated'],
         ['port_in_use', 'Error response from daemon: failed to bind host port for 0.0.0.0:9000:172.18.0.2:9000/tcp: address already in use'],
     ])('stderr → %s', async (key, stderr) => {
@@ -207,7 +207,7 @@ describe('classifyDockerFailure', () => {
 
     // M-44: a pull failure that mentions a port is still a pull failure.
     test('pull refusal mentioning a port classifies as pull_refused, not port_in_use', async () => {
-        const stderr = 'Error response from daemon: pull access denied for releases.scpri.me:443/xns-relayer (port 443): address already in use by proxy';
+        const stderr = 'Error response from daemon: pull access denied for releases.xns.tech:443/xns-relayer (port 443): address already in use by proxy';
         const err = await rejectionOf(rejectingUtil(stderr).composeUp('/x/docker-compose.yml'));
         expect(classifyDockerFailure(err).key).toBe('pull_refused');
     });
