@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.3] — 2026-11-05
+
+### Fixed
+
+- **The bundled fallback compose now runs the same services as the release channel.** An install
+  that fell back had no Alertmanager, Loki, Alloy or audit-logrotate, so it had no alert delivery
+  and no audit-log pipeline. The template adds them, wires the relayer's audit sink and log volumes
+  to them, and passes the alert threshold settings to Prometheus. The `.env` written on fallback
+  now carries `RELAYER_AUDIT_MODE=loki` and the `COMPOSE_PROFILES` line that starts the audit
+  services; set `RELAYER_AUDIT_MODE=off` there to opt out.
+
 ## [0.12.2] — 2026-11-03
 
 ### Changed

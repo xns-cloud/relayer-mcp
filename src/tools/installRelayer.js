@@ -61,6 +61,11 @@ const CHANNEL_ENV_FILE = '.env';
 // kept service-parity with the channel bundle by the jest contract tests.
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
 
+// The bundled compose's audit-log sidecars start only under the loki profile, and
+// Compose reads the active profiles from .env. The channel .env carries this switch;
+// without these lines a fallback install would run no audit-log pipeline.
+const FALLBACK_AUDIT_LINES = 'RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
+
 // container_name in the bundled compose. Docker container names are unique
 // per daemon, so ANY existing container with this name — running or stopped,
 // any channel — makes `docker compose up` fail with a name conflict.
@@ -184,12 +189,14 @@ function withPortLines(fetchedEnv, portLines) {
  *
  * A first-time user has never heard of a Relayer and cannot supply a compose
  * file or a .env. So by default this tool authors both for them: it fetches
- * the CANONICAL release channel bundle (relayer + Prometheus + Grafana +
- * node-exporter — the monitoring stack powers the dashboards under Monitoring
- * in the web UI) and its .env, then appends the two ports and the bind address
- * to that .env. If either fetch fails (offline, registry hiccup), the bundled
- * service-parity template and a .env of just those lines are the fallback —
- * the install still completes and the response says it fell back.
+ * the CANONICAL release channel bundle (relayer, the Prometheus + Grafana +
+ * node-exporter monitoring stack that powers the dashboards under Monitoring in
+ * the web UI, Alertmanager, and the Loki + Alloy + audit-logrotate audit-log
+ * pipeline) and its .env, then appends the two ports and the bind address to
+ * that .env. If either fetch fails (offline, registry hiccup), the bundled
+ * service-parity template and a .env of those lines plus the audit-mode switch
+ * are the fallback — the install still completes and the response says it fell
+ * back.
  *
  * `compose_url` stays as an optional override for internal/custom installs;
  * when given, the old download-a-URL behavior is preserved.
@@ -306,8 +313,9 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     // Default path: fetch the canonical release bundle (relayer +
                     // monitoring stack) and its .env fresh on every run, then
                     // append the port lines to the fetched .env. Fall back to the
-                    // bundled service-parity template and a .env of just the port
-                    // lines when either fetch (or reading the fetched .env) fails.
+                    // bundled service-parity template and a .env of the audit-mode
+                    // switch and the port lines when either fetch (or reading the
+                    // fetched .env) fails.
                     // Either way the user never writes a file.
                     const portLines = `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\nBIND_ADDRESS=${bindPrefix}\n`;
                     try {
@@ -328,7 +336,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     } catch (fetchErr) {
                         const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');
                         await fsp.writeFile(composePath, template);
-                        envContents = portLines;
+                        envContents = `${FALLBACK_AUDIT_LINES}${portLines}`;
                         source = 'bundled-fallback';
                         console.error(`[install_relayer] channel bundle fetch failed: ${fetchErr.message}${fetchErr.cause ? `: ${fetchErr.cause.message}` : ''}`);
                         if (fetchErr.bindUnsupported) {

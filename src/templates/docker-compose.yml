@@ -3,9 +3,11 @@
 # https://releases.xns.tech/relayer/release/docker-compose.yml and the .env
 # beside it; the release publisher ships both. install_relayer fetches those URLs by
 # default and only writes this copy when either fetch fails, so this file MUST
-# keep service parity with the channel bundle: relayer + the monitoring stack
+# keep service parity with the channel bundle: relayer, the monitoring stack
 # (Prometheus + Grafana + node-exporter) that powers the dashboards under
-# Monitoring in the web UI. The jest contract tests enforce the parity.
+# Monitoring in the web UI, Alertmanager for alert delivery, and the audit-log
+# pipeline (Loki + Alloy + audit-logrotate). The jest contract tests enforce the
+# parity.
 #
 # Every Relayer image comes from releases.xns.tech — never a Docker Hub fleet
 # tag, which is not a release channel. The one allowed upstream image is
@@ -40,23 +42,149 @@ services:
     pull_policy: always
     restart: unless-stopped
     privileged: true            # samba / fuse / disk management (matches channel compose)
+    # The NDJSON sink path is exported only in loki mode, so the file sink and the
+    # sidecars that tail and rotate it share one switch. Any other mode writes no
+    # NDJSON. The image has no ENTRYPOINT and a shell-form CMD, so this override
+    # is safe.
+    command: >
+      sh -c '
+      if [ "${RELAYER_AUDIT_MODE:-loki}" = "loki" ]; then
+        export S3GW_AUDIT_NDJSON_PATH=/var/log/relayer-audit/audit.ndjson;
+      fi;
+      exec /xns/xns.sh
+      '
     volumes:
       - relayer_data:/relayer     # named volume — MUST match the channel bundle (bug #2)
+      - audit_logs:/var/log/relayer-audit   # alloy tails it, audit-logrotate rotates it
+      - relayer_logs:/relayer/log           # own volume so alloy never sees /relayer/conf
     ports:
       - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888
       - ${BIND_ADDRESS:-}${S3_PORT:-9000}:9000
+    environment:
+      # Webhook audit sink (RELAYER_AUDIT_MODE=webhook): set both in .env. Empty
+      # leaves the sink off.
+      - S3GW_AUDIT_WEBHOOK_URL=${S3GW_AUDIT_WEBHOOK_URL:-}
+      - S3GW_AUDIT_WEBHOOK_SECRET=${S3GW_AUDIT_WEBHOOK_SECRET:-}
     env_file:
       - .env
+
+  # Audit-log sidecars — on by default. The .env install_relayer writes aliases
+  # COMPOSE_PROFILES to RELAYER_AUDIT_MODE; set RELAYER_AUDIT_MODE=off or =webhook
+  # there to opt out. xns must not gain a depends_on on any of these, or Compose
+  # starts them in every mode.
+  loki:
+    image: releases.xns.tech/relayer-loki:release-latest
+    pull_policy: always
+    restart: unless-stopped
+    profiles: ["loki"]
+    command:
+      - -config.file=/etc/loki/loki.yml
+    volumes:
+      - loki_data:/loki
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  alloy:
+    image: releases.xns.tech/relayer-alloy:release-latest
+    pull_policy: always
+    restart: unless-stopped
+    profiles: ["loki"]
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    environment:
+      # Push audit logs to an external Loki instead; unset keeps them on the box.
+      - S3GW_AUDIT_LOKI_PUSH_URL=${S3GW_AUDIT_LOKI_PUSH_URL:-}
+    depends_on:
+      - loki
+    volumes:
+      - audit_logs:/var/log/relayer-audit:ro
+      - relayer_logs:/relayer/log:ro
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  audit-logrotate:
+    image: releases.xns.tech/relayer-audit-logrotate:release-latest
+    pull_policy: always
+    restart: unless-stopped
+    profiles: ["loki"]
+    volumes:
+      - audit_logs:/var/log/relayer-audit
+    deploy:
+      resources:
+        limits:
+          memory: 32M
 
   # Monitoring stack — powers the dashboards under Monitoring in the web UI.
   # Not host-exposed: Grafana is reached only through the relayer's /grafana
   # reverse proxy and the in-network Prometheus scrape.
   prometheus:
+    container_name: prometheus
     image: releases.xns.tech/relayer-prometheus:release-latest
     pull_policy: always
     restart: unless-stopped
+    # command: replaces the image CMD. The first two flags restate the image
+    # defaults and must stay; the retention pair is the operator-tunable footprint.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
+    # Alert thresholds. Empty leaves the image's defaults; the entrypoint renders
+    # the rules from these at container start, so a change needs a recreate.
+    environment:
+      - ALERT_DISK_FREE_BYTES=${ALERT_DISK_FREE_BYTES:-}
+      - ALERT_DISK_FREE_FOR=${ALERT_DISK_FREE_FOR:-}
+      - ALERT_S3_UNREACHABLE_FOR=${ALERT_S3_UNREACHABLE_FOR:-}
+      - ALERT_S3_ERROR_RATE=${ALERT_S3_ERROR_RATE:-}
+      - ALERT_S3_ERROR_RATE_FOR=${ALERT_S3_ERROR_RATE_FOR:-}
+      - ALERT_S3_P95_LATENCY_SECONDS=${ALERT_S3_P95_LATENCY_SECONDS:-}
+      - ALERT_S3_P95_LATENCY_FOR=${ALERT_S3_P95_LATENCY_FOR:-}
+      - ALERT_HOSTIO_DOWN_FOR=${ALERT_HOSTIO_DOWN_FOR:-}
+      - ALERT_GATEWAY_DOWN_FOR=${ALERT_GATEWAY_DOWN_FOR:-}
+      - ALERT_CRASH_LOOP_FOR=${ALERT_CRASH_LOOP_FOR:-}
+      - ALERT_CACHE_PRESSURE_RATIO=${ALERT_CACHE_PRESSURE_RATIO:-}
+      - ALERT_CACHE_PRESSURE_FOR=${ALERT_CACHE_PRESSURE_FOR:-}
+      - ALERT_BRIDGE_STALE_SECONDS=${ALERT_BRIDGE_STALE_SECONDS:-}
+      - ALERT_BRIDGE_STALE_FOR=${ALERT_BRIDGE_STALE_FOR:-}
+      - ALERT_TARGET_DOWN_FOR=${ALERT_TARGET_DOWN_FOR:-}
+      - ALERT_AUDIT_SIEM_DEAD_FOR=${ALERT_AUDIT_SIEM_DEAD_FOR:-}
     volumes:
       - prometheus_data:/prometheus
+    deploy:
+      resources:
+        limits:
+          memory: ${PROMETHEUS_MEMORY_LIMIT:-512M}
+
+  # Alert delivery: the image's prometheus.yml targets alertmanager:9093. With no
+  # receiver set in .env it starts and logs that alerts have nowhere to go.
+  alertmanager:
+    container_name: alertmanager
+    image: releases.xns.tech/relayer-alertmanager:release-latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      - ALERTMANAGER_WEBHOOK_URL=${ALERTMANAGER_WEBHOOK_URL:-}
+      - ALERTMANAGER_GROUP_WAIT=${ALERTMANAGER_GROUP_WAIT:-}
+      - ALERTMANAGER_REPEAT_INTERVAL=${ALERTMANAGER_REPEAT_INTERVAL:-}
+      - ALERTMANAGER_SMTP_SMARTHOST=${ALERTMANAGER_SMTP_SMARTHOST:-}
+      - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-}
+      - ALERTMANAGER_SMTP_TO=${ALERTMANAGER_SMTP_TO:-}
+      - ALERTMANAGER_SMTP_AUTH_USERNAME=${ALERTMANAGER_SMTP_AUTH_USERNAME:-}
+      - ALERTMANAGER_SMTP_AUTH_PASSWORD=${ALERTMANAGER_SMTP_AUTH_PASSWORD:-}
+      - WATCHDOG_HEARTBEAT_URL=${WATCHDOG_HEARTBEAT_URL:-}
+      - WATCHDOG_REPEAT_INTERVAL=${WATCHDOG_REPEAT_INTERVAL:-}
+    volumes:
+      - alertmanager_data:/alertmanager   # silences survive a recreate
+    deploy:
+      resources:
+        limits:
+          memory: ${ALERTMANAGER_MEMORY_LIMIT:-128M}
 
   grafana:
     image: releases.xns.tech/relayer-grafana:release-latest
@@ -81,5 +209,9 @@ services:
 
 volumes:
   relayer_data:
+  relayer_logs:
   prometheus_data:
   grafana_data:
+  alertmanager_data:
+  audit_logs:
+  loki_data:
