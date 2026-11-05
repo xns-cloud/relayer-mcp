@@ -61,6 +61,11 @@ const CHANNEL_ENV_FILE = '.env';
 // kept service-parity with the channel bundle by the jest contract tests.
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
 
+// The bundled compose's audit-log sidecars start only under the loki profile, and
+// Compose reads the active profiles from .env. The channel .env carries this switch;
+// without these lines a fallback install would run no audit-log pipeline.
+const FALLBACK_AUDIT_LINES = 'RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
+
 // container_name in the bundled compose. Docker container names are unique
 // per daemon, so ANY existing container with this name — running or stopped,
 // any channel — makes `docker compose up` fail with a name conflict.
@@ -184,12 +189,14 @@ function withPortLines(fetchedEnv, portLines) {
  *
  * A first-time user has never heard of a Relayer and cannot supply a compose
  * file or a .env. So by default this tool authors both for them: it fetches
- * the CANONICAL release channel bundle (relayer + Prometheus + Grafana +
- * node-exporter — the monitoring stack powers the dashboards under Monitoring
- * in the web UI) and its .env, then appends the two ports and the bind address
- * to that .env. If either fetch fails (offline, registry hiccup), the bundled
- * service-parity template and a .env of just those lines are the fallback —
- * the install still completes and the response says it fell back.
+ * the CANONICAL release channel bundle (relayer, the Prometheus + Grafana +
+ * node-exporter monitoring stack that powers the dashboards under Monitoring in
+ * the web UI, Alertmanager, and the Loki + Alloy + audit-logrotate audit-log
+ * pipeline) and its .env, then appends the two ports and the bind address to
+ * that .env. If either fetch fails (offline, registry hiccup), the bundled
+ * service-parity template and a .env of those lines plus the audit-mode switch
+ * are the fallback — the install still completes and the response says it fell
+ * back.
  *
  * `compose_url` stays as an optional override for internal/custom installs;
  * when given, the old download-a-URL behavior is preserved.
@@ -306,8 +313,9 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     // Default path: fetch the canonical release bundle (relayer +
                     // monitoring stack) and its .env fresh on every run, then
                     // append the port lines to the fetched .env. Fall back to the
-                    // bundled service-parity template and a .env of just the port
-                    // lines when either fetch (or reading the fetched .env) fails.
+                    // bundled service-parity template and a .env of the audit-mode
+                    // switch and the port lines when either fetch (or reading the
+                    // fetched .env) fails.
                     // Either way the user never writes a file.
                     const portLines = `UI_PORT=${ui_port}\nS3_PORT=${s3_port}\nBIND_ADDRESS=${bindPrefix}\n`;
                     try {
@@ -323,12 +331,18 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         // curl creates the file with the default umask; close it before
                         // any later step can throw and leave it world-readable.
                         await fsp.chmod(envPath, ENV_FILE_MODE);
-                        envContents = withPortLines(await fsp.readFile(envPath, 'utf8'), portLines);
+                        const fetchedEnv = await fsp.readFile(envPath, 'utf8');
+                        // The publisher always ships this line, so its absence means a
+                        // truncated or empty download. Without it no audit sidecar starts.
+                        if (!/^COMPOSE_PROFILES=/m.test(fetchedEnv)) {
+                            throw new Error('release .env does not set COMPOSE_PROFILES');
+                        }
+                        envContents = withPortLines(fetchedEnv, portLines);
                         source = 'channel';
                     } catch (fetchErr) {
                         const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');
                         await fsp.writeFile(composePath, template);
-                        envContents = portLines;
+                        envContents = `${FALLBACK_AUDIT_LINES}${portLines}`;
                         source = 'bundled-fallback';
                         console.error(`[install_relayer] channel bundle fetch failed: ${fetchErr.message}${fetchErr.cause ? `: ${fetchErr.cause.message}` : ''}`);
                         if (fetchErr.bindUnsupported) {
@@ -347,9 +361,14 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // Run docker compose up -d. cwd + env so ${UI_PORT}/${S3_PORT}
                 // interpolation and the ./data bind resolve in the install dir,
                 // regardless of where the MCP process was launched.
+                // The .env written above owns COMPOSE_PROFILES, aliased to RELAYER_AUDIT_MODE.
+                // Compose lets the process environment beat .env, so an inherited value
+                // would leave the audit sink on with no sidecars to tail and rotate it.
+                // compose_url writes no .env, so there the caller's value stands.
+                const { COMPOSE_PROFILES: _inheritedProfiles, ...withoutProfiles } = process.env;
                 await docker.composeUp(composePath, {
                     cwd: install_path,
-                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bindPrefix },
+                    env: { ...(compose_url ? process.env : withoutProfiles), UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bindPrefix },
                 });
 
                 return {

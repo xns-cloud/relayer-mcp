@@ -123,7 +123,10 @@ describe('install_relayer', () => {
     // a .env path reads what curl wrote there (see curlWritingInto) or, when
     // nothing was written, `fetchedEnv` — the release .env curl "downloaded".
     // Any other path is ENOENT.
-    function fakeFs({ fetchedEnv = '' } = {}) {
+    // The publisher refuses to ship a release .env without this line.
+    const RELEASE_PROFILE_LINE = 'COMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
+
+    function fakeFs({ fetchedEnv = RELEASE_PROFILE_LINE } = {}) {
         const writes = {};
         return {
             writes,
@@ -184,7 +187,7 @@ describe('install_relayer', () => {
         expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH, expect.anything());
         expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH);
         // .env written with default ports.
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n`);
     });
 
     // --- E-A9 AC-25 (TP-31): release compose + release .env, fetched each run ---
@@ -199,6 +202,7 @@ describe('install_relayer', () => {
             '',
         ].join('\n');
         const PORT_LINES = 'UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n';
+        const AUDIT_LINES = 'RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
 
         function build({ bodies, failing } = {}) {
             const fs = fakeFs();
@@ -264,7 +268,7 @@ describe('install_relayer', () => {
         test.each([
             ['the compose fetch', CHANNEL_COMPOSE_URL],
             ['the .env fetch', CHANNEL_ENV_URL],
-        ])('%s failing → own template and own .env (port lines only)', async (_label, failingUrl) => {
+        ])('%s failing → own template and own .env (audit switch and port lines)', async (_label, failingUrl) => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const { handler, fs, composeUp } = build({ failing: [failingUrl] });
 
@@ -274,8 +278,43 @@ describe('install_relayer', () => {
             expect(parsed.success).toBe(true);
             expect(parsed.source).toBe('bundled-fallback');
             expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-            expect(fs.writes['/tmp/xns/.env']).toBe(PORT_LINES);
+            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
             expect(composeUp).toHaveBeenCalledTimes(1);
+        });
+
+        test('a fetched .env without COMPOSE_PROFILES → own template and own .env', async () => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const { handler, fs } = build({
+                bodies: { [CHANNEL_COMPOSE_URL]: 'RELEASE_COMPOSE\n', [CHANNEL_ENV_URL]: '# XNS Relayer release channel\n' },
+            });
+
+            const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
+            errSpy.mockRestore();
+
+            expect(parsed.source).toBe('bundled-fallback');
+            expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
+            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
+        });
+
+        // Compose lets the process environment beat .env, so an inherited value would
+        // leave the audit sink on with no sidecars to tail and rotate it.
+        test.each([
+            ['the channel path', {}, undefined],
+            ['the fallback path', { failing: [CHANNEL_COMPOSE_URL] }, undefined],
+            ['the compose_url path, which writes no .env', { compose_url: 'https://example.com/c.yml' }, 'other'],
+        ])('inherited COMPOSE_PROFILES on %s', async (_label, { failing, compose_url }, expected) => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const inherited = process.env.COMPOSE_PROFILES;
+            process.env.COMPOSE_PROFILES = 'other';
+            try {
+                const { handler, composeUp } = build({ failing });
+                await handler({ install_path: '/tmp/xns', compose_url });
+                expect(composeUp.mock.calls[0][1].env.COMPOSE_PROFILES).toBe(expected);
+            } finally {
+                if (inherited === undefined) delete process.env.COMPOSE_PROFILES;
+                else process.env.COMPOSE_PROFILES = inherited;
+                errSpy.mockRestore();
+            }
         });
 
         test('a downloaded .env that cannot be read → own template and own .env', async () => {
@@ -296,7 +335,7 @@ describe('install_relayer', () => {
             const parsed = JSON.parse(result.content[0].text);
 
             expect(parsed.source).toBe('bundled-fallback');
-            expect(fs.writes['/tmp/xns/.env']).toBe(PORT_LINES);
+            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
             expect(result.content[0].text).not.toContain('EACCES');
         });
     });
@@ -395,7 +434,7 @@ describe('install_relayer', () => {
         expect(parsed.note).toMatch(/fell back|fall.?back/i);
         // Bundled template written to docker-compose.yml; .env still written.
         expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
         expect(composeUp).toHaveBeenCalled();
     });
 
@@ -411,7 +450,7 @@ describe('install_relayer', () => {
 
         await handler({ install_path: '/tmp/xns', ui_port: 18888, s3_port: 19000 });
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nS3_PORT=19000\nBIND_ADDRESS=\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=18888\nS3_PORT=19000\nBIND_ADDRESS=\n`);
         // composeUp runs in the install dir with the ports in env.
         const [composePath, execOpts] = composeUp.mock.calls[0];
         expect(composePath).toBe('/tmp/xns/docker-compose.yml');
@@ -434,7 +473,7 @@ describe('install_relayer', () => {
         const result = await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' });
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
         const [, execOpts] = composeUp.mock.calls[0];
         expect(execOpts.env.BIND_ADDRESS).toBe('127.0.0.1:');
         expect(parsed.binding.bind_address).toBe('127.0.0.1');
@@ -536,7 +575,7 @@ describe('install_relayer', () => {
 
     test('channel path whose compose references BIND_ADDRESS → source channel, bind_address_applied says yes', async () => {
         const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888\n' });
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888\n', [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
         const handler = registerWithOptions({
             execFile,
             fs,
@@ -588,13 +627,13 @@ describe('install_relayer', () => {
         expect(parsed.reason).toMatch(/bind_address/);
         expect(parsed.binding.bind_address_applied).toMatch(/^yes/);
         expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
         expect(composeUp.mock.calls[0][1].env.BIND_ADDRESS).toBe('127.0.0.1:');
     });
 
     test('no bind_address and the channel compose lacks BIND_ADDRESS → the channel compose stays', async () => {
         const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n' });
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n', [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
         const handler = registerWithOptions({
             execFile,
             fs,
@@ -788,24 +827,47 @@ describe('install_relayer', () => {
 
     test('fallback template keeps service parity with the channel bundle', () => {
         const template = readTemplate();
-        // Full bundle: relayer + the monitoring stack that powers the UI's
-        // Monitoring section. A missing service here = a degraded install.
-        for (const service of ['xns:', 'prometheus:', 'grafana:', 'node-exporter:']) {
+        // Full bundle: relayer, monitoring and alert delivery, and the audit-log
+        // pipeline. A missing service here = a degraded install.
+        for (const service of ['xns:', 'prometheus:', 'alertmanager:', 'grafana:', 'node-exporter:', 'loki:', 'alloy:', 'audit-logrotate:']) {
             expect(template).toMatch(new RegExp(`^\\s{2}${service}\\s*$`, 'm'));
         }
         // privileged matches the channel compose (samba / fuse / disk management).
         expect(template).toMatch(/^\s*privileged:\s*true/m);
     });
 
-    // AC-25 (TP-31, M-49): the fallback pulls the release channel in all three
+    // The sidecars are useless unless the relayer writes where they read.
+    test('fallback template wires the relayer to the audit-log sidecars', () => {
+        const template = readTemplate();
+        const relayer = template.slice(template.indexOf('\n  xns:'), template.indexOf('\n  loki:'));
+        expect(relayer).toContain('export S3GW_AUDIT_NDJSON_PATH=/var/log/relayer-audit/audit.ndjson');
+        expect(relayer).toMatch(/^\s*-\s*audit_logs:\/var\/log\/relayer-audit\s*(#.*)?$/m);
+        expect(relayer).toMatch(/^\s*-\s*relayer_logs:\/relayer\/log\s*(#.*)?$/m);
+        expect(relayer).not.toMatch(/^\s*depends_on:/m);
+    });
+
+    // COMPOSE_PROFILES in the fallback .env names this profile; a sidecar without
+    // it starts in every audit mode, a renamed one never starts.
+    test('fallback template gates exactly the audit-log sidecars on the loki profile', () => {
+        const serviceBlock = (name) => readTemplate().match(new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)*)`, 'm'))[1];
+
+        for (const name of ['loki', 'alloy', 'audit-logrotate']) {
+            expect(serviceBlock(name)).toMatch(/^\s*profiles:\s*\["loki"\]\s*$/m);
+        }
+        for (const name of ['xns', 'prometheus', 'alertmanager', 'grafana', 'node-exporter']) {
+            expect(serviceBlock(name)).not.toMatch(/^\s*profiles:/m);
+        }
+    });
+
+    // The fallback pulls the release channel in all seven
     // releases-registry images, and names no other channel anywhere.
     test('fallback template pins the releases-registry release channel', () => {
         const template = readTemplate();
 
-        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/xns-relayer:release-latest\s*(#.*)?$/m);
-        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/relayer-prometheus:release-latest\s*(#.*)?$/m);
-        expect(template).toMatch(/^\s*image:\s*releases\.xns\.tech\/relayer-grafana:release-latest\s*(#.*)?$/m);
-        expect(template.match(/:release-latest/g)).toHaveLength(3);
+        for (const image of ['xns-relayer', 'relayer-prometheus', 'relayer-alertmanager', 'relayer-grafana', 'relayer-loki', 'relayer-alloy', 'relayer-audit-logrotate']) {
+            expect(template).toMatch(new RegExp(`^\\s*image:\\s*releases\\.xns\\.tech/${image}:release-latest\\s*(#.*)?$`, 'm'));
+        }
+        expect(template.match(/:release-latest/g)).toHaveLength(7);
         expect(template).not.toContain('beta-latest');
         expect(template).not.toMatch(/^\s*image:.*:stable/m);
     });
@@ -905,7 +967,7 @@ describe('install_relayer', () => {
         const template = readTemplate();
 
         const imageLines = template.split('\n').filter((l) => /^\s*image:/.test(l));
-        expect(imageLines).toHaveLength(4);
+        expect(imageLines).toHaveLength(8);
         for (const line of imageLines) {
             expect(line).not.toContain('scprime/');
             expect(line).not.toContain('docker.io');
