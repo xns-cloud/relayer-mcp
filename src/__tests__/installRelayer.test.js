@@ -279,6 +279,27 @@ describe('install_relayer', () => {
             expect(composeUp).toHaveBeenCalledTimes(1);
         });
 
+        // Compose lets the process environment beat .env, so an inherited value would
+        // leave the audit sink on with no sidecars to tail and rotate it.
+        test.each([
+            ['the channel path', {}, undefined],
+            ['the fallback path', { failing: [CHANNEL_COMPOSE_URL] }, undefined],
+            ['the compose_url path, which writes no .env', { compose_url: 'https://example.com/c.yml' }, 'other'],
+        ])('inherited COMPOSE_PROFILES on %s', async (_label, { failing, compose_url }, expected) => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const inherited = process.env.COMPOSE_PROFILES;
+            process.env.COMPOSE_PROFILES = 'other';
+            try {
+                const { handler, composeUp } = build({ failing });
+                await handler({ install_path: '/tmp/xns', compose_url });
+                expect(composeUp.mock.calls[0][1].env.COMPOSE_PROFILES).toBe(expected);
+            } finally {
+                if (inherited === undefined) delete process.env.COMPOSE_PROFILES;
+                else process.env.COMPOSE_PROFILES = inherited;
+                errSpy.mockRestore();
+            }
+        });
+
         test('a downloaded .env that cannot be read → own template and own .env', async () => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const fs = fakeFs();

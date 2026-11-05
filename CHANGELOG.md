@@ -9,7 +9,8 @@
   and no audit-log pipeline. The template adds them, wires the relayer's audit sink and log volumes
   to them, and passes the alert threshold settings to Prometheus. The `.env` written on fallback
   now carries `RELAYER_AUDIT_MODE=loki` and the `COMPOSE_PROFILES` line that starts the audit
-  services; set `RELAYER_AUDIT_MODE=off` there to opt out.
+  services; set `RELAYER_AUDIT_MODE=off` there to opt out. A `COMPOSE_PROFILES` inherited by the
+  MCP process no longer overrides that switch on the channel or fallback install.
 
 ## [0.12.2] — 2026-11-03
 

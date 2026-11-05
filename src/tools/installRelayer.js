@@ -355,9 +355,14 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // Run docker compose up -d. cwd + env so ${UI_PORT}/${S3_PORT}
                 // interpolation and the ./data bind resolve in the install dir,
                 // regardless of where the MCP process was launched.
+                // The .env written above owns COMPOSE_PROFILES, aliased to RELAYER_AUDIT_MODE.
+                // Compose lets the process environment beat .env, so an inherited value
+                // would leave the audit sink on with no sidecars to tail and rotate it.
+                // compose_url writes no .env, so there the caller's value stands.
+                const { COMPOSE_PROFILES: _inheritedProfiles, ...withoutProfiles } = process.env;
                 await docker.composeUp(composePath, {
                     cwd: install_path,
-                    env: { ...process.env, UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bindPrefix },
+                    env: { ...(compose_url ? process.env : withoutProfiles), UI_PORT: String(ui_port), S3_PORT: String(s3_port), BIND_ADDRESS: bindPrefix },
                 });
 
                 return {
