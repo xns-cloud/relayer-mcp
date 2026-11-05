@@ -331,7 +331,13 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         // curl creates the file with the default umask; close it before
                         // any later step can throw and leave it world-readable.
                         await fsp.chmod(envPath, ENV_FILE_MODE);
-                        envContents = withPortLines(await fsp.readFile(envPath, 'utf8'), portLines);
+                        const fetchedEnv = await fsp.readFile(envPath, 'utf8');
+                        // The publisher always ships this line, so its absence means a
+                        // truncated or empty download. Without it no audit sidecar starts.
+                        if (!/^COMPOSE_PROFILES=/m.test(fetchedEnv)) {
+                            throw new Error('release .env does not set COMPOSE_PROFILES');
+                        }
+                        envContents = withPortLines(fetchedEnv, portLines);
                         source = 'channel';
                     } catch (fetchErr) {
                         const template = await fsp.readFile(TEMPLATE_PATH, 'utf8');

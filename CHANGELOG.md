@@ -10,7 +10,8 @@
   to them, and passes the alert threshold settings to Prometheus. The `.env` written on fallback
   now carries `RELAYER_AUDIT_MODE=loki` and the `COMPOSE_PROFILES` line that starts the audit
   services; set `RELAYER_AUDIT_MODE=off` there to opt out. A `COMPOSE_PROFILES` inherited by the
-  MCP process no longer overrides that switch on the channel or fallback install.
+  MCP process no longer overrides that switch on the channel or fallback install, and a fetched
+  release `.env` with no `COMPOSE_PROFILES` line now counts as a failed fetch.
 
 ## [0.12.2] — 2026-11-03
 

@@ -123,7 +123,10 @@ describe('install_relayer', () => {
     // a .env path reads what curl wrote there (see curlWritingInto) or, when
     // nothing was written, `fetchedEnv` — the release .env curl "downloaded".
     // Any other path is ENOENT.
-    function fakeFs({ fetchedEnv = '' } = {}) {
+    // The publisher refuses to ship a release .env without this line.
+    const RELEASE_PROFILE_LINE = 'COMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
+
+    function fakeFs({ fetchedEnv = RELEASE_PROFILE_LINE } = {}) {
         const writes = {};
         return {
             writes,
@@ -184,7 +187,7 @@ describe('install_relayer', () => {
         expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH, expect.anything());
         expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH);
         // .env written with default ports.
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n`);
     });
 
     // --- E-A9 AC-25 (TP-31): release compose + release .env, fetched each run ---
@@ -277,6 +280,20 @@ describe('install_relayer', () => {
             expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
             expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
             expect(composeUp).toHaveBeenCalledTimes(1);
+        });
+
+        test('a fetched .env without COMPOSE_PROFILES → own template and own .env', async () => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            const { handler, fs } = build({
+                bodies: { [CHANNEL_COMPOSE_URL]: 'RELEASE_COMPOSE\n', [CHANNEL_ENV_URL]: '# XNS Relayer release channel\n' },
+            });
+
+            const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
+            errSpy.mockRestore();
+
+            expect(parsed.source).toBe('bundled-fallback');
+            expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
+            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
         });
 
         // Compose lets the process environment beat .env, so an inherited value would
@@ -433,7 +450,7 @@ describe('install_relayer', () => {
 
         await handler({ install_path: '/tmp/xns', ui_port: 18888, s3_port: 19000 });
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('UI_PORT=18888\nS3_PORT=19000\nBIND_ADDRESS=\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=18888\nS3_PORT=19000\nBIND_ADDRESS=\n`);
         // composeUp runs in the install dir with the ports in env.
         const [composePath, execOpts] = composeUp.mock.calls[0];
         expect(composePath).toBe('/tmp/xns/docker-compose.yml');
@@ -558,7 +575,7 @@ describe('install_relayer', () => {
 
     test('channel path whose compose references BIND_ADDRESS → source channel, bind_address_applied says yes', async () => {
         const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888\n' });
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - ${BIND_ADDRESS:-}${UI_PORT:-8888}:8888\n', [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
         const handler = registerWithOptions({
             execFile,
             fs,
@@ -616,7 +633,7 @@ describe('install_relayer', () => {
 
     test('no bind_address and the channel compose lacks BIND_ADDRESS → the channel compose stays', async () => {
         const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n' });
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n', [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
         const handler = registerWithOptions({
             execFile,
             fs,
