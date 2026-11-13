@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.13.0] — 2026-11-12
+
+### Changed
+
+- **Node.js 24 is now the minimum.** The startup check, `engines`, the bundle runtime and CI all
+  require Node 24, because Node 20 no longer gets security fixes. On an older Node the server exits
+  with the `nvm install 24` steps instead of starting.
+- **`install_relayer` stops instead of falling back to a bundled compose.** The default install
+  downloads the release compose and `.env` into a temporary folder and checks them there before it
+  creates or writes the install folder. When a download fails, the `.env` has no
+  `COMPOSE_PROFILES` line, a `bind_address` is set that the release compose does not use in its
+  ports, or the temporary folder cannot be created or read, it stops with a message that names the
+  cause and what to do, and the install folder is left as it was. The success reply no longer
+  carries `reason` or `note`, and `source` is `channel` or `compose_url`.
+- **Product words.** The package, registry and bundle descriptions say "S3-compatible cloud object
+  storage from XNS, set up and managed by your AI assistant." The bundle is named XNS Cloud
+  Storage, and the `self-hosted` keyword is removed.
+- **Tool titles are plain words**, such as "Install the Relayer". Tool names and parameters are
+  unchanged.
+- **The README opens with the `xns-storage` Claude plugin** and its two install commands, and the
+  Claude Code block says to use the plugin or the by-hand registration, not both.
+
+### Added
+
+- **Server instructions.** The `initialize` reply carries instructions: what XNS storage is and
+  costs, what the tools do, that `check_prerequisites` comes first, and where Claude users find the
+  plugin.
+
+### Removed
+
+- **The bundled compose template** (`src/templates/docker-compose.yml`), from the npm package and
+  the `.mcpb` bundle.
+
+### Fixed
+
+- **The privacy notice names Docker Hub.** An install pulls `prom/node-exporter` from Docker Hub;
+  PRIVACY.md and the README privacy summary now list it beside the three XNS services.
+
 ## [0.12.3] — 2026-11-05
 
 ### Fixed

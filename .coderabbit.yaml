@@ -107,7 +107,7 @@ reviews:
         Repo conventions:
         - CommonJS only (require/module.exports). No ESM, no TypeScript.
           Do not suggest migrating module systems.
-        - Node >= 20 floor (version guard in src/index.js + CI node:20).
+        - Node >= 24 floor (version guard in src/index.js + CI node:24).
         - Single package.json — versions STAMP in the shipping MR: bump
           package.json AND add a CHANGELOG.md entry in the same MR.
           CHANGELOG.md keeps its top-level "# Changelog" H1 and blank
@@ -179,7 +179,7 @@ reviews:
         vX.Y.Z tags, gated on PKG_VERSION matching CI_COMMIT_TAG, with
         prepublishOnly rerunning tests — flag changes that weaken the
         version-match gate, skip tests before publish, or let agents
-        tag/publish. Test job runs on node:20 (the runtime floor); do not
+        tag/publish. Test job runs on node:24 (the runtime floor); do not
         suggest lowering it.
 
 knowledge_base:

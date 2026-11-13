@@ -35,18 +35,18 @@ The script installs Docker Engine and the compose plugin, adds you to the `docke
 
 Without the script, the MCP needs:
 
-- **Node.js 20+** — see [Installing Node.js 20](#installing-nodejs-20) if your distro ships an older version.
+- **Node.js 24+** — see [Installing Node.js 24](#installing-nodejs-24) if your distro ships an older version.
 - **Docker Engine** — on the same machine that runs the MCP. `install_relayer` refuses when the Docker daemon is on another machine (see [Remote Docker hosts](#remote-docker-hosts)).
 
-### Installing Node.js 20
+### Installing Node.js 24
 
-Ubuntu's default apt repository only ships Node 18, which is too old. Two ways to get Node 20:
+Ubuntu's default apt repository only ships Node 18, which is too old. Two ways to get Node 24:
 
 **nvm** (recommended — no root required):
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-\. "$HOME/.nvm/nvm.sh" && nvm install 20
+\. "$HOME/.nvm/nvm.sh" && nvm install 24
 ```
 
 **NodeSource** (system-wide): follow <https://github.com/nodesource/distributions#installation-instructions>.
@@ -57,7 +57,7 @@ If you start the MCP on an older Node, it exits immediately with this same guida
 
 The Relayer runs as a Docker container and persists its data in a Docker volume. If the MCP is running inside an ephemeral environment (a sandbox container, a CI runner, or a throwaway VM), any installation performed there will be lost when that environment exits. `check_prerequisites` detects this automatically and reports it as a warning with a concrete next step — it never blocks the flow.
 
-**If your environment is ephemeral**, run the MCP on a persistent Docker host instead (install Node.js 20 there and point your MCP client at it). Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
+**If your environment is ephemeral**, run the MCP on a persistent Docker host instead (install Node.js 24 there and point your MCP client at it). Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
 
 ## Install
 
@@ -169,7 +169,7 @@ then run `install_relayer` again. To keep the existing deployment, skip `install
 
 `install_relayer` writes `docker-compose.yml` and `.env` on the machine running the MCP, then runs `docker compose up` against whichever daemon the Docker CLI points at. When that daemon is on another machine (`DOCKER_HOST=ssh://…` or `tcp://…`, or an SSH Docker context), it refuses before writing or starting anything, and the error names the Docker host.
 
-To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed at it) and run `install_relayer` again. Or unset `DOCKER_HOST` / switch to the default Docker context to install on the machine running the MCP.
+To install, run the MCP on the Docker host (Node.js 24 there, MCP client pointed at it) and run `install_relayer` again. Or unset `DOCKER_HOST` / switch to the default Docker context to install on the machine running the MCP.
 
 `check_prerequisites` reports the same condition as a failed `install_file_location` check. Health checks still work against a remote daemon: the MCP honors `DOCKER_HOST` and the active Docker context, `check_relayer_health` and `verify_storage` probe the remote host's ports 8888/9000 instead of localhost, and `check_prerequisites` skips the local port probes. `check_relayer_health` accepts a `host` override, and `verify_storage` an `endpoint` override, for setups the auto-detection can't see (port forwards, NAT).
 
@@ -177,7 +177,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| MCP exits with "requires Node.js 20 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 20](#installing-nodejs-20) |
+| MCP exits with "requires Node.js 24 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 24](#installing-nodejs-24) |
 | `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
 | Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same). After a failed `install_relayer`, remove the leftover container with `docker rm -f xns-relayer` before retrying |
 | Port 9443 already in use | Another service on the Docker host holds the S3 HTTPS port the release compose publishes | Stop that service (`sudo ss -ltnp 'sport = :9443'` names it); `ui_port` / `s3_port` do not move 9443. Then `docker rm -f xns-relayer` and retry |
@@ -203,7 +203,7 @@ npm install
 npm test
 ```
 
-Requires Node.js 20+.
+Requires Node.js 24+.
 
 ## Note on `relayer-native` client
 

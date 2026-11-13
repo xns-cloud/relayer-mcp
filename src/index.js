@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Node 20+ guard — runs BEFORE the SDK loads so users on older runtimes get a
+// Node 24+ guard — runs BEFORE the SDK loads so users on older runtimes get a
 // remediation message instead of a SyntaxError from a dependency.
 const { checkNodeVersion } = require('./lib/nodeVersion');
 const nodeCheck = checkNodeVersion(process.versions.node);

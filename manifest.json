@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "relayer-mcp",
   "display_name": "XNS Cloud Storage",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "description": "S3-compatible cloud object storage from XNS, set up and managed by your AI assistant.",
   "long_description": "XNS is S3-compatible cloud object storage. $6.00 per TB per month. $0 egress, uncapped. 30-day minimum retention, no early-delete fee. You reach it through the Relayer, a small gateway that runs on your own machine, so the S3 endpoint and keys stay on hardware you control. This extension gives Claude 15 tools that walk the whole lifecycle — check prerequisites, register an XNS account, install the Relayer via Docker Compose, claim it to your account, choose which hosts store your data (VPD), verify an S3 round trip, provision CLI credentials, then handle day-2 work: settings, service restarts, and configuration backups.\n\nThe server runs locally on your machine and talks to your Relayer over loopback or your private network only — connections to public addresses are refused by design. Sign-in happens in your browser against XNS's identity service; the agent never sees your password.",
   "author": {
@@ -108,7 +108,7 @@
       "linux"
     ],
     "runtimes": {
-      "node": ">=20.0.0"
+      "node": ">=24.0.0"
     }
   }
 }
