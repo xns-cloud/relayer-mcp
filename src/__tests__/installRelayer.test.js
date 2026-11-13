@@ -596,7 +596,7 @@ describe('install_relayer', () => {
     test.each([
         ['block list with comments in it and after each item', 'services:\n  xns:\n    ports:\n      # BIND_ADDRESS picks the interface\n      - "${BIND_ADDRESS:-}${UI_PORT:-8888}:8888"   # web dashboard\n      - "${BIND_ADDRESS:-}${S3_PORT:-9000}:9000"   # S3 API\n    environment:\n      - NODE_ENV=production\n  grafana:\n    image: grafana/grafana\n'],
         ['flow list', 'services:\n  xns:\n    ports: ["${BIND_ADDRESS:-}8888:8888", "${BIND_ADDRESS:-}9000:9000"]\n'],
-        ['long syntax with host_ip', 'services:\n  xns:\n    ports:\n      - target: 8888\n        published: 8888\n        host_ip: ${BIND_ADDRESS:-0.0.0.0}\n'],
+        ['unquoted short syntax', 'services:\n  xns:\n    ports:\n      - ${BIND_ADDRESS:-}8888:8888\n'],
         ['items at the key indent', 'services:\n  xns:\n    ports:\n    - "${BIND_ADDRESS:-}8888:8888"\n    image: x\n'],
     ])('bind_address set and every published port uses BIND_ADDRESS (%s) → installs', async (_label, compose) => {
         const fs = fakeFs();

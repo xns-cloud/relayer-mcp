@@ -174,6 +174,7 @@ describe('install_relayer stops', () => {
         ['on one flow-list port of two', 'services:\n  xns:\n    ports: ["${BIND_ADDRESS:-}8888:8888", "9000:9000"]\n'],
         ['long syntax with no host_ip', 'services:\n  xns:\n    ports:\n      - target: 8888\n        published: 8888\n    environment:\n      - X=${BIND_ADDRESS}\n'],
         ['nowhere, no ports at all', 'services:\n  xns:\n    image: x\n'],
+        ['only as a long-syntax host_ip, which cannot take the trailing colon', 'services:\n  xns:\n    ports:\n      - target: 8888\n        published: 8888\n        host_ip: ${BIND_ADDRESS:-0.0.0.0}\n'],
         ['on one service while another takes its ports from a YAML alias', 'x-ports: &open\n  - "3000:3000"\nservices:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}8888:8888"\n  grafana:\n    ports: *open\n'],
     ])('bind_address set and the release compose uses BIND_ADDRESS %s → stops before the .env download', async (_label, compose) => {
         const ctx = build({ bodies: { [CHANNEL_COMPOSE_URL]: compose, [CHANNEL_ENV_URL]: GOOD_ENV } });

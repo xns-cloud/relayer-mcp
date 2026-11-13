@@ -17,11 +17,12 @@ function stripComment(line) {
 }
 
 /**
- * Whether every port a compose file publishes uses ${BIND_ADDRESS...}, so a
- * bind_address narrows all of them. Reads each `ports:` block, block or flow
- * form, long syntax by its whole item (host_ip). A port without it, or a file
- * with no published port at all, gives false: the caller stops rather than
- * publish on every interface. Comments and other keys (environment) never count.
+ * Whether every port a compose file publishes uses ${BIND_ADDRESS...} in the
+ * short syntax, so a bind_address narrows all of them. Reads each `ports:`
+ * block, block or flow form. A port without it, a long-syntax item (the .env
+ * value carries a trailing colon, which is no valid host_ip), or a file with no
+ * published port at all gives false: the caller stops before writing anything.
+ * Comments and other keys (environment) never count.
  *
  * @param {string} text - compose file text
  * @returns {boolean}
@@ -62,8 +63,11 @@ function everyPortUsesBindAddress(text) {
             i = j;
         }
     }
-    return items.length > 0
-        && items.every((item) => USES_BIND_ADDRESS.test(typeof item === 'string' ? item : item.text));
+    const LONG_SYNTAX = /^[ \t]*-[ \t]+[A-Za-z_]+:(\s|$)/;
+    return items.length > 0 && items.every((item) => {
+        const text = typeof item === 'string' ? item : item.text;
+        return USES_BIND_ADDRESS.test(text) && (typeof item === 'string' || !LONG_SYNTAX.test(text));
+    });
 }
 
 /** What the response says about bind_address, per compose source. */
