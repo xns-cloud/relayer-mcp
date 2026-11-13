@@ -31,7 +31,7 @@ On Ubuntu 24.04 or Debian 12, one command sets up everything:
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 20 when Node is missing or older and registers this MCP. Log out and back in afterwards so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
+The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 24 when Node is missing or older and registers this MCP. Log out and back in afterwards so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
 
 Without the script, the MCP needs:
 
