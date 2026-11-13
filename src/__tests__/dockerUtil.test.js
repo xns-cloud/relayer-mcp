@@ -301,25 +301,44 @@ describe('dockerUtil.containerProject', () => {
     });
 });
 
-describe('dockerUtil.isRelayerClaimed', () => {
-    test('token file present → true, checked inside the named container', async () => {
-        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
-        const util = createDockerUtil({ execFile, env: {} });
+describe('dockerUtil.hasMuseToken', () => {
+    const answering = (stdout, stderr = '') => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, stdout, stderr));
+        return { execFile, util: createDockerUtil({ execFile, env: {} }) };
+    };
 
-        expect(await util.isRelayerClaimed('xns-relayer')).toBe(true);
-        expect(execFile.mock.calls[0][1]).toEqual(['exec', 'xns-relayer', 'test', '-s', '/relayer/conf/hostioauth']);
+    test('token present → true; checked in the named container with a 10 s limit', async () => {
+        const { execFile, util } = answering('present\n');
+
+        expect(await util.hasMuseToken('xns-relayer')).toBe(true);
+        const [cmd, args, opts] = execFile.mock.calls[0];
+        expect(cmd).toBe('docker');
+        expect(args.slice(0, 4)).toEqual(['exec', 'xns-relayer', 'sh', '-c']);
+        expect(args[4]).toContain('[ -s /relayer/conf/hostioauth ]');
+        expect(opts.timeout).toBe(10000);
     });
 
-    test('token file missing or empty (test exits 1, no output) → false', async () => {
-        expect(await rejectingUtil('').isRelayerClaimed('xns-relayer')).toBe(false);
+    test('token missing or empty → false', async () => {
+        expect(await answering('absent\n').util.hasMuseToken('xns-relayer')).toBe(false);
+    });
+
+    test('a Docker CLI warning on stderr does not change the answer', async () => {
+        const warning = 'WARNING: DOCKER_HOST environment variable overrides the active context.';
+        expect(await answering('absent\n', warning).util.hasMuseToken('xns-relayer')).toBe(false);
+        expect(await answering('present\n', warning).util.hasMuseToken('xns-relayer')).toBe(true);
+    });
+
+    test('unexpected output → null', async () => {
+        expect(await answering('').util.hasMuseToken('xns-relayer')).toBeNull();
+        expect(await answering('sh: not found\n').util.hasMuseToken('xns-relayer')).toBeNull();
     });
 
     test.each([
         ['no such container', 'Error response from daemon: No such container: xns-relayer', 1],
         ['container stopped', 'Error response from daemon: container abc is not running', 1],
         ['docker unreachable', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.', 1],
-        ['test binary missing', 'OCI runtime exec failed: exec: "test": executable file not found', 126],
+        ['timed out (killed, no output)', '', null],
     ])('%s → null', async (_label, stderr, code) => {
-        expect(await rejectingUtil(stderr, { code }).isRelayerClaimed('xns-relayer')).toBeNull();
+        expect(await rejectingUtil(stderr, { code }).hasMuseToken('xns-relayer')).toBeNull();
     });
 });

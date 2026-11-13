@@ -13,7 +13,7 @@ describe('check_relayer_health', () => {
         return {
             getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
             isContainerRunning: jest.fn().mockResolvedValue(true),
-            isRelayerClaimed: jest.fn().mockResolvedValue(true),
+            hasMuseToken: jest.fn().mockResolvedValue(true),
         };
     }
 
@@ -149,25 +149,25 @@ describe('check_relayer_health', () => {
     // --- Before the claim, the image keeps the S3 gateway stopped ---
     test('unclaimed Relayer, S3 down → ready for claim, not unhealthy', async () => {
         const docker = localDockerUtil();
-        docker.isRelayerClaimed.mockResolvedValue(false);
+        docker.hasMuseToken.mockResolvedValue(false);
         const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
 
         const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
 
-        expect(docker.isRelayerClaimed).toHaveBeenCalledWith('xns-relayer');
+        expect(docker.hasMuseToken).toHaveBeenCalledWith('xns-relayer');
         expect(parsed.success).toBe(true);
         expect(parsed.healthy).toBe(true);
         expect(parsed.awaiting_claim).toBe(true);
         expect(parsed.components.s3.healthy).toBeNull();
-        expect(parsed.components.s3.note).toContain('claimed');
+        expect(parsed.components.s3.note).toContain('signs in');
         expect(parsed.unhealthy).toBeUndefined();
-        expect(parsed.message).toContain('waiting to be claimed');
         expect(parsed.message).toContain('start_claim');
+        expect(parsed.message).toContain('sign in at http://localhost:8888');
     });
 
     test('unclaimed Relayer in poll mode → returns at once, no timeout', async () => {
         const docker = localDockerUtil();
-        docker.isRelayerClaimed.mockResolvedValue(false);
+        docker.hasMuseToken.mockResolvedValue(false);
         const sleep = jest.fn().mockResolvedValue(undefined);
         const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker, sleep });
 
@@ -184,7 +184,7 @@ describe('check_relayer_health', () => {
         ['claim state unknown', null],
     ])('%s Relayer, S3 down → unhealthy, names the S3 gateway', async (_label, claimed) => {
         const docker = localDockerUtil();
-        docker.isRelayerClaimed.mockResolvedValue(claimed);
+        docker.hasMuseToken.mockResolvedValue(claimed);
         const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
 
         const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
@@ -197,7 +197,7 @@ describe('check_relayer_health', () => {
 
     test('UI down → claim state not consulted, UI and S3 named', async () => {
         const docker = localDockerUtil();
-        docker.isRelayerClaimed.mockResolvedValue(false);
+        docker.hasMuseToken.mockResolvedValue(false);
         const handler = registerWithOptions({
             dockerUtil: docker,
             httpClient: { get: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')), post: jest.fn() },
@@ -205,9 +205,47 @@ describe('check_relayer_health', () => {
 
         const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
 
-        expect(docker.isRelayerClaimed).not.toHaveBeenCalled();
+        expect(docker.hasMuseToken).not.toHaveBeenCalled();
         expect(parsed.success).toBe(false);
         expect(parsed.unhealthy).toEqual(['UI (localhost:8888)', 'S3 gateway (localhost:9000)']);
+    });
+
+    test('S3 up → no claim prompt in either mode', async () => {
+        for (const poll of [false, true]) {
+            const handler = registerWithOptions({
+                httpClient: { get: jest.fn().mockResolvedValue({ status: 200 }), post: jest.fn() },
+            });
+            const parsed = JSON.parse((await handler({ poll })).content[0].text);
+            expect(parsed.success).toBe(true);
+            expect(parsed.message).not.toMatch(/start_claim|Ready for claim/);
+        }
+    });
+
+    test('host override names another machine → token not consulted, S3 named', async () => {
+        const docker = localDockerUtil();
+        docker.hasMuseToken.mockResolvedValue(false);
+        const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
+
+        const parsed = JSON.parse((await handler({ poll: false, host: 'other-box.lan' })).content[0].text);
+
+        expect(docker.hasMuseToken).not.toHaveBeenCalled();
+        expect(parsed.success).toBe(false);
+        expect(parsed.unhealthy).toEqual(['S3 gateway (other-box.lan:9000)']);
+    });
+
+    test.each([
+        ['loopback alias of the local daemon', '127.0.0.1', { remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }],
+        ['the remote daemon host itself', 'docker-box.lan', { remote: true, host: 'docker-box.lan', endpoint: 'ssh://u@docker-box.lan' }],
+    ])('host override is %s → token consulted', async (_label, host, daemon) => {
+        const docker = localDockerUtil();
+        docker.getDockerHost.mockResolvedValue(daemon);
+        docker.hasMuseToken.mockResolvedValue(false);
+        const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
+
+        const parsed = JSON.parse((await handler({ poll: false, host })).content[0].text);
+
+        expect(docker.hasMuseToken).toHaveBeenCalledWith('xns-relayer');
+        expect(parsed.awaiting_claim).toBe(true);
     });
 
     test('S3 up → claim state not consulted', async () => {
@@ -219,7 +257,7 @@ describe('check_relayer_health', () => {
 
         await handler({ poll: false });
 
-        expect(docker.isRelayerClaimed).not.toHaveBeenCalled();
+        expect(docker.hasMuseToken).not.toHaveBeenCalled();
     });
 
     // --- Remote Docker host (homelab feedback: Claude Code on a jump host) ---

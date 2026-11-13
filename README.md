@@ -122,7 +122,7 @@ No separate install step required — npx fetches the package on demand.
 | 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
 | 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. If the release files cannot be downloaded or used it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
-| 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
+| 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Before the owner claims the Relayer and signs in, the S3 gateway is not started yet, so the tool returns `awaiting_claim: true` once the UI answers. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration, plus the currently applied data/parity selection (read-back with an `is_default` flag). |
@@ -141,7 +141,7 @@ No separate install step required — npx fetches the package on demand.
 3. User clicks email verification link; agent polls (Tool 3).
 4. Agent installs and starts Relayer containers (Tool 4) — it writes the
    released compose + `.env` itself; the user is never asked for a compose URL.
-5. Agent polls health until UI + S3 are up (Tool 5).
+5. Agent polls health until the UI is up (Tool 5); the S3 gateway starts after step 7.
 6. Agent initiates claim; user opens claim URL in browser (Tools 6 + 7).
 7. Agent signs in via OIDC to configure host preferences (Tools 8 + 9).
 8. Agent verifies S3 storage is working (Tool 10).

@@ -6,6 +6,9 @@ const { execFile: nodeExecFile } = require('child_process');
 // Every loopback spelling a Docker endpoint can carry: localhost, the whole
 // 127/8 block, the 0.0.0.0 / [::] wildcards, [::1], and IPv4-mapped 127/8
 // ([::ffff:127.0.0.1], which URL normalizes to [::ffff:7f00:1]).
+// Where the Relayer image keeps the Muse token it starts its storage services with.
+const MUSE_TOKEN_PATH = '/relayer/conf/hostioauth';
+
 function isLoopbackHost(name) {
     if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
     if (net.isIPv4(name)) return name.startsWith('127.');
@@ -235,23 +238,32 @@ function createDockerUtil(options = {}) {
     }
 
     /**
-     * Whether the Relayer in a container has been claimed. The image starts
-     * HostIO, the gateway and the S3 gateway only once claiming writes the
-     * Muse token to /relayer/conf/hostioauth, so a missing or empty file means
-     * those services are waiting for the claim, not failing.
+     * Whether the Relayer in a container holds its Muse token. The image starts
+     * HostIO, the gateway and the S3 gateway only once the owner has claimed
+     * the Relayer and signed in to its web UI, which writes the token to
+     * /relayer/conf/hostioauth; until then those services are waiting, not
+     * failing.
+     *
+     * The answer comes from stdout, so a Docker CLI warning on stderr does
+     * not change it.
      *
      * @param {string} name - Exact container name
-     * @returns {Promise<boolean|null>} true claimed, false not yet claimed,
-     *   null unknown (no such container, not running, docker unreachable)
+     * @returns {Promise<boolean|null>} true token present, false not yet,
+     *   null unknown (no such container, not running, docker unreachable,
+     *   timed out)
      */
-    async function isRelayerClaimed(name) {
+    async function hasMuseToken(name) {
         try {
-            await docker(['exec', String(name), 'test', '-s', '/relayer/conf/hostioauth'], { timeout: 10000 });
-            return true;
-        } catch (err) {
-            // `test` exits 1 without output when the file is missing or empty;
-            // docker's own failures exit non-zero with an error message.
-            return err.code === 1 && !String(err.stderr || '').trim() ? false : null;
+            const { stdout } = await docker(
+                ['exec', String(name), 'sh', '-c', `if [ -s ${MUSE_TOKEN_PATH} ]; then echo present; else echo absent; fi`],
+                { timeout: 10000 },
+            );
+            const answer = stdout.trim();
+            if (answer === 'present') return true;
+            if (answer === 'absent') return false;
+            return null;
+        } catch {
+            return null;
         }
     }
 
@@ -280,7 +292,7 @@ function createDockerUtil(options = {}) {
         }
     }
 
-    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, containerProject, isRelayerClaimed, getDockerHost };
+    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, containerProject, hasMuseToken, getDockerHost };
 }
 
 module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint, classifyDockerFailure };

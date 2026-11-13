@@ -292,7 +292,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                         name: 'docker',
                         passed: false,
                         detail: 'Docker is not installed on this machine',
-                        remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.`,
+                        remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 24) rather than pointing at it remotely.`,
                     });
                 } else if (remote) {
                     // DECISION: a failing `docker info` against an ssh:// or tcp://

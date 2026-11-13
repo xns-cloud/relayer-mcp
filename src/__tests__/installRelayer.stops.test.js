@@ -74,7 +74,7 @@ function build({
         if (cmd !== 'curl') return cb(null, '', '');
         const url = args[args.length - 1];
         const out = args[args.indexOf('-o') + 1];
-        curlCalls.push({ url, out });
+        curlCalls.push({ url, out, timeout: opts && opts.timeout });
         if (failing.includes(url)) return cb(new Error(`curl: (22) The requested URL returned error: 404 ${url}`));
         files[out] = bodies[url] ?? '';
         return cb(null, '', '');
@@ -123,6 +123,13 @@ describe('install_relayer stops', () => {
         expect(result.isError).toBe(true);
         expect(parsed).toEqual({ success: false, error: downloadFailed('releases.xns.tech', 'docker-compose.yml') });
         expect(ctx.curlCalls).toHaveLength(1);
+    });
+
+    test('each release download has a 60 s limit, so a stalled download stops instead of hanging', async () => {
+        const ctx = build({ failing: [CHANNEL_ENV_URL] });
+        await stop(ctx);
+
+        expect(ctx.curlCalls.map((c) => c.timeout)).toEqual([60000, 60000]);
     });
 
     test('the .env download fails → stops naming .env and the host', async () => {

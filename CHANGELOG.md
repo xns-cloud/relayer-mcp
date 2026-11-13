@@ -38,9 +38,10 @@
 - **The privacy notice names Docker Hub.** An install pulls `prom/node-exporter` from Docker Hub;
   PRIVACY.md and the README privacy summary now list it beside the three XNS services.
 - **`check_relayer_health` no longer fails a fresh install.** The Relayer starts its S3 gateway and
-  HostIO only after it is claimed, so a new install used to poll for 300 seconds and report the S3
-  gateway unhealthy. When the UI answers and the container has no Muse token yet, the tool now
-  returns `success: true` with `awaiting_claim: true` and points to `start_claim`.
+  HostIO only after the owner claims it and signs in, so a new install used to poll for 300 seconds
+  and report the S3 gateway unhealthy. When the UI answers and the container has no Muse token yet,
+  the tool now returns `success: true` with `awaiting_claim: true` and points to `start_claim`, or to
+  signing in when the claim is done. A healthy Relayer is no longer sent back to `start_claim`.
 
 ## [0.12.3] — 2026-11-05
 

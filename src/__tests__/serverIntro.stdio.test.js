@@ -27,7 +27,8 @@ function talkToServer(requests, expectedReplies) {
         }, 15000);
         child.stdout.on('data', (chunk) => {
             out += chunk;
-            const lines = out.split('\n').filter(Boolean);
+            // A large reply can arrive in pieces: parse only complete lines.
+            const lines = out.slice(0, out.lastIndexOf('\n') + 1).split('\n').filter(Boolean);
             if (lines.length >= expectedReplies) {
                 clearTimeout(timer);
                 child.kill();

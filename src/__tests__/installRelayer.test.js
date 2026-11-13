@@ -168,8 +168,8 @@ describe('install_relayer', () => {
     // The released install IS the channel bundle (relayer + monitoring stack).
     // A first-time user supplies no compose_url; the tool fetches the canonical
     // beta channel compose and writes the .env for them. Guards the live gap
-    // where the bundled relayer-only template installed no prometheus/grafana
-    // and the UI's Monitoring section was dead.
+    // where an install without the monitoring stack left the UI's Monitoring
+    // section dead.
     test('no compose_url → fetches the channel bundle + writes .env', async () => {
         const execFileCalls = [];
         const fs = fakeFs();
@@ -234,14 +234,13 @@ describe('install_relayer', () => {
             '',
         ].join('\n');
         const PORT_LINES = 'UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n';
-        const AUDIT_LINES = 'RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
 
-        function build({ bodies, failing } = {}) {
+        function build({ bodies } = {}) {
             const fs = fakeFs();
             const curl = curlWritingInto(fs, bodies || {
                 [CHANNEL_COMPOSE_URL]: 'RELEASE_COMPOSE\n',
                 [CHANNEL_ENV_URL]: RELEASE_ENV,
-            }, failing);
+            });
             const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
             const handler = registerWithOptions({
                 execFile: curl.execFile,
@@ -302,12 +301,12 @@ describe('install_relayer', () => {
         test.each([
             ['the channel path', {}, undefined],
             ['the compose_url path, which writes no .env', { compose_url: 'https://example.com/c.yml' }, 'other'],
-        ])('inherited COMPOSE_PROFILES on %s', async (_label, { failing, compose_url }, expected) => {
+        ])('inherited COMPOSE_PROFILES on %s', async (_label, { compose_url }, expected) => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const inherited = process.env.COMPOSE_PROFILES;
             process.env.COMPOSE_PROFILES = 'other';
             try {
-                const { handler, composeUp } = build({ failing });
+                const { handler, composeUp } = build();
                 await handler({ install_path: '/tmp/xns', compose_url });
                 expect(composeUp.mock.calls[0][1].env.COMPOSE_PROFILES).toBe(expected);
             } finally {
