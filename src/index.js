@@ -17,10 +17,12 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 // package, and the registry card cannot drift apart (CONTRACT-1, E-A2 review).
 // package.json mcpName is the immutable registry identity, pinned by
 // registryIdentity.test.js.
+// The instructions go back in the initialize reply, so a client learns what
+// XNS is and which tool to run first before it lists the tools.
 const server = new McpServer({
     name: require('../package.json').mcpName,
     version: require('../package.json').version,
-});
+}, { instructions: require('./lib/serverInstructions') });
 
 // Register all 15 tools
 require('./tools/checkPrerequisites')(server);

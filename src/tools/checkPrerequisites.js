@@ -238,7 +238,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     server.registerTool(
         'check_prerequisites',
         {
-            title: 'check_prerequisites',
+            title: 'Check prerequisites',
             description: 'Check system prerequisites for XNS Relayer installation: Docker installed and its daemon running (local or remote via DOCKER_HOST / ssh:// context), the Docker compose plugin, docker group access for this user, required ports (8888, 9000, 9443; a port held by the running xns-relayer container passes), no container from another project named prometheus or alertmanager, an existing xns-relayer installation, at least 10 GB free on the Docker root and the install directory, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
             inputSchema: {
                 /* no parameters */

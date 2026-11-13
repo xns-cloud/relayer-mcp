@@ -32,7 +32,7 @@ module.exports = function registerGetHostTags(server, options = {}) {
     server.registerTool(
         'get_host_tags',
         {
-            title: 'get_host_tags',
+            title: 'Get host tags',
             description: 'Get the available host tags for VPD (Virtual Private Datacenter) configuration, plus the currently applied VPD host selection. Translate tags into plain-language options for the operator — never show raw CEL expressions. Requires OIDC sign-in on first use (the user will be prompted to sign in via browser).',
             inputSchema: {
                 /* no parameters */

@@ -28,7 +28,7 @@ module.exports = function registerStartRegistration(server, options = {}) {
     server.registerTool(
         'start_registration',
         {
-            title: 'start_registration',
+            title: 'Start registration',
             description: 'Get the browser registration URL for creating a new XNS account. The user opens this URL in a browser to sign up via Keycloak — the agent never touches credentials. After signing up, use check_email_verified to poll for email verification.',
             inputSchema: {},
             annotations: {

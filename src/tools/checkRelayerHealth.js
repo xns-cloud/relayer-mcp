@@ -54,7 +54,7 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
     server.registerTool(
         'check_relayer_health',
         {
-            title: 'check_relayer_health',
+            title: 'Check Relayer health',
             description: 'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), HostIO, and the monitoring sidecars (Prometheus + Grafana containers). Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component; a missing monitoring stack reports as degraded (dashboards empty) without blocking the install flow. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Note: HostIO health status is unknown until OIDC authentication is completed.',
             inputSchema: {
                 poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),

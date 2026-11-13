@@ -30,7 +30,7 @@ module.exports = function registerCheckEmailVerified(server, options = {}) {
     server.registerTool(
         'check_email_verified',
         {
-            title: 'check_email_verified',
+            title: 'Check email verification',
             description: 'Poll to check if the user has verified their email address. Automatically polls every 15 seconds for up to 30 minutes. Returns immediately if already verified. If the email has no account, indicates registration is needed.',
             inputSchema: {
                 email: z.string().email().describe('Email address to check verification status'),

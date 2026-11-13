@@ -27,7 +27,7 @@ module.exports = function registerCheckClaimStatus(server, options = {}) {
     server.registerTool(
         'check_claim_status',
         {
-            title: 'check_claim_status',
+            title: 'Check claim status',
             description: 'Poll the status of a claim session. Checks every 10 seconds. States: STATE_1 (pending — user has not yet opened the claim URL), STATE_2 (in progress — user is completing the claim in browser), STATE_3 (completed — claim successful). Automatically proceeds when STATE_3 is reached.',
             inputSchema: {
                 claim_id: z.string().describe('The claim_id returned by start_claim'),
