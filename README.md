@@ -4,13 +4,24 @@
 [![license](https://img.shields.io/npm/l/@xns-cloud/relayer-mcp)](./LICENSE)
 [![node](https://img.shields.io/node/v/@xns-cloud/relayer-mcp)](https://nodejs.org/)
 
-MCP server for [XNS Relayer](https://xns.tech) — S3-compatible decentralized object storage. Provides 15 tools that let an AI agent drive the complete Relayer setup and day-2 management conversationally over stdio transport.
+S3-compatible cloud object storage from XNS, set up and managed by your AI assistant. This is the MCP server for [XNS](https://xns.tech). Provides 15 tools that let an AI agent set up the Relayer, the small gateway that runs on your own machine, and manage it day to day over stdio.
+
+In Claude, use the `xns-storage` plugin: it registers this server and adds the step-by-step skills. In Claude Code, run:
+
+```text
+/plugin marketplace add xns-cloud/xns-storage-plugin
+/plugin install xns-storage@xns-cloud
+```
+
+then say: set up XNS storage
+
+For any other MCP client, run the server with npx:
 
 ```bash
 npx @xns-cloud/relayer-mcp@latest
 ```
 
-**Pricing:** [$6.00 per TB per month](https://xns.tech/pricing) — one rate, protection included, [$0 egress uncapped](https://xns.tech/pricing), [30-day minimum retention](https://xns.tech/pricing) with no separate early-delete fee.
+**Pricing:** $6.00 per TB per month. $0 egress, uncapped. 30-day minimum retention, no early-delete fee. See [xns.tech/pricing](https://xns.tech/pricing).
 
 ## Requirements
 
@@ -56,13 +67,24 @@ On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers thi
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-To register the MCP by hand instead:
+If you use Claude Code with the `xns-storage` plugin, remove the `relayer` registration the script made; the plugin registers its own.
 
-**Claude Code** (one command, if you registered nothing yet):
+To set it up yourself instead:
+
+**Claude Code** (with the plugin, which registers this server for you):
+
+```text
+/plugin marketplace add xns-cloud/xns-storage-plugin
+/plugin install xns-storage@xns-cloud
+```
+
+Without the plugin, register it by hand:
 
 ```bash
 claude mcp add --scope user relayer -- npx @xns-cloud/relayer-mcp@latest
 ```
+
+Do one or the other, not both: with both, the 15 tools load twice.
 
 **Claude Desktop / any MCP client** — add to your `claude_desktop_config.json` (or equivalent):
 
@@ -166,6 +188,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 | `install_relayer` fails with "The Docker daemon is on <host>, not this machine" | `DOCKER_HOST` or an SSH/TCP Docker context points at another machine, and the install files would be written here instead | Run the MCP on that host and re-run, or unset `DOCKER_HOST` / use the default Docker context ([Remote Docker hosts](#remote-docker-hosts)) |
 | `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`), or a regular file sits at or along it | Pass a writable `install_path`; the exact OS error is in the MCP server's stderr log |
+| `install_relayer` stops with '… nothing was installed' | The release files could not be downloaded, were incomplete, do not support the requested `bind_address`, or could not be held in the temporary folder | The message names it; then run `install_relayer` again |
 
 ## Authentication
 
@@ -196,7 +219,7 @@ The short version:
 - **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
-- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.xns.tech`.
+- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.
 - **Your stored objects never pass through it.** The Relayer you host handles your data directly.
 
 ## Desktop extension (MCPB)
