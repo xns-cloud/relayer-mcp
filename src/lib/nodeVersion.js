@@ -4,7 +4,7 @@
 // (Ubuntu's default apt repo ships Node 18) so the friendly message below is
 // what the user sees, not a SyntaxError from a dependency.
 
-const MIN_MAJOR = 20;
+const MIN_MAJOR = 24;
 
 /**
  * Check a Node.js version string against the package's engines floor.
@@ -20,10 +20,10 @@ function checkNodeVersion(version) {
     const message = [
         `relayer-mcp requires Node.js ${MIN_MAJOR} or newer — you are running v${version}.`,
         '',
-        "Ubuntu's default apt repository only ships Node 18. Install Node 20 with nvm:",
+        "Ubuntu's default apt repository only ships Node 18. Install Node 24 with nvm:",
         '',
         '  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash',
-        '  \\. "$HOME/.nvm/nvm.sh" && nvm install 20',
+        '  \\. "$HOME/.nvm/nvm.sh" && nvm install 24',
         '',
         'Or via NodeSource: https://github.com/nodesource/distributions#installation-instructions',
         '',

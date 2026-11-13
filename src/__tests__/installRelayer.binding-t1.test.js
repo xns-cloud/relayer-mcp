@@ -38,9 +38,40 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
         return (args) => handler(z.object(schema).parse(args));
     }
 
+    // A fake fs and a curl that writes the release files into it, so the
+    // default path reads back what it downloaded.
+    function fakeFs() {
+        const files = {};
+        return {
+            files,
+            readFile: jest.fn(async (p) => {
+                if (p in files) return files[p];
+                throw Object.assign(new Error(`ENOENT: no such file, open '${p}'`), { code: 'ENOENT' });
+            }),
+            writeFile: jest.fn(async (p, data) => { files[p] = data; }),
+            chmod: jest.fn(async () => {}),
+            mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`),
+            rm: jest.fn(async () => {}),
+        };
+    }
+
+    function curlWritingInto(fakeFiles) {
+        return jest.fn((cmd, args, opts, cb) => {
+            if (cmd === 'curl') {
+                const out = args[args.indexOf('-o') + 1];
+                fakeFiles.files[out] = out.endsWith('.env')
+                    ? 'COMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n'
+                    : 'services:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}${UI_PORT:-8888}:8888"\n';
+            }
+            return cb(null, '', '');
+        });
+    }
+
     function run(composeUp, extraArgs = {}) {
+        const fakeFiles = fakeFs();
         const handler = registerWithOptions({
-            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            execFile: curlWritingInto(fakeFiles),
+            fs: fakeFiles,
             dockerUtil: {
                 composeUp,
                 findContainer: jest.fn().mockResolvedValue(null),

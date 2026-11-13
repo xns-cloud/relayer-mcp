@@ -1,8 +1,8 @@
 {
   "name": "@xns-cloud/relayer-mcp",
   "mcpName": "tech.xns/relayer",
-  "version": "0.12.3",
-  "description": "MCP server for XNS Relayer onboarding and day-2 management — drives Relayer setup, settings, and backups conversationally over stdio, npx-ready",
+  "version": "0.13.0",
+  "description": "S3-compatible cloud object storage from XNS, set up and managed by your AI assistant.",
   "author": "SCP Corp",
   "license": "Apache-2.0",
   "homepage": "https://xns.tech",
@@ -35,7 +35,6 @@
     "ai-agent",
     "stdio",
     "docker",
-    "self-hosted",
     "storage",
     "backup",
     "s3-compatible",
@@ -46,13 +45,12 @@
     "agentic"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "files": [
     "src/index.js",
     "src/lib/",
     "src/tools/",
-    "src/templates/",
     "LICENSE",
     "NOTICE",
     "manifest.json",

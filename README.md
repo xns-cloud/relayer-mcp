@@ -4,13 +4,24 @@
 [![license](https://img.shields.io/npm/l/@xns-cloud/relayer-mcp)](./LICENSE)
 [![node](https://img.shields.io/node/v/@xns-cloud/relayer-mcp)](https://nodejs.org/)
 
-MCP server for [XNS Relayer](https://xns.tech) — S3-compatible decentralized object storage. Provides 15 tools that let an AI agent drive the complete Relayer setup and day-2 management conversationally over stdio transport.
+S3-compatible cloud object storage from XNS, set up and managed by your AI assistant. This is the MCP server for [XNS](https://xns.tech). Provides 15 tools that let an AI agent set up the Relayer, the small gateway that runs on your own machine, and manage it day to day over stdio.
+
+In Claude, use the `xns-storage` plugin: it registers this server and adds the step-by-step skills. In Claude Code, run:
+
+```text
+/plugin marketplace add xns-cloud/xns-storage-plugin
+/plugin install xns-storage@xns-cloud
+```
+
+then say: set up XNS storage
+
+For any other MCP client, run the server with npx:
 
 ```bash
 npx @xns-cloud/relayer-mcp@latest
 ```
 
-**Pricing:** [$6.00 per TB per month](https://xns.tech/pricing) — one rate, protection included, [$0 egress uncapped](https://xns.tech/pricing), [30-day minimum retention](https://xns.tech/pricing) with no separate early-delete fee.
+**Pricing:** $6.00 per TB per month. $0 egress, uncapped. 30-day minimum retention, no early-delete fee. See [xns.tech/pricing](https://xns.tech/pricing).
 
 ## Requirements
 
@@ -20,22 +31,22 @@ On Ubuntu 24.04 or Debian 12, one command sets up everything:
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 20 when Node is missing or older and registers this MCP. Log out and back in afterwards so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
+The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 24 when Node is missing or older and registers this MCP. Log out and back in afterward so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
 
 Without the script, the MCP needs:
 
-- **Node.js 20+** — see [Installing Node.js 20](#installing-nodejs-20) if your distro ships an older version.
+- **Node.js 24+** — see [Installing Node.js 24](#installing-nodejs-24) if your distro ships an older version.
 - **Docker Engine** — on the same machine that runs the MCP. `install_relayer` refuses when the Docker daemon is on another machine (see [Remote Docker hosts](#remote-docker-hosts)).
 
-### Installing Node.js 20
+### Installing Node.js 24
 
-Ubuntu's default apt repository only ships Node 18, which is too old. Two ways to get Node 20:
+Ubuntu's default apt repository only ships Node 18, which is too old. Two ways to get Node 24:
 
 **nvm** (recommended — no root required):
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-\. "$HOME/.nvm/nvm.sh" && nvm install 20
+\. "$HOME/.nvm/nvm.sh" && nvm install 24
 ```
 
 **NodeSource** (system-wide): follow <https://github.com/nodesource/distributions#installation-instructions>.
@@ -46,7 +57,7 @@ If you start the MCP on an older Node, it exits immediately with this same guida
 
 The Relayer runs as a Docker container and persists its data in a Docker volume. If the MCP is running inside an ephemeral environment (a sandbox container, a CI runner, or a throwaway VM), any installation performed there will be lost when that environment exits. `check_prerequisites` detects this automatically and reports it as a warning with a concrete next step — it never blocks the flow.
 
-**If your environment is ephemeral**, run the MCP on a persistent Docker host instead (install Node.js 20 there and point your MCP client at it). Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
+**If your environment is ephemeral**, run the MCP on a persistent Docker host instead (install Node.js 24 there and point your MCP client at it). Alternatively, hand the install step to a human operator on the target machine and continue onboarding from `check_relayer_health` onwards.
 
 ## Install
 
@@ -56,13 +67,24 @@ On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers thi
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-To register the MCP by hand instead:
+If you use Claude Code with the `xns-storage` plugin, remove the `relayer` registration the script made; the plugin registers its own.
 
-**Claude Code** (one command, if you registered nothing yet):
+To set it up yourself instead:
+
+**Claude Code** (with the plugin, which registers this server for you):
+
+```text
+/plugin marketplace add xns-cloud/xns-storage-plugin
+/plugin install xns-storage@xns-cloud
+```
+
+Without the plugin, register it by hand:
 
 ```bash
 claude mcp add --scope user relayer -- npx @xns-cloud/relayer-mcp@latest
 ```
+
+Do one or the other, not both: with both, the 15 tools load twice.
 
 **Claude Desktop / any MCP client** — add to your `claude_desktop_config.json` (or equivalent):
 
@@ -99,8 +121,8 @@ No separate install step required — npx fetches the package on demand.
 | 1 | `check_prerequisites` | Verify Docker (local or remote), the compose plugin, Docker socket access (when it is denied, whether the `docker` group membership is missing or not yet live), ports (8888, 9000, 9443), an existing installation, free disk (10 GB on the Docker root and the install directory), and network connectivity. Each failure names the command that fixes it; ports held by a running `xns-relayer` pass. |
 | 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. Falls back to a bundled service-parity copy if either fetch fails. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
-| 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Targets the Docker host automatically. |
+| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. If the release files cannot be downloaded or used it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
+| 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Before the owner claims the Relayer and signs in, the S3 gateway is not started yet, so the tool returns `awaiting_claim: true` when the UI answers, the Docker CLI reaches the checked host, and the `xns-relayer` container holds no Muse token yet. When the token cannot be read (no such container, Docker unreachable), S3 down stays unhealthy. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
 | 8 | `get_host_tags` | Retrieve available host tags for VPD configuration, plus the currently applied data/parity selection (read-back with an `is_default` flag). |
@@ -119,7 +141,8 @@ No separate install step required — npx fetches the package on demand.
 3. User clicks email verification link; agent polls (Tool 3).
 4. Agent installs and starts Relayer containers (Tool 4) — it writes the
    released compose + `.env` itself; the user is never asked for a compose URL.
-5. Agent polls health until UI + S3 are up (Tool 5).
+5. Agent polls health until the UI is up (Tool 5); the S3 gateway starts once the
+   Relayer is claimed and its owner signs in to the Relayer web UI.
 6. Agent initiates claim; user opens claim URL in browser (Tools 6 + 7).
 7. Agent signs in via OIDC to configure host preferences (Tools 8 + 9).
 8. Agent verifies S3 storage is working (Tool 10).
@@ -147,7 +170,7 @@ then run `install_relayer` again. To keep the existing deployment, skip `install
 
 `install_relayer` writes `docker-compose.yml` and `.env` on the machine running the MCP, then runs `docker compose up` against whichever daemon the Docker CLI points at. When that daemon is on another machine (`DOCKER_HOST=ssh://…` or `tcp://…`, or an SSH Docker context), it refuses before writing or starting anything, and the error names the Docker host.
 
-To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed at it) and run `install_relayer` again. Or unset `DOCKER_HOST` / switch to the default Docker context to install on the machine running the MCP.
+To install, run the MCP on the Docker host (Node.js 24 there, MCP client pointed at it) and run `install_relayer` again. Or unset `DOCKER_HOST` / switch to the default Docker context to install on the machine running the MCP.
 
 `check_prerequisites` reports the same condition as a failed `install_file_location` check. Health checks still work against a remote daemon: the MCP honors `DOCKER_HOST` and the active Docker context, `check_relayer_health` and `verify_storage` probe the remote host's ports 8888/9000 instead of localhost, and `check_prerequisites` skips the local port probes. `check_relayer_health` accepts a `host` override, and `verify_storage` an `endpoint` override, for setups the auto-detection can't see (port forwards, NAT).
 
@@ -155,7 +178,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| MCP exits with "requires Node.js 20 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 20](#installing-nodejs-20) |
+| MCP exits with "requires Node.js 24 or newer" | Distro Node is too old (Ubuntu apt ships Node 18) | [Installing Node.js 24](#installing-nodejs-24) |
 | `install_relayer` reports an existing `xns-relayer` container | A previous deployment (any channel) owns the container name | [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments) |
 | Port 8888/9000 already in use | Another service on the Docker host (another S3-compatible service squatting 9000) | Stop it, or install with custom ports: `install_relayer` `ui_port` / `s3_port` (health checks accept the same). After a failed `install_relayer`, remove the leftover container with `docker rm -f xns-relayer` before retrying |
 | Port 9443 already in use | Another service on the Docker host holds the S3 HTTPS port the release compose publishes | Stop that service (`sudo ss -ltnp 'sport = :9443'` names it); `ui_port` / `s3_port` do not move 9443. Then `docker rm -f xns-relayer` and retry |
@@ -166,6 +189,7 @@ To install, run the MCP on the Docker host (Node.js 20 there, MCP client pointed
 | Health checks fail but containers run on a remote Docker host | Ports 8888/9000 not reachable from the management node | Open them, or pass `host` / `endpoint` overrides |
 | `install_relayer` fails with "The Docker daemon is on <host>, not this machine" | `DOCKER_HOST` or an SSH/TCP Docker context points at another machine, and the install files would be written here instead | Run the MCP on that host and re-run, or unset `DOCKER_HOST` / use the default Docker context ([Remote Docker hosts](#remote-docker-hosts)) |
 | `install_relayer` fails with "Failed to create directory …" | The install path needs root on the machine running the MCP (common on macOS/Windows workstations for paths under `/opt`), or a regular file sits at or along it | Pass a writable `install_path`; the exact OS error is in the MCP server's stderr log |
+| `install_relayer` stops with '… nothing was installed' | The release files could not be downloaded, were incomplete, do not support the requested `bind_address`, or could not be held in the temporary folder | The message names it; then run `install_relayer` again |
 
 ## Authentication
 
@@ -180,7 +204,7 @@ npm install
 npm test
 ```
 
-Requires Node.js 20+.
+Requires Node.js 24+.
 
 ## Note on `relayer-native` client
 
@@ -196,7 +220,7 @@ The short version:
 - **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
-- **Private network only.** No tool can be pointed at a public Relayer: the ones taking a host argument run it through an allowlist (`localhost`, loopback, RFC 1918, `*.local`), and the rest expose no URL parameter and are fixed to `localhost`. The three XNS services it contacts are `auth.xns.tech`, `console.xns.tech`, and `releases.xns.tech`.
+- **Credentials stay on your network.** The tools that send a token to a Relayer (`verify_storage`, `setup_cli_credentials`) run its host through an allowlist (`localhost`, loopback, RFC 1918, `*.local`). `check_relayer_health` sends plain HTTP health probes, with no credentials, to the Docker host or the `host` you pass, which is not limited to private addresses, `install_relayer` downloads from any `compose_url` you pass, and the S3 test in `verify_storage` goes to the `endpoint` you pass (requests are signed, so the secret key is never sent). Otherwise the public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.
 - **Your stored objects never pass through it.** The Relayer you host handles your data directly.
 
 ## Desktop extension (MCPB)

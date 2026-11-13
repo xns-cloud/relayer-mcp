@@ -21,7 +21,7 @@ module.exports = function registerStartClaim(server, options = {}) {
     server.registerTool(
         'start_claim',
         {
-            title: 'start_claim',
+            title: 'Start claim',
             description: 'Start a claim session to link this Relayer installation to an XNS account. Returns a claim URL that the user must open in a browser to complete the claim. The claim has an expiration time. After calling this, use check_claim_status to monitor claim progress.',
             inputSchema: {
                 /* no parameters */

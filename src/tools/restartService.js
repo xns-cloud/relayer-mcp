@@ -26,7 +26,7 @@ module.exports = function registerRestartService(server, options = {}) {
     server.registerTool(
         'restart_service',
         {
-            title: 'restart_service',
+            title: 'Restart service',
             description: 'Restart a Relayer service (hostio, gateway, s3gateway, database) or all services. Disruptive: in-flight S3 requests will fail during the restart — confirm with the operator before calling. Verify recovery afterwards with check_relayer_health.',
             inputSchema: {
                 service: z.enum(SERVICES).optional()

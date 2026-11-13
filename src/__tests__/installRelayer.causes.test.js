@@ -82,6 +82,8 @@ function build({ infoStderr = null, composeStderr = null, installPath = '/opt/xn
         }),
         writeFile: jest.fn(async (p, data) => { store[p] = data; }),
         chmod: jest.fn(async () => {}),
+        mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`),
+        rm: jest.fn(async () => {}),
     };
     const dockerUtil = createDockerUtil({ execFile: dockerExec, env: {} });
     const server = { registerTool: jest.fn() };

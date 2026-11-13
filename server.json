@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "tech.xns/relayer",
-  "description": "Conversationally set up & manage an XNS Relayer over stdio: install, claim, VPD, S3, backups.",
+  "description": "S3-compatible cloud object storage from XNS, set up and managed by your AI assistant.",
   "websiteUrl": "https://xns.tech",
   "repository": {
     "url": "https://gitlab.com/scpcorp/relayer-mcp",
     "source": "gitlab"
   },
-  "version": "0.12.3",
+  "version": "0.13.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@xns-cloud/relayer-mcp",
-      "version": "0.12.3",
+      "version": "0.13.0",
       "transport": {
         "type": "stdio"
       }

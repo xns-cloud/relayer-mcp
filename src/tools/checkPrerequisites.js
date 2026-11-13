@@ -238,7 +238,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     server.registerTool(
         'check_prerequisites',
         {
-            title: 'check_prerequisites',
+            title: 'Check prerequisites',
             description: 'Check system prerequisites for XNS Relayer installation: Docker installed and its daemon running (local or remote via DOCKER_HOST / ssh:// context), the Docker compose plugin, docker group access for this user, required ports (8888, 9000, 9443; a port held by the running xns-relayer container passes), no container from another project named prometheus or alertmanager, an existing xns-relayer installation, at least 10 GB free on the Docker root and the install directory, and network connectivity to console.xns.tech and auth.xns.tech. Also fails the check when the Docker daemon is on another machine (install_file_location), because install_relayer refuses in that case; run the MCP on the Docker host instead. Run this first before any other relayer tool.',
             inputSchema: {
                 /* no parameters */
@@ -292,7 +292,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                         name: 'docker',
                         passed: false,
                         detail: 'Docker is not installed on this machine',
-                        remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 20) rather than pointing at it remotely.`,
+                        remediation: `Run the one-command install, which installs Docker, the compose plugin and the Relayer: ${INSTALL_COMMAND} (Ubuntu 24.04 or Debian 12). To install on a different persistent machine, run this MCP on that machine (a Docker host with Node.js 24) rather than pointing at it remotely.`,
                     });
                 } else if (remote) {
                     // DECISION: a failing `docker info` against an ssh:// or tcp://
@@ -396,7 +396,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     name: 'install_file_location',
                     passed: false,
                     detail: `The Docker daemon is on ${dockerHost.host}, not this machine. install_relayer will refuse: it writes docker-compose.yml and .env on this machine, not on ${dockerHost.host}.`,
-                    remediation: `Run the MCP on ${dockerHost.host} (install Node.js 20 there and point your MCP client at it), then run check_prerequisites and install_relayer from there. Or unset DOCKER_HOST / switch to the default Docker context to install on this machine.`,
+                    remediation: `Run the MCP on ${dockerHost.host} (install Node.js 24 there and point your MCP client at it), then run check_prerequisites and install_relayer from there. Or unset DOCKER_HOST / switch to the default Docker context to install on this machine.`,
                 });
             }
 

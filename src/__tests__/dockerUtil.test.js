@@ -300,3 +300,45 @@ describe('dockerUtil.containerProject', () => {
         expect(await empty.containerProject('prometheus')).toBeNull();
     });
 });
+
+describe('dockerUtil.hasMuseToken', () => {
+    const answering = (stdout, stderr = '') => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, stdout, stderr));
+        return { execFile, util: createDockerUtil({ execFile, env: {} }) };
+    };
+
+    test('token present → true; checked in the named container with a 10 s limit', async () => {
+        const { execFile, util } = answering('present\n');
+
+        expect(await util.hasMuseToken('xns-relayer')).toBe(true);
+        const [cmd, args, opts] = execFile.mock.calls[0];
+        expect(cmd).toBe('docker');
+        expect(args.slice(0, 4)).toEqual(['exec', 'xns-relayer', 'sh', '-c']);
+        expect(args[4]).toContain('[ -s /relayer/conf/hostioauth ]');
+        expect(opts.timeout).toBe(10000);
+    });
+
+    test('token missing or empty → false', async () => {
+        expect(await answering('absent\n').util.hasMuseToken('xns-relayer')).toBe(false);
+    });
+
+    test('a Docker CLI warning on stderr does not change the answer', async () => {
+        const warning = 'WARNING: DOCKER_HOST environment variable overrides the active context.';
+        expect(await answering('absent\n', warning).util.hasMuseToken('xns-relayer')).toBe(false);
+        expect(await answering('present\n', warning).util.hasMuseToken('xns-relayer')).toBe(true);
+    });
+
+    test('unexpected output → null', async () => {
+        expect(await answering('').util.hasMuseToken('xns-relayer')).toBeNull();
+        expect(await answering('sh: not found\n').util.hasMuseToken('xns-relayer')).toBeNull();
+    });
+
+    test.each([
+        ['no such container', 'Error response from daemon: No such container: xns-relayer', 1],
+        ['container stopped', 'Error response from daemon: container abc is not running', 1],
+        ['docker unreachable', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.', 1],
+        ['timed out (killed, no output)', '', null],
+    ])('%s → null', async (_label, stderr, code) => {
+        expect(await rejectingUtil(stderr, { code }).hasMuseToken('xns-relayer')).toBeNull();
+    });
+});

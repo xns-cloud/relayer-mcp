@@ -11,6 +11,9 @@ const POLL_TIMEOUT_MS = 300000;   // 300s (AC-13, QA-1)
 // Loopback aliases — all classify as "local", not a remote Docker host.
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
+// The container install_relayer creates.
+const RELAYER_CONTAINER = 'xns-relayer';
+
 /**
  * Normalize a user-supplied or detected host for URL composition: trim, strip
  * ANY accidental scheme prefix (http://, tcp://, ssh://…), bracket bare IPv6.
@@ -35,6 +38,21 @@ function normalizeHost(value) {
 }
 
 /**
+ * Whether two normalized hosts name the same machine (all loopback names match,
+ * case ignored).
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function sameMachine(a, b) {
+    // Host names are case-insensitive: 'Docker-Box.lan' and 'docker-box.lan' are one machine.
+    const x = a.toLowerCase();
+    const y = b.toLowerCase();
+    return x === y || (LOCAL_HOSTS.has(x) && LOCAL_HOSTS.has(y));
+}
+
+/**
  * Tool 5: check_relayer_health
  * AC-13: report healthy only when ui+s3+hostio healthy; name unhealthy component; 300s timeout.
  * TP-31: hostio = null (not false) before auth — hostio health requires an authenticated
@@ -54,8 +72,8 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
     server.registerTool(
         'check_relayer_health',
         {
-            title: 'check_relayer_health',
-            description: 'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), HostIO, and the monitoring sidecars (Prometheus + Grafana containers). Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component; a missing monitoring stack reports as degraded (dashboards empty) without blocking the install flow. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Note: HostIO health status is unknown until OIDC authentication is completed.',
+            title: 'Check Relayer health',
+            description: 'Check the health of all Relayer services: UI (port 8888), S3 gateway (port 9000), HostIO, and the monitoring sidecars (Prometheus + Grafana containers). Polls every 10 seconds for up to 300 seconds. Reports each component status individually and names any unhealthy component; a missing monitoring stack reports as degraded (dashboards empty) without blocking the install flow. Targets the machine the Docker daemon runs on (auto-detected from the Docker context — supports remote ssh:// Docker hosts); pass host to override. Until the owner claims the Relayer and signs in to its web UI it reports awaiting_claim: the S3 gateway and HostIO start only then, so a fresh install is ready for start_claim once the UI answers. Note: HostIO health status is unknown until OIDC authentication is completed.',
             inputSchema: {
                 poll: z.boolean().optional().default(true).describe('If true (default), poll until healthy or timeout. If false, check once.'),
                 host: z.string().trim().min(1).optional().describe('Hostname/IP where the Relayer containers run. Default: auto-detected from the Docker context (localhost, or the remote host for ssh:// / tcp:// contexts).'),
@@ -76,6 +94,17 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                 // Resolve where the containers actually run — once per call.
                 const dockerHost = host ? { host, remote: !LOCAL_HOSTS.has(normalizeHost(host)) } : await docker.getDockerHost();
                 const target = normalizeHost(dockerHost.host);
+
+                // The token check runs through the Docker CLI, so it only speaks
+                // for `target` when the CLI points at that machine. Resolved once,
+                // and only when a check needs it.
+                let dockerReachesTarget;
+                const tokenCheckApplies = async () => {
+                    if (dockerReachesTarget === undefined) {
+                        dockerReachesTarget = !host || sameMachine(target, normalizeHost((await docker.getDockerHost()).host));
+                    }
+                    return dockerReachesTarget;
+                };
                 const uiBase = `http://${target}:${uiPort}`;
                 const s3Base = `http://${target}:${s3Port}`;
 
@@ -96,6 +125,21 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                         components.s3 = { healthy: status >= 200 && status < 500, status };
                     } catch {
                         components.s3 = { healthy: false, status: null };
+                    }
+
+                    // Until the owner claims the Relayer and signs in, it has no
+                    // Muse token and keeps the S3 gateway (and HostIO) stopped,
+                    // so S3 down on such a box is the expected state.
+                    const awaitingClaim = components.ui.healthy === true
+                        && components.s3.healthy !== true
+                        && await tokenCheckApplies()
+                        && await docker.hasMuseToken(RELAYER_CONTAINER) === false;
+                    if (awaitingClaim) {
+                        components.s3 = {
+                            healthy: null,
+                            status: components.s3.status,
+                            note: 'Not started yet: the S3 gateway starts once the owner claims the Relayer (start_claim) and signs in to its web UI.',
+                        };
                     }
 
                     // HostIO — requires auth. Report null (unknown) not false (down).
@@ -131,18 +175,24 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                         }),
                     };
 
-                    // Healthy if UI and S3 are up. HostIO null (unknown) does NOT block.
-                    const coreHealthy = components.ui.healthy === true && components.s3.healthy === true;
-                    const allKnownHealthy = coreHealthy && components.hostio.healthy === true;
+                    // Healthy if UI and S3 are up, or the UI is up and the Relayer
+                    // awaits its claim. HostIO null (unknown) does NOT block.
+                    const coreHealthy = components.ui.healthy === true
+                        && (components.s3.healthy === true || awaitingClaim);
+                    // A Relayer awaiting its claim is ready, not all healthy: S3 is not up yet.
+                    const allKnownHealthy = components.ui.healthy === true
+                        && components.s3.healthy === true
+                        && components.hostio.healthy === true;
 
                     const unhealthy = [];
                     if (!components.ui.healthy) unhealthy.push(`UI (${target}:${uiPort})`);
-                    if (!components.s3.healthy) unhealthy.push(`S3 gateway (${target}:${s3Port})`);
+                    if (components.s3.healthy !== true && !awaitingClaim) unhealthy.push(`S3 gateway (${target}:${s3Port})`);
 
                     return {
                         components,
                         healthy: coreHealthy,
                         all_healthy: allKnownHealthy,
+                        awaiting_claim: awaitingClaim || undefined,
                         // JSON.stringify drops undefined — degraded only appears when true.
                         degraded: monitoringHealthy ? undefined : true,
                         unhealthy: unhealthy.length > 0 ? unhealthy : undefined,
@@ -157,10 +207,16 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                     ? ' DEGRADED: monitoring stack (Prometheus/Grafana) is not running — Monitoring dashboards will be empty.'
                     : '');
 
+                const healthyMessage = (r) => (r.awaiting_claim
+                    ? `The Relayer is installed and its web UI is up. Its S3 gateway and HostIO start once the owner claims it and signs in: if it is not claimed yet, proceed to start_claim; if the claim is done, have the owner sign in at ${uiBase}.`
+                    : r.all_healthy
+                    ? 'All Relayer services are healthy (UI, S3, HostIO).'
+                    : 'Relayer core services (UI + S3) are healthy. HostIO status is pending authentication.') + degradedSuffix(r);
+
                 if (!poll) {
                     const result = await checkOnce();
                     const message = result.healthy
-                        ? 'Relayer core services (UI + S3) are healthy.' + (result.all_healthy ? ' HostIO is also healthy.' : ' HostIO status is pending authentication.') + degradedSuffix(result)
+                        ? healthyMessage(result)
                         : `Relayer is not yet healthy. Unhealthy: ${result.unhealthy.join(', ')}.`;
 
                     return {
@@ -198,9 +254,7 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                     };
                 }
 
-                const message = (result.all_healthy
-                    ? 'All Relayer services are healthy (UI, S3, HostIO). Ready for claim.'
-                    : 'Relayer core services (UI + S3) are healthy. HostIO status pending authentication. Proceed to start_claim.') + degradedSuffix(result);
+                const message = healthyMessage(result);
 
                 return {
                     content: [{

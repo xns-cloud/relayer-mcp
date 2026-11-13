@@ -44,7 +44,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
     server.registerTool(
         'verify_storage',
         {
-            title: 'verify_storage',
+            title: 'Verify storage',
             description: 'Verify the S3-compatible storage gateway is working by performing a round-trip test: create a test bucket, upload a small object, download it, and compare. Provisions a temporary scoped IAM credential automatically using your OIDC session — no manual key management needed. The throwaway credential and test data are removed after the test, pass or fail. By default targets port 9000 on the machine the Docker daemon runs on (auto-detected from the Docker context); pass endpoint to override.',
             inputSchema: {
                 muse_token: z.string().trim().min(1).optional().describe('Optional Keycloak/Muse token override. Usually omitted — without it (and without access keys) the tool reuses the sign-in session from get_host_tags/configure_vpd, or starts a browser sign-in if there is none.'),

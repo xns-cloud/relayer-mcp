@@ -23,7 +23,7 @@ module.exports = function registerDescribeSettings(server, options = {}) {
     server.registerTool(
         'describe_settings',
         {
-            title: 'describe_settings',
+            title: 'Describe settings',
             description: 'List the adjustable Relayer settings: worker/concurrency tuning, backup schedule, and cost center (CCID). Returns current value, default, type, and guidance per setting. Use before update_settings. Requires OIDC sign-in (same session as the other tools).',
             inputSchema: {
                 /* no parameters — the whitelist is small by design */

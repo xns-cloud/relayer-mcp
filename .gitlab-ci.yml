@@ -35,7 +35,7 @@ stages:
 
 test:
   stage: test
-  image: node:20   # engines floor — the suite must pass on the oldest supported Node
+  image: node:24   # engines floor — the suite must pass on the oldest supported Node
   script:
     - npm ci
     - npm test
@@ -58,7 +58,7 @@ test:
 # failure instead of a review catch.
 bundle:
   stage: bundle
-  image: node:20
+  image: node:24
   needs: [test]
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/

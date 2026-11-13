@@ -25,7 +25,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
     server.registerTool(
         'setup_cli_credentials',
         {
-            title: 'setup_cli_credentials',
+            title: 'Set up CLI credentials',
             description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
                 muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),

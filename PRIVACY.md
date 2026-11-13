@@ -28,7 +28,7 @@ Only through the ordinary, visible operation of the tools you ask the agent to r
 | Creating an account, signing in | Your credentials, entered by you in your own browser | `auth.xns.tech` (Keycloak) |
 | Claiming a Relayer to your account | The claim session and the installation's identity | `console.xns.tech` |
 | Reading or changing settings, host selection, backups | The setting values you ask to read or change | `console.xns.tech` |
-| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images | `releases.xns.tech` |
+| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images | `releases.xns.tech`; the `prom/node-exporter` image comes from Docker Hub |
 
 The agent never handles your password. Sign-in happens in your browser against our identity
 service; the extension receives only a short-lived access token.
@@ -48,13 +48,19 @@ Both are yours to delete at any time.
 
 ## Network boundary
 
-The extension cannot be pointed at a Relayer on the public internet. Two mechanisms enforce
-that: the tools that accept a host or endpoint argument run it through an allowlist that
-permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
-`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`); the remaining tools expose no URL
-parameter at all and are fixed to `localhost`. Either way there is no input that reaches a
-public Relayer. The only public hosts this software contacts are the three XNS services
-named above.
+No tool sends your sign-in token to a Relayer on the public internet. The tools that send it
+to a Relayer (`verify_storage`, `setup_cli_credentials`) run its host through an allowlist
+that permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
+`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`). Three inputs are not limited to
+private addresses: the `host` of `check_relayer_health`, which gets plain HTTP health probes;
+the `compose_url` of `install_relayer`, from which the compose file is downloaded; and the S3
+`endpoint` of `verify_storage` (by default port 9000 on the Docker host), which gets the
+round-trip test as S3 requests signed with a throwaway key (or the keys you pass). A signed
+request carries the access key id and a signature, never the secret. The tool deletes a
+throwaway key after the test, pass or fail; if that deletion fails, the reply carries a
+`cleanup_warning` and the key stays until you remove it. Apart from those, the only public hosts contacted are the
+three XNS services named above and, for the `prom/node-exporter` image that an install
+pulls, Docker Hub.
 
 ## Stopping it
 

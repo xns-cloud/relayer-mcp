@@ -43,7 +43,7 @@ module.exports = function registerConfigureVpd(server, options = {}) {
     server.registerTool(
         'configure_vpd',
         {
-            title: 'configure_vpd',
+            title: 'Configure host selection (VPD)',
             description: 'Configure VPD (Virtual Private Datacenter) host selection for the Relayer, or preview it with dry_run. Use defaults ("true" for both expressions) or a CEL expression filtering hosts by tags. The Relayer requires a minimum of 10 data hosts and 20 parity hosts — if too few match, broaden the criteria. Requires OIDC sign-in (same session as get_host_tags).',
             inputSchema: {
                 data_expression: z.string().describe('CEL expression for data host selection. Use "true" for default (all hosts).'),

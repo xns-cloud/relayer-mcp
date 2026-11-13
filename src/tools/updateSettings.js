@@ -33,7 +33,7 @@ module.exports = function registerUpdateSettings(server, options = {}) {
     server.registerTool(
         'update_settings',
         {
-            title: 'update_settings',
+            title: 'Update settings',
             description: 'Update adjustable Relayer settings (see describe_settings for the allowed set). Pass a map of setting name to new value, e.g. {"HOSTIO_UPLOAD_WORKERS": 20}. Returns require_restart — if true, follow up with restart_service after confirming with the operator. Changing CostCenter re-bills to a different cost center; always confirm first.',
             inputSchema: {
                 settings: z.record(z.union([z.string(), z.number(), z.boolean()]))

@@ -26,7 +26,7 @@ npm install
 npm test
 ```
 
-Requires Node.js 20+.
+Requires Node.js 24+.
 
 ## License
 

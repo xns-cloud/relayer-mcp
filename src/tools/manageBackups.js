@@ -31,7 +31,7 @@ module.exports = function registerManageBackups(server, options = {}) {
     server.registerTool(
         'manage_backups',
         {
-            title: 'manage_backups',
+            title: 'Manage backups',
             description: 'Manage Relayer configuration backups: list archives, start a backup, restore from an archive, or delete one. Restore OVERWRITES current state and restarts services — always confirm with the operator and state which archive and components first. Backups must be enabled (BACKUP_ENABLED) for list/start.',
             inputSchema: {
                 action: z.enum(['list', 'start', 'restore', 'delete'])
