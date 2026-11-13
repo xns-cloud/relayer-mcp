@@ -396,7 +396,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
                     name: 'install_file_location',
                     passed: false,
                     detail: `The Docker daemon is on ${dockerHost.host}, not this machine. install_relayer will refuse: it writes docker-compose.yml and .env on this machine, not on ${dockerHost.host}.`,
-                    remediation: `Run the MCP on ${dockerHost.host} (install Node.js 20 there and point your MCP client at it), then run check_prerequisites and install_relayer from there. Or unset DOCKER_HOST / switch to the default Docker context to install on this machine.`,
+                    remediation: `Run the MCP on ${dockerHost.host} (install Node.js 24 there and point your MCP client at it), then run check_prerequisites and install_relayer from there. Or unset DOCKER_HOST / switch to the default Docker context to install on this machine.`,
                 });
             }
 

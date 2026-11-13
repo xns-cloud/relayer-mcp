@@ -907,7 +907,7 @@ describe('install_relayer', () => {
             expect(parsed.docker_host).toBe('box');
             expect(parsed.docker_endpoint).toBe('ssh://user@box');
             expect(parsed.remediation).toMatch(/Run the MCP on box/);
-            expect(parsed.remediation).toMatch(/Node\.js 20/);
+            expect(parsed.remediation).toMatch(/Node\.js 24/);
             expect(parsed.remediation).toMatch(/unset DOCKER_HOST/);
             expectNothingHappened(ctx);
         });
