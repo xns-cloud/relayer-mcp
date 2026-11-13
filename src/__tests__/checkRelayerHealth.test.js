@@ -165,6 +165,22 @@ describe('check_relayer_health', () => {
         expect(parsed.message).toContain('sign in at http://localhost:8888');
     });
 
+    test('no Muse token, UI and HostIO up, S3 down → awaiting claim, not all healthy', async () => {
+        const docker = localDockerUtil();
+        docker.hasMuseToken.mockResolvedValue(false);
+        const get = jest.fn((url) => (url.includes(':9000')
+            ? Promise.reject(new Error('ECONNREFUSED'))
+            : Promise.resolve({ status: 200 })));
+        const handler = registerWithOptions({ httpClient: { get, post: jest.fn() }, dockerUtil: docker });
+
+        const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
+
+        expect(parsed.components.hostio.healthy).toBe(true);
+        expect(parsed.awaiting_claim).toBe(true);
+        expect(parsed.healthy).toBe(true);
+        expect(parsed.all_healthy).toBe(false);
+    });
+
     test('no Muse token in poll mode → returns at once, no timeout', async () => {
         const docker = localDockerUtil();
         docker.hasMuseToken.mockResolvedValue(false);

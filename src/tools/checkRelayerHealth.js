@@ -179,7 +179,10 @@ module.exports = function registerCheckRelayerHealth(server, options = {}) {
                     // awaits its claim. HostIO null (unknown) does NOT block.
                     const coreHealthy = components.ui.healthy === true
                         && (components.s3.healthy === true || awaitingClaim);
-                    const allKnownHealthy = coreHealthy && components.hostio.healthy === true;
+                    // A Relayer awaiting its claim is ready, not all healthy: S3 is not up yet.
+                    const allKnownHealthy = components.ui.healthy === true
+                        && components.s3.healthy === true
+                        && components.hostio.healthy === true;
 
                     const unhealthy = [];
                     if (!components.ui.healthy) unhealthy.push(`UI (${target}:${uiPort})`);
