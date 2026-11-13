@@ -235,6 +235,27 @@ function createDockerUtil(options = {}) {
     }
 
     /**
+     * Whether the Relayer in a container has been claimed. The image starts
+     * HostIO, the gateway and the S3 gateway only once claiming writes the
+     * Muse token to /relayer/conf/hostioauth, so a missing or empty file means
+     * those services are waiting for the claim, not failing.
+     *
+     * @param {string} name - Exact container name
+     * @returns {Promise<boolean|null>} true claimed, false not yet claimed,
+     *   null unknown (no such container, not running, docker unreachable)
+     */
+    async function isRelayerClaimed(name) {
+        try {
+            await docker(['exec', String(name), 'test', '-s', '/relayer/conf/hostioauth'], { timeout: 10000 });
+            return true;
+        } catch (err) {
+            // `test` exits 1 without output when the file is missing or empty;
+            // docker's own failures exit non-zero with an error message.
+            return err.code === 1 && !String(err.stderr || '').trim() ? false : null;
+        }
+    }
+
+    /**
      * Resolve which machine the Docker daemon actually runs on.
      *
      * Claude Code may run on a management node with the Docker CLI pointed at a
@@ -259,7 +280,7 @@ function createDockerUtil(options = {}) {
         }
     }
 
-    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, containerProject, getDockerHost };
+    return { docker, composeUp, isContainerRunning, findContainer, containerHostPorts, containerProject, isRelayerClaimed, getDockerHost };
 }
 
 module.exports = { createDockerUtil, parseDockerEndpoint, redactEndpoint, classifyDockerFailure };

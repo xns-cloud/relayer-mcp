@@ -13,6 +13,20 @@ describe('check_relayer_health', () => {
         return {
             getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }),
             isContainerRunning: jest.fn().mockResolvedValue(true),
+            isRelayerClaimed: jest.fn().mockResolvedValue(true),
+        };
+    }
+
+    // UI answers, S3 gateway refuses — a fresh install before the claim.
+    function uiUpS3Down() {
+        return {
+            get: jest.fn().mockImplementation(async (url) => {
+                if (url.includes(':8888/health')) return { status: 200 };
+                if (url.includes(':9000')) throw new Error('ECONNRESET');
+                if (url.includes('hostio')) return { status: 401 };
+                return { status: 200 };
+            }),
+            post: jest.fn(),
         };
     }
 
@@ -130,6 +144,82 @@ describe('check_relayer_health', () => {
 
         expect(parsed.success).toBe(true);
         expect(parsed.all_healthy).toBe(true);
+    });
+
+    // --- Before the claim, the image keeps the S3 gateway stopped ---
+    test('unclaimed Relayer, S3 down → ready for claim, not unhealthy', async () => {
+        const docker = localDockerUtil();
+        docker.isRelayerClaimed.mockResolvedValue(false);
+        const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
+
+        const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
+
+        expect(docker.isRelayerClaimed).toHaveBeenCalledWith('xns-relayer');
+        expect(parsed.success).toBe(true);
+        expect(parsed.healthy).toBe(true);
+        expect(parsed.awaiting_claim).toBe(true);
+        expect(parsed.components.s3.healthy).toBeNull();
+        expect(parsed.components.s3.note).toContain('claimed');
+        expect(parsed.unhealthy).toBeUndefined();
+        expect(parsed.message).toContain('waiting to be claimed');
+        expect(parsed.message).toContain('start_claim');
+    });
+
+    test('unclaimed Relayer in poll mode → returns at once, no timeout', async () => {
+        const docker = localDockerUtil();
+        docker.isRelayerClaimed.mockResolvedValue(false);
+        const sleep = jest.fn().mockResolvedValue(undefined);
+        const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker, sleep });
+
+        const parsed = JSON.parse((await handler({ poll: true })).content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.awaiting_claim).toBe(true);
+        expect(parsed.message).not.toContain('timed out');
+        expect(sleep).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['claimed', true],
+        ['claim state unknown', null],
+    ])('%s Relayer, S3 down → unhealthy, names the S3 gateway', async (_label, claimed) => {
+        const docker = localDockerUtil();
+        docker.isRelayerClaimed.mockResolvedValue(claimed);
+        const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
+
+        const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.awaiting_claim).toBeUndefined();
+        expect(parsed.components.s3.healthy).toBe(false);
+        expect(parsed.unhealthy).toEqual(['S3 gateway (localhost:9000)']);
+    });
+
+    test('UI down → claim state not consulted, UI and S3 named', async () => {
+        const docker = localDockerUtil();
+        docker.isRelayerClaimed.mockResolvedValue(false);
+        const handler = registerWithOptions({
+            dockerUtil: docker,
+            httpClient: { get: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')), post: jest.fn() },
+        });
+
+        const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
+
+        expect(docker.isRelayerClaimed).not.toHaveBeenCalled();
+        expect(parsed.success).toBe(false);
+        expect(parsed.unhealthy).toEqual(['UI (localhost:8888)', 'S3 gateway (localhost:9000)']);
+    });
+
+    test('S3 up → claim state not consulted', async () => {
+        const docker = localDockerUtil();
+        const handler = registerWithOptions({
+            dockerUtil: docker,
+            httpClient: { get: jest.fn().mockResolvedValue({ status: 200 }), post: jest.fn() },
+        });
+
+        await handler({ poll: false });
+
+        expect(docker.isRelayerClaimed).not.toHaveBeenCalled();
     });
 
     // --- Remote Docker host (homelab feedback: Claude Code on a jump host) ---

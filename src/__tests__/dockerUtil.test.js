@@ -300,3 +300,26 @@ describe('dockerUtil.containerProject', () => {
         expect(await empty.containerProject('prometheus')).toBeNull();
     });
 });
+
+describe('dockerUtil.isRelayerClaimed', () => {
+    test('token file present → true, checked inside the named container', async () => {
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
+        const util = createDockerUtil({ execFile, env: {} });
+
+        expect(await util.isRelayerClaimed('xns-relayer')).toBe(true);
+        expect(execFile.mock.calls[0][1]).toEqual(['exec', 'xns-relayer', 'test', '-s', '/relayer/conf/hostioauth']);
+    });
+
+    test('token file missing or empty (test exits 1, no output) → false', async () => {
+        expect(await rejectingUtil('').isRelayerClaimed('xns-relayer')).toBe(false);
+    });
+
+    test.each([
+        ['no such container', 'Error response from daemon: No such container: xns-relayer', 1],
+        ['container stopped', 'Error response from daemon: container abc is not running', 1],
+        ['docker unreachable', 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.', 1],
+        ['test binary missing', 'OCI runtime exec failed: exec: "test": executable file not found', 126],
+    ])('%s → null', async (_label, stderr, code) => {
+        expect(await rejectingUtil(stderr, { code }).isRelayerClaimed('xns-relayer')).toBeNull();
+    });
+});
