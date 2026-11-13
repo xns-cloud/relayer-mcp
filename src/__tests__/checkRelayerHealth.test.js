@@ -147,7 +147,7 @@ describe('check_relayer_health', () => {
     });
 
     // --- Before the claim, the image keeps the S3 gateway stopped ---
-    test('unclaimed Relayer, S3 down → ready for claim, not unhealthy', async () => {
+    test('no Muse token, S3 down → ready for claim, not unhealthy', async () => {
         const docker = localDockerUtil();
         docker.hasMuseToken.mockResolvedValue(false);
         const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
@@ -165,7 +165,7 @@ describe('check_relayer_health', () => {
         expect(parsed.message).toContain('sign in at http://localhost:8888');
     });
 
-    test('unclaimed Relayer in poll mode → returns at once, no timeout', async () => {
+    test('no Muse token in poll mode → returns at once, no timeout', async () => {
         const docker = localDockerUtil();
         docker.hasMuseToken.mockResolvedValue(false);
         const sleep = jest.fn().mockResolvedValue(undefined);
@@ -180,11 +180,11 @@ describe('check_relayer_health', () => {
     });
 
     test.each([
-        ['claimed', true],
-        ['claim state unknown', null],
-    ])('%s Relayer, S3 down → unhealthy, names the S3 gateway', async (_label, claimed) => {
+        ['Muse token present', true],
+        ['Muse token unknown', null],
+    ])('%s, S3 down → unhealthy, names the S3 gateway', async (_label, token) => {
         const docker = localDockerUtil();
-        docker.hasMuseToken.mockResolvedValue(claimed);
+        docker.hasMuseToken.mockResolvedValue(token);
         const handler = registerWithOptions({ httpClient: uiUpS3Down(), dockerUtil: docker });
 
         const parsed = JSON.parse((await handler({ poll: false })).content[0].text);
@@ -195,7 +195,7 @@ describe('check_relayer_health', () => {
         expect(parsed.unhealthy).toEqual(['S3 gateway (localhost:9000)']);
     });
 
-    test('UI down → claim state not consulted, UI and S3 named', async () => {
+    test('UI down → token not consulted, UI and S3 named', async () => {
         const docker = localDockerUtil();
         docker.hasMuseToken.mockResolvedValue(false);
         const handler = registerWithOptions({
@@ -236,6 +236,8 @@ describe('check_relayer_health', () => {
     test.each([
         ['loopback alias of the local daemon', '127.0.0.1', { remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }],
         ['the remote daemon host itself', 'docker-box.lan', { remote: true, host: 'docker-box.lan', endpoint: 'ssh://u@docker-box.lan' }],
+        ['the remote daemon host in other case', 'Docker-Box.LAN', { remote: true, host: 'docker-box.lan', endpoint: 'ssh://u@docker-box.lan' }],
+        ['an upper-case loopback name', 'LOCALHOST', { remote: false, host: 'localhost', endpoint: 'unix:///var/run/docker.sock' }],
     ])('host override is %s → token consulted', async (_label, host, daemon) => {
         const docker = localDockerUtil();
         docker.getDockerHost.mockResolvedValue(daemon);
@@ -248,7 +250,7 @@ describe('check_relayer_health', () => {
         expect(parsed.awaiting_claim).toBe(true);
     });
 
-    test('S3 up → claim state not consulted', async () => {
+    test('S3 up → token not consulted', async () => {
         const docker = localDockerUtil();
         const handler = registerWithOptions({
             dockerUtil: docker,

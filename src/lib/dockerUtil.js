@@ -3,12 +3,12 @@
 const net = require('net');
 const { execFile: nodeExecFile } = require('child_process');
 
-// Every loopback spelling a Docker endpoint can carry: localhost, the whole
-// 127/8 block, the 0.0.0.0 / [::] wildcards, [::1], and IPv4-mapped 127/8
-// ([::ffff:127.0.0.1], which URL normalizes to [::ffff:7f00:1]).
 // Where the Relayer image keeps the Muse token it starts its storage services with.
 const MUSE_TOKEN_PATH = '/relayer/conf/hostioauth';
 
+// Every loopback spelling a Docker endpoint can carry: localhost, the whole
+// 127/8 block, the 0.0.0.0 / [::] wildcards, [::1], and IPv4-mapped 127/8
+// ([::ffff:127.0.0.1], which URL normalizes to [::ffff:7f00:1]).
 function isLoopbackHost(name) {
     if (['localhost', '0.0.0.0', '[::1]', '[::]'].includes(name)) return true;
     if (net.isIPv4(name)) return name.startsWith('127.');

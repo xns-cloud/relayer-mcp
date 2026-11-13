@@ -38,14 +38,18 @@ function normalizeHost(value) {
 }
 
 /**
- * Whether two normalized hosts name the same machine (all loopback names match).
+ * Whether two normalized hosts name the same machine (all loopback names match,
+ * case ignored).
  *
  * @param {string} a
  * @param {string} b
  * @returns {boolean}
  */
 function sameMachine(a, b) {
-    return a === b || (LOCAL_HOSTS.has(a) && LOCAL_HOSTS.has(b));
+    // Host names are case-insensitive: 'Docker-Box.lan' and 'docker-box.lan' are one machine.
+    const x = a.toLowerCase();
+    const y = b.toLowerCase();
+    return x === y || (LOCAL_HOSTS.has(x) && LOCAL_HOSTS.has(y));
 }
 
 /**

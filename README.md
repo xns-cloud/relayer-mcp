@@ -141,7 +141,8 @@ No separate install step required — npx fetches the package on demand.
 3. User clicks email verification link; agent polls (Tool 3).
 4. Agent installs and starts Relayer containers (Tool 4) — it writes the
    released compose + `.env` itself; the user is never asked for a compose URL.
-5. Agent polls health until the UI is up (Tool 5); the S3 gateway starts after step 7.
+5. Agent polls health until the UI is up (Tool 5); the S3 gateway starts once the
+   Relayer is claimed and its owner signs in to the Relayer web UI.
 6. Agent initiates claim; user opens claim URL in browser (Tools 6 + 7).
 7. Agent signs in via OIDC to configure host preferences (Tools 8 + 9).
 8. Agent verifies S3 storage is working (Tool 10).
