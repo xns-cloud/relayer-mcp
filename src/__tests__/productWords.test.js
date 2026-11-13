@@ -169,9 +169,11 @@ describe('product words', () => {
             '| Claiming a Relayer to your account | The claim session and the installation\'s identity | `console.xns.tech` |',
             '| Reading or changing settings, host selection, backups | The setting values you ask to read or change | `console.xns.tech` |',
         ]);
-        expect(section(privacy, '## Network boundary').replace(/\n/g, ' ')).toContain('The only public hosts contacted are the three XNS services named above and, for the `prom/node-exporter` image that an install pulls, Docker Hub.');
+        expect(section(privacy, '## Network boundary').replace(/\n/g, ' ')).toContain('Apart from those, the only public hosts contacted are the three XNS services named above and, for the `prom/node-exporter` image that an install pulls, Docker Hub.');
+        expect(privacy).not.toContain('there is no input that reaches a public Relayer');
+        expect(readme).not.toContain('No tool can be pointed at a public Relayer');
         expect(privacy).not.toContain('are the three XNS services named above.');
         expect(readme).not.toContain('The three XNS services it contacts are');
-        expect(section(readme, '## Privacy Policy')).toContain('The public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.');
+        expect(section(readme, '## Privacy Policy')).toContain('Otherwise the public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.');
     });
 });

@@ -48,13 +48,15 @@ Both are yours to delete at any time.
 
 ## Network boundary
 
-The extension cannot be pointed at a Relayer on the public internet. Two mechanisms enforce
-that: the tools that accept a host or endpoint argument run it through an allowlist that
-permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
-`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`); the remaining tools expose no URL
-parameter at all and are fixed to `localhost`. Either way there is no input that reaches a
-public Relayer. The only public hosts contacted are the three XNS services named above
-and, for the `prom/node-exporter` image that an install pulls, Docker Hub.
+No tool sends a credential to a Relayer on the public internet. The tools that send a token
+to a Relayer (`verify_storage`, `setup_cli_credentials`) run its host through an allowlist
+that permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
+`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`). Two inputs are not limited to
+private addresses, and neither carries a credential: the `host` of `check_relayer_health`,
+which gets plain HTTP health probes, and the `compose_url` of `install_relayer`, from which
+the compose file is downloaded. Apart from those, the only public hosts contacted are the
+three XNS services named above and, for the `prom/node-exporter` image that an install
+pulls, Docker Hub.
 
 ## Stopping it
 

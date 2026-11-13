@@ -35,6 +35,11 @@
 
 ### Fixed
 
+- **A `bind_address` must reach every published port.** The install stops unless each `ports`
+  entry in the release compose uses `${BIND_ADDRESS}`; before, one mention anywhere in a list
+  item, such as an `environment` entry, passed the check while the UI was published on every
+  interface.
+- **`all_healthy` is false while the Relayer awaits its claim**, since the S3 gateway is not up.
 - **The privacy notice names Docker Hub.** An install pulls `prom/node-exporter` from Docker Hub;
   PRIVACY.md and the README privacy summary now list it beside the three XNS services.
 - **`check_relayer_health` no longer fails a fresh install.** The Relayer starts its S3 gateway and
