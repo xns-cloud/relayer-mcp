@@ -8,13 +8,68 @@ const { createDockerUtil, redactEndpoint, classifyDockerFailure } = require('../
 
 const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address (e.g. "127.0.0.1"), or a bracketed IPv6 address (e.g. "[::1]") — the Compose ports host component is an IP address, not a hostname';
 
-// A ports list item that uses ${BIND_ADDRESS...}; a comment naming it does not count.
-const PORTS_USE_BIND_ADDRESS = /^[ \t]*-[^#\n]*\$\{BIND_ADDRESS\b/m;
+const USES_BIND_ADDRESS = /\$\{BIND_ADDRESS\b/;
+
+/** A YAML line with its comment cut off ('#' starts no ${...} expansion). */
+function stripComment(line) {
+    const at = line.search(/(^|\s)#/);
+    return at === -1 ? line : line.slice(0, at);
+}
+
+/**
+ * Whether every port a compose file publishes uses ${BIND_ADDRESS...}, so a
+ * bind_address narrows all of them. Reads each `ports:` block, block or flow
+ * form, long syntax by its whole item (host_ip). A port without it, or a file
+ * with no published port at all, gives false: the caller stops rather than
+ * publish on every interface. Comments and other keys (environment) never count.
+ *
+ * @param {string} text - compose file text
+ * @returns {boolean}
+ */
+function everyPortUsesBindAddress(text) {
+    const lines = text.split(/\r?\n/);
+    const items = [];
+    for (let i = 0; i < lines.length; i++) {
+        const key = /^([ \t]*)(?:-[ \t]+)?ports:(.*)$/.exec(stripComment(lines[i]));
+        if (!key) continue;
+        const keyIndent = key[1].length;
+        const rest = key[2].trim();
+        if (rest) {
+            // Flow form: ports: ["a", "b"]. Anything else is unreadable here.
+            const flow = /^\[(.*)\]$/.exec(rest);
+            if (!flow) return false;
+            items.push(...flow[1].split(',').map((item) => item.trim()).filter(Boolean));
+            continue;
+        }
+        let itemIndent = null;
+        let current = null;
+        for (let j = i + 1; j < lines.length; j++) {
+            const line = stripComment(lines[j]);
+            if (!line.trim()) continue;
+            const indent = /^[ \t]*/.exec(line)[0].length;
+            const dash = /^[ \t]*-(\s|$)/.test(line);
+            if (itemIndent === null) {
+                if (!dash || indent < keyIndent) break;
+                itemIndent = indent;
+            }
+            if (indent < itemIndent || (indent === itemIndent && !dash)) break;
+            if (indent === itemIndent) {
+                current = { text: line };
+                items.push(current);
+            } else {
+                current.text += `\n${line}`;
+            }
+            i = j;
+        }
+    }
+    return items.length > 0
+        && items.every((item) => USES_BIND_ADDRESS.test(typeof item === 'string' ? item : item.text));
+}
 
 /** What the response says about bind_address, per compose source. */
 function bindAddressApplied(source, bindAddress) {
     if (source === 'channel' && bindAddress) {
-        return 'yes — the channel compose references BIND_ADDRESS in its port declarations (checked before install)';
+        return 'yes — the channel compose uses BIND_ADDRESS on every published port (checked before install)';
     }
     if (source === 'channel') {
         return 'not needed — no bind_address was set, so ports are published on all interfaces';
@@ -114,7 +169,7 @@ function incompleteEnvMessage(host) {
 }
 
 function bindUnsupportedMessage(bindAddress) {
-    return `bind_address ${bindAddress} was requested, but the release compose file does not use BIND_ADDRESS in its port list, so the ports would be published on all interfaces. Nothing was installed. Run install_relayer again without bind_address, or pass compose_url pointing at a compose file whose ports use \${BIND_ADDRESS}.`;
+    return `bind_address ${bindAddress} was requested, but the release compose file does not use BIND_ADDRESS on every published port, so the ports would be published on all interfaces. Nothing was installed. Run install_relayer again without bind_address, or pass compose_url pointing at a compose file whose ports use \${BIND_ADDRESS}.`;
 }
 
 function tempFolderMessage(tmpDir) {
@@ -221,7 +276,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         'install_relayer',
         {
             title: 'Install the Relayer',
-            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.xns.tech (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. If the release files cannot be downloaded or used, it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose.\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 24 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. When bind_address is set and the release compose does not use BIND_ADDRESS in its port list, the tool stops before installing anything and says so. A compose_url override is fetched remotely and may not honor it. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
+            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.xns.tech (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. If the release files cannot be downloaded or used, it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose.\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 24 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. When bind_address is set and the release compose does not use BIND_ADDRESS on every published port, the tool stops before installing anything and says so. A compose_url override is fetched remotely and may not honor it. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
             inputSchema: {
                 install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888). Docker publishes this port on the interface chosen by bind_address.'),
@@ -332,7 +387,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                         const composeText = await readStaged(stagedCompose);
                         // A bind_address the release compose ignores would publish
                         // the ports on every interface.
-                        if (bindAddress && !PORTS_USE_BIND_ADDRESS.test(composeText)) {
+                        if (bindAddress && !everyPortUsesBindAddress(composeText)) {
                             throw safeError(bindUnsupportedMessage(bindAddress));
                         }
                         const stagedEnv = path.join(stage, CHANNEL_ENV_FILE);

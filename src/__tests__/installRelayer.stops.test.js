@@ -31,7 +31,7 @@ const GOOD_ENV = 'COMPOSE_PROFILES=loki\n';
 // The four stop messages, word for word, with their filled-in values.
 const downloadFailed = (host, file) => `${PREFIX}The Relayer release files could not be downloaded from ${host} (the ${file} download failed), so nothing was installed. Check that this machine reaches https://${host}, then run install_relayer again.`;
 const incompleteEnv = (host, bugsUrl) => `${PREFIX}The release .env downloaded from ${host} has no COMPOSE_PROFILES line, so the download was cut short or the published release is incomplete, and nothing was installed. Run install_relayer again; if it stops here again, report it at ${bugsUrl}.`;
-const bindUnsupported = (value) => `${PREFIX}bind_address ${value} was requested, but the release compose file does not use BIND_ADDRESS in its port list, so the ports would be published on all interfaces. Nothing was installed. Run install_relayer again without bind_address, or pass compose_url pointing at a compose file whose ports use \${BIND_ADDRESS}.`;
+const bindUnsupported = (value) => `${PREFIX}bind_address ${value} was requested, but the release compose file does not use BIND_ADDRESS on every published port, so the ports would be published on all interfaces. Nothing was installed. Run install_relayer again without bind_address, or pass compose_url pointing at a compose file whose ports use \${BIND_ADDRESS}.`;
 const tempFolder = (tmpDir) => `${PREFIX}The release files could not be prepared on this machine: the temporary folder under ${tmpDir} could not be created or read. Nothing was installed. Check that the folder is writable and the disk is not full, then run install_relayer again.`;
 
 const rawError = (text, code) => Object.assign(new Error(text), { code });
@@ -112,7 +112,7 @@ describe('install_relayer stops', () => {
             expect(text).not.toMatch(/fallback/i);
         }
         expect(description).toContain('If the release files cannot be downloaded or used, it stops, says why and what to do, and installs nothing.');
-        expect(description).toContain('When bind_address is set and the release compose does not use BIND_ADDRESS in its port list, the tool stops before installing anything and says so.');
+        expect(description).toContain('When bind_address is set and the release compose does not use BIND_ADDRESS on every published port, the tool stops before installing anything and says so.');
         expect(readme).not.toMatch(/bundled/i);
     });
 
@@ -160,6 +160,23 @@ describe('install_relayer stops', () => {
     test('bind_address set and the release compose names BIND_ADDRESS only in a comment → stops before the .env download', async () => {
         const commentOnly = '# set BIND_ADDRESS to narrow this: ${BIND_ADDRESS}\nports:\n  - "${UI_PORT:-8888}:8888"\n';
         const ctx = build({ bodies: { [CHANNEL_COMPOSE_URL]: commentOnly, [CHANNEL_ENV_URL]: GOOD_ENV } });
+        const { result, parsed } = await stop(ctx, { bind_address: '127.0.0.1' });
+
+        expect(result.isError).toBe(true);
+        expect(parsed.error).toBe(bindUnsupported('127.0.0.1'));
+        expect(ctx.curlCalls).toHaveLength(1);
+    });
+
+    test.each([
+        ['only in an environment entry', 'services:\n  xns:\n    ports:\n      - "8888:8888"\n    environment:\n      - BIND_ADDRESS=${BIND_ADDRESS}\n'],
+        ['on one port of two', 'services:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}8888:8888"\n      - "9000:9000"\n'],
+        ['on one service of two', 'services:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}8888:8888"\n  grafana:\n    ports:\n      - "3000:3000"\n'],
+        ['on one flow-list port of two', 'services:\n  xns:\n    ports: ["${BIND_ADDRESS:-}8888:8888", "9000:9000"]\n'],
+        ['long syntax with no host_ip', 'services:\n  xns:\n    ports:\n      - target: 8888\n        published: 8888\n    environment:\n      - X=${BIND_ADDRESS}\n'],
+        ['nowhere, no ports at all', 'services:\n  xns:\n    image: x\n'],
+        ['on one service while another takes its ports from a YAML alias', 'x-ports: &open\n  - "3000:3000"\nservices:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}8888:8888"\n  grafana:\n    ports: *open\n'],
+    ])('bind_address set and the release compose uses BIND_ADDRESS %s → stops before the .env download', async (_label, compose) => {
+        const ctx = build({ bodies: { [CHANNEL_COMPOSE_URL]: compose, [CHANNEL_ENV_URL]: GOOD_ENV } });
         const { result, parsed } = await stop(ctx, { bind_address: '127.0.0.1' });
 
         expect(result.isError).toBe(true);

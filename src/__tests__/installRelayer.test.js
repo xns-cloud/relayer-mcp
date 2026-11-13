@@ -593,6 +593,27 @@ describe('install_relayer', () => {
         expect(fs.chmod).toHaveBeenCalledWith('/tmp/xns/.env', 0o600);
     });
 
+    test.each([
+        ['block list with comments in it and after each item', 'services:\n  xns:\n    ports:\n      # BIND_ADDRESS picks the interface\n      - "${BIND_ADDRESS:-}${UI_PORT:-8888}:8888"   # web dashboard\n      - "${BIND_ADDRESS:-}${S3_PORT:-9000}:9000"   # S3 API\n    environment:\n      - NODE_ENV=production\n  grafana:\n    image: grafana/grafana\n'],
+        ['flow list', 'services:\n  xns:\n    ports: ["${BIND_ADDRESS:-}8888:8888", "${BIND_ADDRESS:-}9000:9000"]\n'],
+        ['long syntax with host_ip', 'services:\n  xns:\n    ports:\n      - target: 8888\n        published: 8888\n        host_ip: ${BIND_ADDRESS:-0.0.0.0}\n'],
+        ['items at the key indent', 'services:\n  xns:\n    ports:\n    - "${BIND_ADDRESS:-}8888:8888"\n    image: x\n'],
+    ])('bind_address set and every published port uses BIND_ADDRESS (%s) → installs', async (_label, compose) => {
+        const fs = fakeFs();
+        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: compose, [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
+        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const handler = registerWithOptions({
+            execFile,
+            fs,
+            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
+
+        expect(composeUp).toHaveBeenCalledTimes(1);
+        expect(parsed.binding.bind_address_applied).toMatch(/^yes — the channel compose uses BIND_ADDRESS on every published port/);
+    });
+
     test('compose_url path → bind_address_applied says unknown', async () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
