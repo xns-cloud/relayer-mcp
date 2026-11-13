@@ -102,7 +102,7 @@ reviews:
         minio_port→s3_port and MINIO_PORT→S3_PORT in 0.4.0. The S3 port
         belongs to the S3 Gateway, not MinIO. MinIO is a frozen fork being
         demolished — never reintroduce the name. Applies everywhere:
-        src/tools/, src/lib/, src/templates/, package.json, CI, docs.
+        src/tools/, src/lib/, package.json, CI, docs.
 
         Repo conventions:
         - CommonJS only (require/module.exports). No ESM, no TypeScript.
@@ -169,22 +169,6 @@ reviews:
         Polling loops must be bounded (max attempts/timeout) — no
         infinite retry. Errors thrown here surface in tool responses:
         keep messages generic, free of secrets and internal paths.
-
-    # --- Bundled compose template: accepted Grafana state ---
-    - path: "src/templates/**"
-      instructions: |
-        Bundled docker-compose.yml fallback template.
-
-        Known accepted state (MR17, deliberate): Grafana ships with
-        GF_AUTH_ANONYMOUS_ENABLED=true and GF_AUTH_ANONYMOUS_ORG_ROLE=Admin.
-        The relayer reverse-proxies Grafana, mitigating direct external
-        exposure. Do not re-flag these existing lines on unrelated diffs.
-        DO flag any change that widens exposure: publishing Grafana's port
-        directly to the host, extending anonymous access to other
-        services, or removing the reverse-proxy assumption.
-
-        Flag any new "minio"-named service, env var, or port key (HARD
-        RULE above). Port values in the template must stay within 1-65535.
 
     # --- CI: OIDC trusted publishing, human-only release tags ---
     - path: ".gitlab-ci.yml"

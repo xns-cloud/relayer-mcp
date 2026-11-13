@@ -36,11 +36,18 @@ function publishedFiles() {
 describe('BUG-1172: published files name no internal infrastructure', () => {
     const files = publishedFiles();
 
-    test('the files list resolves to real files, including the install tool and template', () => {
+    test('the files list resolves to real files, including the install tool, and ships no compose template', () => {
         const rel = files.map((f) => path.relative(repoRoot, f));
         expect(rel).toContain(path.join('src', 'tools', 'installRelayer.js'));
-        expect(rel).toContain(path.join('src', 'templates', 'docker-compose.yml'));
         expect(rel).toContain('README.md');
+        expect(rel.filter((f) => f.startsWith(path.join('src', 'templates')))).toEqual([]);
+        expect(pkg.files).not.toContain('src/templates/');
+    });
+
+    // The .mcpb bundle is packed from the folder, not from `files`, so the
+    // template must be gone from the tree, not only from the list.
+    test('no src/templates folder is left in the tree', () => {
+        expect(fs.existsSync(path.join(repoRoot, 'src', 'templates'))).toBe(false);
     });
 
     test.each(INTERNAL_NAMES.map((re) => [String(re), re]))('no published file matches %s', (_label, re) => {

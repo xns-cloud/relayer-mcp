@@ -52,7 +52,6 @@
     "src/index.js",
     "src/lib/",
     "src/tools/",
-    "src/templates/",
     "LICENSE",
     "NOTICE",
     "manifest.json",

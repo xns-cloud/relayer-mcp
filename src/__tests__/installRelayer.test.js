@@ -117,27 +117,33 @@ describe('install_relayer', () => {
 
     const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
     const CHANNEL_ENV_URL = 'https://releases.xns.tech/relayer/release/.env';
-    const TEMPLATE_PATH = require('path').join(__dirname, '..', 'templates', 'docker-compose.yml');
+    // The temporary folder every fake mkdtemp below hands back.
+    const STAGE = require('path').join(require('os').tmpdir(), 'xns-relayer-install-TEST');
 
-    // Per-path fake fs. The bundled template reads as BUNDLED_COMPOSE_TEMPLATE;
-    // a .env path reads what curl wrote there (see curlWritingInto) or, when
-    // nothing was written, `fetchedEnv` — the release .env curl "downloaded".
+    // Per-path fake fs. A path reads what curl wrote there (see curlWritingInto)
+    // or, when nothing was written, `fetchedEnv` for a .env and DEFAULT_COMPOSE
+    // for a docker-compose.yml — the release files curl "downloaded".
     // Any other path is ENOENT.
     // The publisher refuses to ship a release .env without this line.
     const RELEASE_PROFILE_LINE = 'COMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\n';
+    const DEFAULT_COMPOSE = 'services:\n  xns:\n    ports:\n      - "${BIND_ADDRESS:-}${UI_PORT:-8888}:8888"\n';
 
     function fakeFs({ fetchedEnv = RELEASE_PROFILE_LINE } = {}) {
         const writes = {};
         return {
             writes,
             readFile: jest.fn(async (p) => {
-                if (p === TEMPLATE_PATH) return 'BUNDLED_COMPOSE_TEMPLATE\n';
                 if (p in writes) return writes[p];
                 if (p.endsWith('/.env')) return fetchedEnv;
+                if (p.endsWith('/docker-compose.yml')) return DEFAULT_COMPOSE;
                 throw Object.assign(new Error(`ENOENT: no such file, open '${p}'`), { code: 'ENOENT' });
             }),
             writeFile: jest.fn(async (p, data) => { writes[p] = data; }),
             chmod: jest.fn(async () => {}),
+            mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`),
+            rm: jest.fn(async (dir) => {
+                for (const p of Object.keys(writes)) if (p.startsWith(`${dir}/`)) delete writes[p];
+            }),
         };
     }
 
@@ -179,15 +185,41 @@ describe('install_relayer', () => {
 
         expect(parsed.success).toBe(true);
         expect(parsed.source).toBe('channel');
-        // curl fetched the canonical channel compose into the install dir.
+        // curl fetched the canonical channel compose into the temporary folder.
         const curl = execFileCalls.find((c) => c.cmd === 'curl');
         expect(curl.args).toContain(CHANNEL_COMPOSE_URL);
-        expect(curl.args).toContain('/tmp/xns/docker-compose.yml');
-        // The bundled template is NOT read on the happy path.
-        expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH, expect.anything());
-        expect(fs.readFile).not.toHaveBeenCalledWith(TEMPLATE_PATH);
-        // .env written with default ports.
+        expect(curl.args).toContain(`${STAGE}/docker-compose.yml`);
+        // The downloaded compose and the .env with default ports land in the install folder.
+        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe(DEFAULT_COMPOSE);
         expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n`);
+    });
+
+    // The release files are downloaded into a temporary folder, checked there,
+    // and only then copied into the install folder.
+    test('bind_address set and good release files → downloads staged, then copied into the install folder', async () => {
+        const fs = fakeFs();
+        const releaseCompose = 'services:\n  xns:\n    ports:\n      - "${BIND_ADDRESS}8888:8888"\n';
+        const { execFile, calls } = curlWritingInto(fs, {
+            [CHANNEL_COMPOSE_URL]: releaseCompose,
+            [CHANNEL_ENV_URL]: 'COMPOSE_PROFILES=loki\n',
+        });
+        const handler = registerWithOptions({
+            execFile,
+            fs,
+            dockerUtil: { composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }), findContainer: jest.fn().mockResolvedValue(null) },
+        });
+
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.source).toBe('channel');
+        expect(parsed).not.toHaveProperty('reason');
+        expect(parsed).not.toHaveProperty('note');
+        expect(calls.map((c) => c.out)).toEqual([`${STAGE}/docker-compose.yml`, `${STAGE}/.env`]);
+        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe(releaseCompose);
+        expect(fs.writes['/tmp/xns/.env']).toBe('COMPOSE_PROFILES=loki\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
+        expect(fs.writeFile).toHaveBeenCalledWith('/tmp/xns/.env', expect.any(String), { mode: 0o600 });
+        expect(fs.rm).toHaveBeenCalledWith(STAGE, { recursive: true, force: true });
     });
 
     // --- E-A9 AC-25 (TP-31): release compose + release .env, fetched each run ---
@@ -227,8 +259,8 @@ describe('install_relayer', () => {
             expect(parsed.success).toBe(true);
             expect(parsed.source).toBe('channel');
             expect(curl.calls).toEqual([
-                { url: CHANNEL_COMPOSE_URL, out: '/tmp/xns/docker-compose.yml' },
-                { url: CHANNEL_ENV_URL, out: '/tmp/xns/.env' },
+                { url: CHANNEL_COMPOSE_URL, out: `${STAGE}/docker-compose.yml` },
+                { url: CHANNEL_ENV_URL, out: `${STAGE}/.env` },
             ]);
             for (const { url } of curl.calls) {
                 expect(url).toContain('/relayer/release/');
@@ -265,42 +297,10 @@ describe('install_relayer', () => {
             expect(fs.writes['/tmp/xns/.env']).toBe('COMPOSE_PROFILES=loki\nUI_PORT=18888\nS3_PORT=9000\nBIND_ADDRESS=\n');
         });
 
-        test.each([
-            ['the compose fetch', CHANNEL_COMPOSE_URL],
-            ['the .env fetch', CHANNEL_ENV_URL],
-        ])('%s failing → own template and own .env (audit switch and port lines)', async (_label, failingUrl) => {
-            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            const { handler, fs, composeUp } = build({ failing: [failingUrl] });
-
-            const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
-            errSpy.mockRestore();
-
-            expect(parsed.success).toBe(true);
-            expect(parsed.source).toBe('bundled-fallback');
-            expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
-            expect(composeUp).toHaveBeenCalledTimes(1);
-        });
-
-        test('a fetched .env without COMPOSE_PROFILES → own template and own .env', async () => {
-            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            const { handler, fs } = build({
-                bodies: { [CHANNEL_COMPOSE_URL]: 'RELEASE_COMPOSE\n', [CHANNEL_ENV_URL]: '# XNS Relayer release channel\n' },
-            });
-
-            const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
-            errSpy.mockRestore();
-
-            expect(parsed.source).toBe('bundled-fallback');
-            expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
-        });
-
         // Compose lets the process environment beat .env, so an inherited value would
         // leave the audit sink on with no sidecars to tail and rotate it.
         test.each([
             ['the channel path', {}, undefined],
-            ['the fallback path', { failing: [CHANNEL_COMPOSE_URL] }, undefined],
             ['the compose_url path, which writes no .env', { compose_url: 'https://example.com/c.yml' }, 'other'],
         ])('inherited COMPOSE_PROFILES on %s', async (_label, { failing, compose_url }, expected) => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -317,27 +317,6 @@ describe('install_relayer', () => {
             }
         });
 
-        test('a downloaded .env that cannot be read → own template and own .env', async () => {
-            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            const fs = fakeFs();
-            fs.readFile.mockImplementation(async (p) => {
-                if (p === TEMPLATE_PATH) return 'BUNDLED_COMPOSE_TEMPLATE\n';
-                throw Object.assign(new Error(`EACCES: permission denied, open '${p}'`), { code: 'EACCES' });
-            });
-            const handler = registerWithOptions({
-                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
-                fs,
-                dockerUtil: { composeUp: jest.fn().mockResolvedValue({}), findContainer: jest.fn().mockResolvedValue(null) },
-            });
-
-            const result = await handler({ install_path: '/tmp/xns' });
-            errSpy.mockRestore();
-            const parsed = JSON.parse(result.content[0].text);
-
-            expect(parsed.source).toBe('bundled-fallback');
-            expect(fs.writes['/tmp/xns/.env']).toBe(`${AUDIT_LINES}${PORT_LINES}`);
-            expect(result.content[0].text).not.toContain('EACCES');
-        });
     });
 
     // --- E-A2 / D5 / AC-8: the installer states the binding at install time ---
@@ -412,30 +391,24 @@ describe('install_relayer', () => {
         expect(fs.writeFile).not.toHaveBeenCalled();
     });
 
-    // Offline resilience: if the channel fetch fails, the bundled template is
-    // the fallback — the install still completes and SAYS it fell back.
-    test('channel fetch failure → falls back to bundled template', async () => {
+    // A compose_url override downloads straight into the install folder, with no
+    // temporary folder.
+    test('compose_url override → mkdir, then curl into the install folder, no temporary folder', async () => {
         const fs = fakeFs();
-        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
         const handler = registerWithOptions({
-            execFile: jest.fn((cmd, args, opts, cb) => {
-                if (cmd === 'curl') return cb(new Error('could not resolve host'));
-                cb(null, '', '');
-            }),
+            execFile,
             fs,
-            dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
+            dockerUtil: { composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }), findContainer: jest.fn().mockResolvedValue(null) },
         });
 
-        const result = await handler({ install_path: '/tmp/xns' });
-        const parsed = JSON.parse(result.content[0].text);
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', compose_url: 'https://example.com/c.yml' })).content[0].text);
 
-        expect(parsed.success).toBe(true);
-        expect(parsed.source).toBe('bundled-fallback');
-        expect(parsed.note).toMatch(/fell back|fall.?back/i);
-        // Bundled template written to docker-compose.yml; .env still written.
-        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=\n');
-        expect(composeUp).toHaveBeenCalled();
+        expect(execFile.mock.calls.map((c) => c[0])).toEqual(['mkdir', 'curl']);
+        const curlArgs = execFile.mock.calls[1][1];
+        expect(curlArgs[curlArgs.indexOf('-o') + 1]).toBe('/tmp/xns/docker-compose.yml');
+        expect(fs.mkdtemp).not.toHaveBeenCalled();
+        expect(parsed.source).toBe('compose_url');
     });
 
     // Custom ports flow into .env AND into the compose env (interpolation).
@@ -473,7 +446,7 @@ describe('install_relayer', () => {
         const result = await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' });
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
+        expect(fs.writes['/tmp/xns/.env']).toBe(`${RELEASE_PROFILE_LINE}UI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n`);
         const [, execOpts] = composeUp.mock.calls[0];
         expect(execOpts.env.BIND_ADDRESS).toBe('127.0.0.1:');
         expect(parsed.binding.bind_address).toBe('127.0.0.1');
@@ -592,45 +565,6 @@ describe('install_relayer', () => {
         expect(parsed.binding.bind_address_applied).toMatch(/^yes — the channel compose/);
     });
 
-    test('bind_address set and the channel compose names BIND_ADDRESS only in a comment → bundled compose', async () => {
-        const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: '# set BIND_ADDRESS to narrow this\nports:\n  - "${UI_PORT:-8888}:8888"\n' });
-        const handler = registerWithOptions({
-            execFile,
-            fs,
-            dockerUtil: {
-                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
-                findContainer: jest.fn().mockResolvedValue(null),
-            },
-        });
-
-        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
-
-        expect(parsed.source).toBe('bundled-fallback');
-        expect(parsed.binding.bind_address_applied).toMatch(/^yes — the bundled/);
-    });
-
-    // CONTRACT-2: the release compose has no BIND_ADDRESS, so a bind_address
-    // would be ignored and the ports published on every interface.
-    test('bind_address set and the channel compose lacks BIND_ADDRESS → bundled compose, source bundled-fallback with a reason, applied yes', async () => {
-        const fs = fakeFs();
-        const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n' });
-        const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
-        const handler = registerWithOptions({ execFile, fs, dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) } });
-        const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
-        errSpy.mockRestore();
-
-        expect(parsed.success).toBe(true);
-        expect(parsed.source).toBe('bundled-fallback');
-        expect(parsed.reason).toMatch(/bind_address/);
-        expect(parsed.binding.bind_address_applied).toMatch(/^yes/);
-        expect(fs.writes['/tmp/xns/docker-compose.yml']).toBe('BUNDLED_COMPOSE_TEMPLATE\n');
-        expect(fs.writes['/tmp/xns/.env']).toBe('RELAYER_AUDIT_MODE=loki\nCOMPOSE_PROFILES=${RELAYER_AUDIT_MODE:-loki}\nUI_PORT=8888\nS3_PORT=9000\nBIND_ADDRESS=127.0.0.1:\n');
-        expect(composeUp.mock.calls[0][1].env.BIND_ADDRESS).toBe('127.0.0.1:');
-    });
-
     test('no bind_address and the channel compose lacks BIND_ADDRESS → the channel compose stays', async () => {
         const fs = fakeFs();
         const { execFile } = curlWritingInto(fs, { [CHANNEL_COMPOSE_URL]: 'ports:\n  - "8888:8888"\n', [CHANNEL_ENV_URL]: RELEASE_PROFILE_LINE });
@@ -647,42 +581,17 @@ describe('install_relayer', () => {
     });
 
     // SEC-1: the .env carries webhook/SMTP secrets.
-    test('the .env is written owner-only (0600) on the channel and fallback paths', async () => {
-        for (const offline of [false, true]) {
-            server = { registerTool: jest.fn() };
-            const fs = fakeFs();
-            const handler = registerWithOptions({
-                execFile: jest.fn((cmd, args, opts, cb) => (cmd === 'curl' && offline ? cb(new Error('offline')) : cb(null, '', ''))),
-                fs,
-                dockerUtil: { composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }), findContainer: jest.fn().mockResolvedValue(null) },
-            });
-            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            await handler({ install_path: '/tmp/xns' });
-            errSpy.mockRestore();
-
-            expect(fs.writeFile).toHaveBeenCalledWith('/tmp/xns/.env', expect.any(String), { mode: 0o600 });
-            expect(fs.chmod).toHaveBeenCalledWith('/tmp/xns/.env', 0o600);
-        }
-    });
-
-    test('bundled-fallback path → bind_address_applied says yes', async () => {
+    test('the .env is written owner-only (0600) on the channel', async () => {
         const fs = fakeFs();
         const handler = registerWithOptions({
-            execFile: jest.fn((cmd, args, opts, cb) => {
-                if (cmd === 'curl') return cb(new Error('offline'));
-                cb(null, '', '');
-            }),
+            execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
             fs,
-            dockerUtil: {
-                composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
-                findContainer: jest.fn().mockResolvedValue(null),
-            },
+            dockerUtil: { composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }), findContainer: jest.fn().mockResolvedValue(null) },
         });
+        await handler({ install_path: '/tmp/xns' });
 
-        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', bind_address: '127.0.0.1' })).content[0].text);
-
-        expect(parsed.source).toBe('bundled-fallback');
-        expect(parsed.binding.bind_address_applied).toMatch(/^yes/);
+        expect(fs.writeFile).toHaveBeenCalledWith('/tmp/xns/.env', expect.any(String), { mode: 0o600 });
+        expect(fs.chmod).toHaveBeenCalledWith('/tmp/xns/.env', 0o600);
     });
 
     test('compose_url path → bind_address_applied says unknown', async () => {
@@ -812,104 +721,6 @@ describe('install_relayer', () => {
         expect(composeUp).not.toHaveBeenCalled();
     });
 
-    // --- Bundled fallback template — contract with the channel bundle ---------
-    // The default install fetches the channel bundle; this file is the OFFLINE
-    // FALLBACK and must keep SERVICE PARITY with it. Guards the live gap where
-    // the template was relayer-only: MCP installs shipped no prometheus/grafana
-    // and the UI's Monitoring section was dead. Reads the real file on disk
-    // (not the mock) so any drift is caught in CI.
-
-    function readTemplate() {
-        const path = require('path');
-        const realFs = require('fs');
-        return realFs.readFileSync(path.join(__dirname, '..', 'templates', 'docker-compose.yml'), 'utf8');
-    }
-
-    test('fallback template keeps service parity with the channel bundle', () => {
-        const template = readTemplate();
-        // Full bundle: relayer, monitoring and alert delivery, and the audit-log
-        // pipeline. A missing service here = a degraded install.
-        for (const service of ['xns:', 'prometheus:', 'alertmanager:', 'grafana:', 'node-exporter:', 'loki:', 'alloy:', 'audit-logrotate:']) {
-            expect(template).toMatch(new RegExp(`^\\s{2}${service}\\s*$`, 'm'));
-        }
-        // privileged matches the channel compose (samba / fuse / disk management).
-        expect(template).toMatch(/^\s*privileged:\s*true/m);
-    });
-
-    // The sidecars are useless unless the relayer writes where they read.
-    test('fallback template wires the relayer to the audit-log sidecars', () => {
-        const template = readTemplate();
-        const relayer = template.slice(template.indexOf('\n  xns:'), template.indexOf('\n  loki:'));
-        expect(relayer).toContain('export S3GW_AUDIT_NDJSON_PATH=/var/log/relayer-audit/audit.ndjson');
-        expect(relayer).toMatch(/^\s*-\s*audit_logs:\/var\/log\/relayer-audit\s*(#.*)?$/m);
-        expect(relayer).toMatch(/^\s*-\s*relayer_logs:\/relayer\/log\s*(#.*)?$/m);
-        expect(relayer).not.toMatch(/^\s*depends_on:/m);
-    });
-
-    // COMPOSE_PROFILES in the fallback .env names this profile; a sidecar without
-    // it starts in every audit mode, a renamed one never starts.
-    test('fallback template gates exactly the audit-log sidecars on the loki profile', () => {
-        const serviceBlock = (name) => readTemplate().match(new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)*)`, 'm'))[1];
-
-        for (const name of ['loki', 'alloy', 'audit-logrotate']) {
-            expect(serviceBlock(name)).toMatch(/^\s*profiles:\s*\["loki"\]\s*$/m);
-        }
-        for (const name of ['xns', 'prometheus', 'alertmanager', 'grafana', 'node-exporter']) {
-            expect(serviceBlock(name)).not.toMatch(/^\s*profiles:/m);
-        }
-    });
-
-    // The fallback pulls the release channel in all seven
-    // releases-registry images, and names no other channel anywhere.
-    test('fallback template pins the releases-registry release channel', () => {
-        const template = readTemplate();
-
-        for (const image of ['xns-relayer', 'relayer-prometheus', 'relayer-alertmanager', 'relayer-grafana', 'relayer-loki', 'relayer-alloy', 'relayer-audit-logrotate']) {
-            expect(template).toMatch(new RegExp(`^\\s*image:\\s*releases\\.xns\\.tech/${image}:release-latest\\s*(#.*)?$`, 'm'));
-        }
-        expect(template.match(/:release-latest/g)).toHaveLength(7);
-        expect(template).not.toContain('beta-latest');
-        expect(template).not.toMatch(/^\s*image:.*:stable/m);
-    });
-
-    // CR-2 (ADR-0016): a web-facing container must never hold the visitor's
-    // Docker daemon. AC-25's grep, over the whole file including its header.
-    test('fallback template never mounts or names docker.sock', () => {
-        expect(readTemplate()).not.toContain('docker.sock');
-    });
-
-    test('fallback template names no Docker Hub scprime/ repository, header included', () => {
-        expect(readTemplate()).not.toContain('scprime/');
-    });
-
-    // STORAGE-STRATEGY PARITY (beta-tester report 2026-06-09, tacom, bug #2):
-    // the fallback MUST use the SAME volume strategy as the channel bundle —
-    // the named volume `relayer_data:/relayer`. When the two diverged (channel =
-    // named volume, fallback = bind mount ./data), an online-vs-offline install
-    // silently switched the mount target and the user's buckets "vanished" (data
-    // orphaned in the other volume). A bind mount here is the bug. Keep in sync
-    // with deploy/relayer-beta/docker-compose.yml.
-    test('fallback template uses the named relayer_data volume (NOT a bind mount)', () => {
-        const template = readTemplate();
-
-        // relayer service mounts the named volume...
-        expect(template).toMatch(/^\s*-\s*relayer_data:\/relayer\s*(#.*)?$/m);
-        // ...declared in the top-level volumes block.
-        expect(template).toMatch(/^volumes:/m);
-        expect(template).toMatch(/^\s{2}relayer_data:\s*$/m);
-        // and NEVER the bind mount that caused the data-orphaning flip.
-        expect(template).not.toMatch(/^\s*-\s*\.\/data:\/relayer/m);
-    });
-
-    // PULL PARITY (tacom bug #1): `docker compose up -d` (the only command
-    // install_relayer runs) must fetch the current :release-latest image, not a
-    // stale local cache. pull_policy: always makes that declarative — the same
-    // line is required on the channel bundle.
-    test('fallback template sets pull_policy: always on the relayer service', () => {
-        const template = readTemplate();
-        expect(template).toMatch(/^\s*pull_policy:\s*always\s*$/m);
-    });
-
     // --- W3-AC4: channelComposeUrl injectable seam ---
 
     // Override is honored: a custom channelComposeUrl replaces the default channel URL.
@@ -957,26 +768,6 @@ describe('install_relayer', () => {
         expect(curl.args).toContain(CHANNEL_COMPOSE_URL);
     });
 
-    // Fleet-safety regression: Docker Hub scprime/* tags are production FLEET
-    // artifacts, not a release channel — the 0.3.0 template pointed there and
-    // installed a 10-month-stale image. A Hub (or any non-releases-registry)
-    // image reference must never return to the bundled install. The ONE allowed
-    // upstream image is prom/node-exporter (public multi-arch, matches the
-    // channel bundle).
-    test('fallback template never references Docker Hub or fleet images', () => {
-        const template = readTemplate();
-
-        const imageLines = template.split('\n').filter((l) => /^\s*image:/.test(l));
-        expect(imageLines).toHaveLength(8);
-        for (const line of imageLines) {
-            expect(line).not.toContain('scprime/');
-            expect(line).not.toContain('docker.io');
-            expect(line).toMatch(/releases\.xns\.tech\/|image:\s*prom\/node-exporter:v[\d.]+/);
-        }
-        // node-exporter stays version-pinned, not :latest.
-        expect(template).not.toMatch(/node-exporter:latest/);
-    });
-
     // BUG-229: install_relayer writes its files on the machine running the MCP
     // but compose up runs on the Docker host. With a remote daemon it refuses
     // before touching anything.
@@ -986,10 +777,20 @@ describe('install_relayer', () => {
         beforeEach(() => { errSpy = jest.spyOn(console, 'error').mockImplementation(() => {}); });
         afterEach(() => errSpy.mockRestore());
 
-        function handlerWith({ execFile, composeUp }) {
+        function stubFs() {
+            return {
+                readFile: jest.fn().mockResolvedValue('services: {}\nCOMPOSE_PROFILES=loki\n'),
+                writeFile: jest.fn().mockResolvedValue(),
+                chmod: jest.fn().mockResolvedValue(),
+                mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`),
+                rm: jest.fn().mockResolvedValue(),
+            };
+        }
+
+        function handlerWith({ execFile, composeUp, fs = stubFs() }) {
             return registerWithOptions({
                 execFile,
-                fs: { readFile: jest.fn().mockResolvedValue('services: {}'), writeFile: jest.fn().mockResolvedValue(), chmod: jest.fn().mockResolvedValue() },
+                fs,
                 dockerUtil: {
                     composeUp: composeUp || jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
                     findContainer: jest.fn().mockResolvedValue(null),
@@ -998,14 +799,32 @@ describe('install_relayer', () => {
         }
 
         test('mkdir failure → fixed message to the client, raw error only in the server log', async () => {
-            const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'mkdir' ? new Error(RAW) : null, '', '')) });
+            const fs = stubFs();
+            const execFile = jest.fn((cmd, args, opts, cb) => cb(cmd === 'mkdir' ? new Error(RAW) : null, '', ''));
+            const handler = handlerWith({ execFile, fs });
             const result = await handler({ install_path: '/opt/xns-relayer' });
             const parsed = JSON.parse(result.content[0].text);
 
             expect(result.isError).toBe(true);
-            expect(parsed.error).toMatch(/^Relayer installation failed: Failed to create directory \/opt\/xns-relayer/);
+            // The folder is created after both downloads are checked.
+            expect(execFile.mock.calls.map((c) => c[0])).toEqual(['curl', 'curl', 'mkdir']);
+            expect(parsed.error).toBe('Relayer installation failed: Failed to create directory /opt/xns-relayer — check that the path is writable on this machine and no file sits at or along it');
+            expect(fs.writeFile).not.toHaveBeenCalled();
             expect(result.content[0].text).not.toContain('EACCES');
             expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
+        });
+
+        test('compose up failure → the install files stay; only the temporary folder is removed', async () => {
+            const fs = stubFs();
+            const handler = handlerWith({
+                execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+                composeUp: jest.fn().mockRejectedValue(new Error('boom')),
+                fs,
+            });
+            const parsed = JSON.parse((await handler({ install_path: '/tmp/xns' })).content[0].text);
+
+            expect(parsed.error).toBe('Relayer installation failed: See server log for detail.');
+            expect(fs.rm.mock.calls).toEqual([[STAGE, { recursive: true, force: true }]]);
         });
 
         test('compose up failure → generic message, raw error only in the server log', async () => {
@@ -1033,17 +852,6 @@ describe('install_relayer', () => {
             expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
         });
 
-        test('channel fetch failure → fallback note carries no curl text', async () => {
-            const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'curl' ? new Error(RAW) : null, '', '')) });
-            const result = await handler({ install_path: '/opt/xns-relayer' });
-            const parsed = JSON.parse(result.content[0].text);
-
-            expect(parsed.success).toBe(true);
-            expect(parsed.source).toBe('bundled-fallback');
-            expect(parsed.note).toMatch(/fell back/);
-            expect(result.content[0].text).not.toContain('EACCES');
-            expect(errSpy.mock.calls.flat().join(' ')).toContain(RAW);
-        });
     });
 
     describe('remote Docker host — install refuses', () => {
@@ -1054,7 +862,7 @@ describe('install_relayer', () => {
         function build({ env, contextEndpoint, getDockerHost } = {}) {
             const installExec = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
             const writeFile = jest.fn().mockResolvedValue();
-            const readFile = jest.fn().mockResolvedValue('services: {}');
+            const readFile = jest.fn().mockResolvedValue('services: {}\nCOMPOSE_PROFILES=loki\n');
             const dockerExec = jest.fn((cmd, args, opts, cb) => {
                 if (args[0] === 'context') return cb(null, `${contextEndpoint || 'unix:///var/run/docker.sock'}\n`, '');
                 return cb(null, '', '');
@@ -1071,7 +879,8 @@ describe('install_relayer', () => {
                 jest.spyOn(dockerUtil, 'composeUp');
                 jest.spyOn(dockerUtil, 'findContainer');
             }
-            const handler = registerWithOptions({ execFile: installExec, fs: { readFile, writeFile, chmod: jest.fn().mockResolvedValue() }, dockerUtil });
+            const fs = { readFile, writeFile, chmod: jest.fn().mockResolvedValue(), mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`), rm: jest.fn().mockResolvedValue() };
+            const handler = registerWithOptions({ execFile: installExec, fs, dockerUtil });
             return { handler, installExec, writeFile, readFile, dockerExec, dockerUtil };
         }
 
@@ -1160,7 +969,7 @@ describe('install_relayer', () => {
 
             expect(parsed.success).toBe(true);
             expect(result.isError).toBeUndefined();
-            expect(ctx.installExec.mock.calls.map((c) => c[0])).toEqual(['mkdir', 'curl', 'curl']);
+            expect(ctx.installExec.mock.calls.map((c) => c[0])).toEqual(['curl', 'curl', 'mkdir']);
             expect(ctx.writeFile).toHaveBeenCalled();
             expect(ctx.dockerUtil.composeUp).toHaveBeenCalledTimes(1);
         });
@@ -1201,7 +1010,13 @@ describe('install_relayer', () => {
             const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
             const handler = registerWithOptions({
                 execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
-                fs: { readFile: jest.fn().mockResolvedValue(''), writeFile: jest.fn().mockResolvedValue(), chmod: jest.fn().mockResolvedValue() },
+                fs: {
+                    readFile: jest.fn().mockResolvedValue('COMPOSE_PROFILES=loki\n'),
+                    writeFile: jest.fn().mockResolvedValue(),
+                    chmod: jest.fn().mockResolvedValue(),
+                    mkdtemp: jest.fn(async (prefix) => `${prefix}TEST`),
+                    rm: jest.fn().mockResolvedValue(),
+                },
                 dockerUtil: { composeUp, findContainer: jest.fn().mockResolvedValue(null) },
             });
             const parsed = JSON.parse((await handler({ install_path: '/opt/xns-relayer' })).content[0].text);
