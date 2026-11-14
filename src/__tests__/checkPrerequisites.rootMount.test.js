@@ -1,6 +1,6 @@
 'use strict';
 
-const FIX_COMMAND = 'sudo nsenter -t $(pgrep -o dockerd) -m mount --make-rshared /';
+const FIX_COMMAND = 'sudo nsenter -t 200 -m mount --make-rshared /';
 
 const mountinfo = (rootOptional) => [
     `22 1 8:1 / / rw,relatime ${rootOptional} - ext4 /dev/sda1 rw`,
@@ -112,6 +112,19 @@ describe('check_prerequisites root mount propagation', () => {
 
         expect(check.passed).toBe(false);
         expect(check.remediation).toContain(FIX_COMMAND);
+    });
+
+    test('the fix command names the PID of the daemon that was checked', async () => {
+        const procFs = fakeProc({
+            100: { comm: 'bash' },
+            4242: { comm: 'dockerd', mountinfo: mountinfo('') },
+            5000: { comm: 'dockerd', mountinfo: mountinfo('shared:1') },
+        });
+        const { check } = await runCheck({ procFs });
+
+        expect(check.passed).toBe(false);
+        expect(check.remediation).toContain('sudo nsenter -t 4242 -m mount --make-rshared /');
+        expect(check.remediation).not.toContain('pgrep');
     });
 
     test('no local dockerd skips without failing', async () => {

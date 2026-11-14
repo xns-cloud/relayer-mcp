@@ -31,7 +31,8 @@ const BYTES_PER_GB = 10 ** 9;
 // compose mounts /mnt and / with rslave propagation, which needs a shared or
 // slave root. The daemon runs in systemd's namespace, so a plain
 // `mount --make-rshared /` in the user's shell is not enough.
-const MAKE_ROOT_SHARED_COMMAND = 'sudo nsenter -t $(pgrep -o dockerd) -m mount --make-rshared /';
+// The PID is the daemon the check read, so the fix targets the same process.
+const makeRootSharedCommand = (pid) => `sudo nsenter -t ${pid} -m mount --make-rshared /`;
 
 const GROUP_NOTE = 'the Docker socket refuses this user until the docker group applies (see docker_group)';
 
@@ -203,7 +204,7 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             name,
             passed: false,
             detail: 'The root mount (/) is private for the Docker daemon, so the Relayer containers would stay stuck in "Created" and the install would never become healthy',
-            remediation: `Make / shared in the Docker daemon's mount namespace: ${MAKE_ROOT_SHARED_COMMAND} — then run the install again.${wslNote}`,
+            remediation: `Make / shared in the Docker daemon's mount namespace: ${makeRootSharedCommand(pid)} — then run the install again.${wslNote}`,
         };
     }
 
