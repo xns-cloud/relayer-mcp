@@ -29,7 +29,8 @@
   slave for the Docker daemon. WSL2 mounts it private, so the containers stayed in "Created" while
   every check passed. The new `root_mount_propagation` check fails with the command that fixes it,
   and on WSL says the fix must be run again after each restart. It is skipped when no Docker
-  daemon runs on this machine.
+  daemon runs on this machine, when more than one does, or when the daemon's mounts cannot be
+  read.
 
 ## [0.13.0] — 2026-11-12
 
