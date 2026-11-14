@@ -159,13 +159,25 @@ function captureAuthCode(opts) {
         const srv = createServer((req, res) => {
             const url = new URL(req.url, `http://127.0.0.1`);
 
+            // Validate the OIDC state first (CSRF). Any local process or web page can
+            // reach this port, so a request with a missing or wrong state is answered
+            // with 400 and ignored; it must not end the shared sign-in.
+            const returnedState = url.searchParams.get('state');
+            if (!returnedState || returnedState !== expectedState) {
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end('<html><body><h1>Invalid state parameter</h1><p>This request does not belong to the current sign-in.</p></body></html>');
+                return; // Keep waiting for the real redirect
+            }
+
             const error = url.searchParams.get('error');
             if (error) {
                 res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Authentication failed</h1><p>You can close this window.</p></body></html>');
                 clearTimeout(timeoutHandle);
                 srv.close();
-                return reject(new Error(`OIDC error: ${error} — ${url.searchParams.get('error_description') || ''}`));
+                // Only the error code reaches the caller; error_description is free text.
+                const errorCode = /^[a-z_]{1,64}$/.test(error) ? error : 'unknown';
+                return reject(new Error(`OIDC error: ${errorCode}`));
             }
 
             const code = url.searchParams.get('code');
@@ -173,16 +185,6 @@ function captureAuthCode(opts) {
                 res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Missing authorization code</h1></body></html>');
                 return; // Don't close server — wait for the real redirect
-            }
-
-            // R5-STATE-1: Validate OIDC state parameter to prevent CSRF
-            const returnedState = url.searchParams.get('state');
-            if (returnedState !== expectedState) {
-                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end('<html><body><h1>Invalid state parameter</h1><p>Possible CSRF attack. Please try again.</p></body></html>');
-                clearTimeout(timeoutHandle);
-                srv.close();
-                return reject(new Error('OIDC callback state mismatch — possible CSRF. Please try again.'));
             }
 
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

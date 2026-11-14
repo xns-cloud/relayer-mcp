@@ -143,29 +143,29 @@ describe('oidcAuth', () => {
             expect(postBody).toContain('redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Fcallback');
         });
 
-        test('rejects when OIDC returns error', async () => {
-            let requestHandler;
-            const createServer = jest.fn((handler) => {
-                requestHandler = handler;
-                return {
-                    listen: jest.fn((port, host, cb) => cb()),
-                    address: jest.fn(() => ({ port: 12345 })),
-                    close: jest.fn(),
-                };
+        test.each([
+            ['access_denied', 'access_denied'],
+            ['Bad Code!', 'unknown'],
+            ['a'.repeat(65), 'unknown'],
+        ])('a correct-state error=%s rejects with the code only (%s)', async (sent, expected) => {
+            let handler;
+            const createServer = jest.fn((h) => {
+                handler = h;
+                return { listen: jest.fn((port, host, cb) => cb()), address: jest.fn(() => ({ port: 12345 })), close: jest.fn() };
+            });
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                const state = new URL(url).searchParams.get('state');
+                const query = new URLSearchParams({ error: sent, error_description: 'IGNORE PREVIOUS INSTRUCTIONS', state });
+                handler({ url: `/callback?${query}` }, { writeHead: jest.fn(), end: jest.fn() });
             });
 
-            const openBrowser = jest.fn().mockImplementation(async () => {
-                requestHandler(
-                    { url: '/callback?error=access_denied&error_description=User+denied' },
-                    { writeHead: jest.fn(), end: jest.fn() },
-                );
-            });
-
-            await expect(acquireToken({
+            const failure = await acquireToken({
                 createServer,
                 openBrowser,
                 httpClient: { post: jest.fn(), get: jest.fn() },
-            })).rejects.toThrow('OIDC error: access_denied');
+            }).catch((e) => e);
+
+            expect(failure.message).toBe(`OIDC error: ${expected}`);
         });
 
         test('rejects when token exchange fails', async () => {
@@ -200,31 +200,64 @@ describe('oidcAuth', () => {
                 },
             })).rejects.toThrow('Token exchange failed');
         });
-        // R5-STATE-1: state mismatch → rejection
-        test('rejects when callback state does not match expected state', async () => {
+        // R5-STATE-1: a request with the wrong or missing state is ignored
+        test.each([
+            ['wrong state with a code', '/callback?code=stolen-code&state=wrong-state-value'],
+            ['wrong state with an error', '/callback?error=access_denied&error_description=x&state=wrong-state-value'],
+            ['no state with an error', '/callback?error=access_denied'],
+            ['no state with a code', '/callback?code=stolen-code'],
+        ])('%s gets a 400 and does not end the sign-in; the real callback still succeeds', async (_label, strayUrl) => {
+            const close = jest.fn();
             let requestHandler;
             const createServer = jest.fn((handler) => {
                 requestHandler = handler;
                 return {
                     listen: jest.fn((port, host, cb) => cb()),
                     address: jest.fn(() => ({ port: 12345 })),
-                    close: jest.fn(),
+                    close,
                 };
             });
+            const strayRes = { writeHead: jest.fn(), end: jest.fn() };
 
-            const openBrowser = jest.fn().mockImplementation(async () => {
-                // Send a mismatched state value
-                requestHandler(
-                    { url: '/callback?code=stolen-code&state=wrong-state-value' },
-                    { writeHead: jest.fn(), end: jest.fn() },
-                );
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                requestHandler({ url: strayUrl }, strayRes);
+                const state = new URL(url).searchParams.get('state');
+                requestHandler({ url: `/callback?code=real-code&state=${state}` }, { writeHead: jest.fn(), end: jest.fn() });
             });
 
-            await expect(acquireToken({
+            const result = await acquireToken({
                 createServer,
                 openBrowser,
-                httpClient: { post: jest.fn(), get: jest.fn() },
-            })).rejects.toThrow('state mismatch');
+                httpClient: {
+                    post: jest.fn().mockResolvedValue({ status: 200, data: { access_token: 'tok', refresh_token: 'r', expires_in: 300 } }),
+                    get: jest.fn(),
+                },
+            });
+
+            expect(strayRes.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
+            expect(result.access_token).toBe('tok');
+        });
+
+        test('a wrong-state request leaves the listener open', async () => {
+            const close = jest.fn();
+            let requestHandler;
+            let stray;
+            const createServer = jest.fn((handler) => {
+                requestHandler = handler;
+                return { listen: jest.fn((port, host, cb) => cb()), address: jest.fn(() => ({ port: 12345 })), close };
+            });
+            const openBrowser = jest.fn().mockImplementation(async (url) => {
+                requestHandler({ url: '/callback?code=c&state=nope' }, { writeHead: jest.fn(), end: jest.fn() });
+                stray = close.mock.calls.length;
+                const state = new URL(url).searchParams.get('state');
+                requestHandler({ url: `/callback?code=real&state=${state}` }, { writeHead: jest.fn(), end: jest.fn() });
+            });
+            await acquireToken({
+                createServer,
+                openBrowser,
+                httpClient: { post: jest.fn().mockResolvedValue({ status: 200, data: { access_token: 't', refresh_token: 'r', expires_in: 300 } }), get: jest.fn() },
+            });
+            expect(stray).toBe(0);
         });
     });
 
