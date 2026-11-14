@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.14.0] — 2026-11-14
+
+### Changed
+
+- **`setup_cli_credentials` no longer takes a `muse_token`.** No tool hands that token back, so an
+  agent could only ask the person to paste it into chat. The tool now uses the server's own
+  sign-in, like `get_host_tags`, retries once after a fresh sign-in on HTTP 401, and still checks
+  `relayer_ui_url` before any token is sent.
+- **`install_relayer` limits where a `compose_url` can come from.** The compose file runs as root
+  through Docker, and any URL was accepted. It must now be https on `releases.xns.tech`, a
+  `file://` URL, or a loopback, private-network or `.local` host; any other host is refused before
+  anything is written or downloaded, with the `file://` way to use your own compose. The override
+  download no longer follows redirects, and the reply names the host in `compose_host`.
+
+### Fixed
+
+- **Sign-in no longer hangs when no browser can open** (WSL, SSH, a headless box). The call used to
+  wait 30 minutes with no link. It now returns at once with the sign-in link for the agent to
+  show, and the sign-in keeps waiting, so the next call after the person signs in uses it.
+  `manage_backups` and `verify_storage` now pass that link through instead of a generic failure.
+- **`check_prerequisites` catches a private root mount.** The Relayer compose needs `/` shared or
+  slave for the Docker daemon. WSL2 mounts it private, so the containers stayed in "Created" while
+  every check passed. The new `root_mount_propagation` check fails with the command that fixes it,
+  and on WSL says the fix must be run again after each restart. It is skipped when no Docker
+  daemon runs on this machine.
+
 ## [0.13.0] — 2026-11-12
 
 ### Changed
