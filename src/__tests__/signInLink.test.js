@@ -214,4 +214,27 @@ describe('sign-in when the browser cannot be opened', () => {
         expect(result.content[0].text).toContain(openedUrls[0]);
         expect(http.post).not.toHaveBeenCalled();
     });
+
+    test('setup_cli_credentials hands the sign-in link to the agent', async () => {
+        const listener = fakeListener();
+        const openedUrls = [];
+        let handler;
+        const http = { get: jest.fn(), post: jest.fn() };
+        registerSetupCliCredentials({ registerTool: (name, config, fn) => { handler = fn; } }, {
+            acquireToken,
+            _tokenStateModule: memoryTokenState(),
+            oidcOptions: {
+                createServer: listener.createServer,
+                httpClient,
+                openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
+            },
+            httpClient: http,
+        });
+
+        const parsed = JSON.parse((await handler({ installation_id: '' })).content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain(openedUrls[0]);
+        expect(http.post).not.toHaveBeenCalled();
+    });
 });
