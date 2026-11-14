@@ -27,6 +27,12 @@ const DEFAULT_INSTALL_DIR = '/opt/xns-relayer';
 const MIN_FREE_BYTES = 10 * 10 ** 9;
 const BYTES_PER_GB = 10 ** 9;
 
+// Makes / shared in the mount namespace the Docker daemon runs in. The release
+// compose mounts /mnt and / with rslave propagation, which needs a shared or
+// slave root. The daemon runs in systemd's namespace, so a plain
+// `mount --make-rshared /` in the user's shell is not enough.
+const MAKE_ROOT_SHARED_COMMAND = 'sudo nsenter -t $(pgrep -o dockerd) -m mount --make-rshared /';
+
 const GROUP_NOTE = 'the Docker socket refuses this user until the docker group applies (see docker_group)';
 
 /**
@@ -99,6 +105,25 @@ async function isInDockerGroup(readFile, username) {
     }
 }
 
+/**
+ * Propagation state of the "/" mount in a mountinfo file: 'shared', 'slave'
+ * (a master: tag) or 'private'; null when no "/" entry is found. When "/" is
+ * mounted over more than once, the last entry is the one in effect.
+ */
+function rootPropagation(mountinfo) {
+    let state = null;
+    for (const line of String(mountinfo).split('\n')) {
+        const fields = line.trim().split(' ');
+        if (fields.length < 7 || fields[4] !== '/') continue;
+        const separator = fields.indexOf('-');
+        const optional = separator === -1 ? fields.slice(6) : fields.slice(6, separator);
+        if (optional.some((f) => f.startsWith('shared:'))) state = 'shared';
+        else if (optional.some((f) => f.startsWith('master:'))) state = 'slave';
+        else state = 'private';
+    }
+    return state;
+}
+
 module.exports = function registerCheckPrerequisites(server, options = {}) {
     const docker = options.dockerUtil || createDockerUtil(options);
     const http = options.httpClient || createHttpClient(options);
@@ -107,6 +132,80 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     const _statfs = options.statfs || require('fs').promises.statfs;
     const _readFile = options.fs?.readFile || require('fs').promises.readFile;
     const _userInfo = options.userInfo || os.userInfo;
+    // Reads of /proc go through these so tests use fixtures, not the real /proc.
+    const _platform = options.platform || process.platform;
+    const _env = options.env || process.env;
+    const _readdir = options.procFs?.readdir || require('fs').promises.readdir;
+    const _procRead = options.procFs?.readFile || require('fs').promises.readFile;
+
+    /** PID of a dockerd running on this machine, or null. */
+    async function findLocalDockerd() {
+        const entries = await _readdir('/proc');
+        const pids = entries.map(String).filter((e) => /^\d+$/.test(e)).sort((a, b) => Number(a) - Number(b));
+        for (const pid of pids) {
+            try {
+                const comm = await _procRead(`/proc/${pid}/comm`, 'utf8');
+                if (String(comm).trim() === 'dockerd') return pid;
+            } catch {
+                // the process ended or is not readable; keep looking
+            }
+        }
+        return null;
+    }
+
+    async function isWsl() {
+        if (_env.WSL_DISTRO_NAME) return true;
+        try {
+            return /microsoft/i.test(String(await _procRead('/proc/version', 'utf8')));
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * The release compose mounts / and /mnt with rslave propagation, which needs
+     * "/" to be shared or slave in the Docker daemon's mount namespace. A private
+     * root (WSL2 default) leaves the containers stuck in Created. Only a dockerd
+     * on this machine can be checked; Docker Desktop, a remote daemon, macOS and
+     * Windows skip it and never fail.
+     */
+    async function checkRootMountPropagation(dockerHost) {
+        const name = 'root_mount_propagation';
+        const skipped = (why) => ({ name, passed: true, skipped: true, detail: `Root mount check skipped — ${why}.` });
+        if (_platform !== 'linux') return skipped('only Linux hosts are checked');
+        if (dockerHost.remote) return skipped(`the Docker daemon runs on ${dockerHost.host}`);
+        let pid;
+        try {
+            pid = await findLocalDockerd();
+        } catch (err) {
+            console.error(`[check_prerequisites] could not scan /proc: ${err.message}`);
+            return skipped('the process list could not be read');
+        }
+        if (pid === null) return skipped('no Docker daemon process runs on this machine (Docker Desktop or a remote daemon keeps its own mounts)');
+        let mountinfo = null;
+        for (const file of [`/proc/${pid}/mountinfo`, '/proc/1/mountinfo']) {
+            try {
+                mountinfo = await _procRead(file, 'utf8');
+                break;
+            } catch (err) {
+                console.error(`[check_prerequisites] could not read ${file}: ${err.message}`);
+            }
+        }
+        const state = mountinfo === null ? null : rootPropagation(mountinfo);
+        if (state === null) return skipped('the root mount could not be read');
+        if (state !== 'private') {
+            return { name, passed: true, detail: `The root mount is ${state} for the Docker daemon, as the Relayer compose needs` };
+        }
+        const wslNote = (await isWsl())
+            ? ' WSL resets this on every restart, so run it again after wsl --shutdown or a reboot, before each docker compose up.'
+            : '';
+        return {
+            name,
+            passed: false,
+            detail: 'The root mount (/) is private for the Docker daemon, so the Relayer containers would stay stuck in "Created" and the install would never become healthy',
+            remediation: `Make / shared in the Docker daemon's mount namespace: ${MAKE_ROOT_SHARED_COMMAND} — then run the install again.${wslNote}`,
+        };
+    }
 
     /**
      * install_relayer is fresh-install only; an existing xns-relayer container
@@ -462,6 +561,11 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
             const fixedNames = await checkFixedNames(dockerState, dockerHost);
             if (!fixedNames.passed) allPassed = false;
             checks.push(fixedNames);
+
+            // 3a-2. A private root mount leaves the containers stuck in Created.
+            const rootMount = await checkRootMountPropagation(dockerHost);
+            if (!rootMount.passed) allPassed = false;
+            checks.push(rootMount);
 
             // 3b. Existing installation — warn early, here.
             checks.push(await checkExistingInstall(dockerState));
