@@ -36,7 +36,7 @@ describe('install_relayer', () => {
         });
 
         await handler({
-            compose_url: 'https://example.com/docker-compose.yml',
+            compose_url: 'https://releases.xns.tech/docker-compose.yml',
             install_path: '/tmp/test-install',
         });
 
@@ -46,7 +46,7 @@ describe('install_relayer', () => {
 
         // Verify curl was called via execFile
         expect(execFileCalls[1].cmd).toBe('curl');
-        expect(execFileCalls[1].args).toContain('-fsSL');
+        expect(execFileCalls[1].args).toContain('-fsS');
     });
 
     // AC-12: confirms "containers starting"
@@ -60,7 +60,7 @@ describe('install_relayer', () => {
         });
 
         const result = await handler({
-            compose_url: 'https://example.com/docker-compose.yml',
+            compose_url: 'https://releases.xns.tech/docker-compose.yml',
             install_path: '/tmp/test',
         });
         const parsed = JSON.parse(result.content[0].text);
@@ -83,7 +83,7 @@ describe('install_relayer', () => {
         });
 
         const result = await handler({
-            compose_url: 'https://example.com/bad.yml',
+            compose_url: 'https://releases.xns.tech/bad.yml',
             install_path: '/tmp/test',
         });
         const parsed = JSON.parse(result.content[0].text);
@@ -104,7 +104,7 @@ describe('install_relayer', () => {
         });
 
         const result = await handler({
-            compose_url: 'https://example.com/compose.yml',
+            compose_url: 'https://releases.xns.tech/compose.yml',
             install_path: '/tmp/test',
         });
         const parsed = JSON.parse(result.content[0].text);
@@ -300,7 +300,7 @@ describe('install_relayer', () => {
         // leave the audit sink on with no sidecars to tail and rotate it.
         test.each([
             ['the channel path', {}, undefined],
-            ['the compose_url path, which writes no .env', { compose_url: 'https://example.com/c.yml' }, 'other'],
+            ['the compose_url path, which writes no .env', { compose_url: 'https://releases.xns.tech/c.yml' }, 'other'],
         ])('inherited COMPOSE_PROFILES on %s', async (_label, { compose_url }, expected) => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
             const inherited = process.env.COMPOSE_PROFILES;
@@ -380,7 +380,7 @@ describe('install_relayer', () => {
 
         const result = await handler({
             install_path: '/tmp/xns',
-            compose_url: 'https://example.com/docker-compose.yml',
+            compose_url: 'https://releases.xns.tech/docker-compose.yml',
         });
         const parsed = JSON.parse(result.content[0].text);
 
@@ -401,7 +401,7 @@ describe('install_relayer', () => {
             dockerUtil: { composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }), findContainer: jest.fn().mockResolvedValue(null) },
         });
 
-        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', compose_url: 'https://example.com/c.yml' })).content[0].text);
+        const parsed = JSON.parse((await handler({ install_path: '/tmp/xns', compose_url: 'https://releases.xns.tech/c.yml' })).content[0].text);
 
         expect(execFile.mock.calls.map((c) => c[0])).toEqual(['mkdir', 'curl']);
         const curlArgs = execFile.mock.calls[1][1];
@@ -626,7 +626,7 @@ describe('install_relayer', () => {
         const parsed = JSON.parse((await handler({
             install_path: '/tmp/xns',
             bind_address: '10.0.0.1',
-            compose_url: 'https://example.com/custom.yml',
+            compose_url: 'https://releases.xns.tech/custom.yml',
         })).content[0].text);
 
         expect(parsed.source).toBe('compose_url');
@@ -863,7 +863,7 @@ describe('install_relayer', () => {
 
         test('compose_url download failure → fixed message, no curl text', async () => {
             const handler = handlerWith({ execFile: jest.fn((cmd, args, opts, cb) => cb(cmd === 'curl' ? new Error(RAW) : null, '', '')) });
-            const result = await handler({ install_path: '/opt/xns-relayer', compose_url: 'https://example.com/dc.yml' });
+            const result = await handler({ install_path: '/opt/xns-relayer', compose_url: 'https://releases.xns.tech/dc.yml' });
             const parsed = JSON.parse(result.content[0].text);
 
             expect(result.isError).toBe(true);
@@ -976,7 +976,7 @@ describe('install_relayer', () => {
 
         test('refusal also applies with compose_url set', async () => {
             const ctx = build({ env: { DOCKER_HOST: 'ssh://user@box' } });
-            const result = await ctx.handler({ install_path: '/opt/x', compose_url: 'https://example.com/c.yml' });
+            const result = await ctx.handler({ install_path: '/opt/x', compose_url: 'https://releases.xns.tech/c.yml' });
 
             expect(result.isError).toBe(true);
             expectNothingHappened(ctx);
