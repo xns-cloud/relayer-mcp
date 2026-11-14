@@ -8,6 +8,11 @@ const sharedTokenState = require('./tokenState');
 // injected test state stays isolated from the real one.
 const pendingSignIns = new WeakMap();
 
+// Why the last sign-in failed after its link was handed out, per token state.
+// The next link message reports it once, so the person is not sent round new
+// links with no word about why the last one did not work.
+const lastSignInFailures = new WeakMap();
+
 // The sign-in link redirects to 127.0.0.1:<port> on the machine running this
 // server, so the browser has to reach that port.
 function signInLinkMessage(url) {
@@ -78,7 +83,12 @@ function createTokenManager(options = {}) {
         pendingSignIns.set(_tokenState, pending);
         pending.signIn.then(
             () => { clearPending(pending); },
-            () => { clearPending(pending); },
+            (err) => {
+                if (pending.linkHandedOut) {
+                    lastSignInFailures.set(_tokenState, err && err.message ? err.message : String(err));
+                }
+                clearPending(pending);
+            },
         );
 
         return raceSignInOrLink(pending);
@@ -91,7 +101,11 @@ function createTokenManager(options = {}) {
         return Promise.race([
             pending.signIn,
             pending.link.then((url) => {
-                const err = new Error(signInLinkMessage(url));
+                pending.linkHandedOut = true;
+                const failure = lastSignInFailures.get(_tokenState);
+                lastSignInFailures.delete(_tokenState);
+                const prefix = failure ? `The last sign-in did not finish: ${failure.replace(/[.\s]+$/, '')}. ` : '';
+                const err = new Error(prefix + signInLinkMessage(url));
                 err.code = 'SIGNIN_LINK';
                 err.authorizeUrl = url;
                 throw err;

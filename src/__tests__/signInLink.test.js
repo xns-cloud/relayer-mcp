@@ -155,6 +155,62 @@ describe('sign-in when the browser cannot be opened', () => {
         expect(next.code).toBe('SIGNIN_LINK');
     });
 
+    test('a sign-in that timed out is reported once in the next link message', async () => {
+        const listener = fakeListener();
+        const openedUrls = [];
+        const tokenMgr = createTokenManager({
+            acquireToken,
+            _tokenStateModule: memoryTokenState(),
+            oidcOptions: {
+                timeoutMs: SIGNIN_TIMEOUT_MS,
+                createServer: listener.createServer,
+                httpClient,
+                openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
+            },
+        });
+
+        const first = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(first.message).not.toContain('did not finish');
+        await jest.advanceTimersByTimeAsync(SIGNIN_TIMEOUT_MS * 5);
+
+        const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(next.code).toBe('SIGNIN_LINK');
+        expect(next.message).toMatch(/^The last sign-in did not finish: OIDC sign-in timed out after \d+ minutes\. Please try again\. Open this link/);
+        expect(next.message).toContain(openedUrls[1]);
+
+        // Reported once: a call joining the same pending sign-in does not repeat it.
+        const joined = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(joined.message).not.toContain('did not finish');
+        await jest.advanceTimersByTimeAsync(SIGNIN_TIMEOUT_MS * 5);
+    });
+
+    test('a failed token exchange after the link was handed out is reported in the next link message', async () => {
+        const listener = fakeListener();
+        const openedUrls = [];
+        const failingHttp = { post: jest.fn().mockResolvedValue({ status: 400, data: { error: 'invalid_grant' } }), get: jest.fn() };
+        const tokenMgr = createTokenManager({
+            acquireToken,
+            _tokenStateModule: memoryTokenState(),
+            oidcOptions: {
+                createServer: listener.createServer,
+                httpClient: failingHttp,
+                openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
+            },
+        });
+
+        await tokenMgr.ensureToken().catch(() => {});
+        callbackFor(openedUrls[0], listener.created[0].handler);
+        while (failingHttp.post.mock.calls.length === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+
+        const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(next.code).toBe('SIGNIN_LINK');
+        expect(next.message).toContain('The last sign-in did not finish: Token exchange failed (HTTP 400)');
+        expect(listener.createServer).toHaveBeenCalledTimes(2);
+    });
+
     test('a pending sign-in that times out with nobody waiting raises no unhandled rejection', async () => {
         const listener = fakeListener();
         const unhandled = [];
