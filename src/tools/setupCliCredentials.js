@@ -158,12 +158,19 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                     }],
                 };
             } catch (err) {
+                // Caught error text stays in the server log. The sign-in link message
+                // is the one exception: this server builds it from fixed text and the
+                // link, and the person needs it to sign in.
+                const signInLink = err && err.code === 'SIGNIN_LINK';
+                if (!signInLink) console.error(`[setup_cli_credentials] ${err && err.message ? err.message : String(err)}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: err.message,
+                            error: signInLink
+                                ? err.message
+                                : 'Setting up CLI credentials failed. See the server log for detail, then call setup_cli_credentials again.',
                         }),
                     }],
                 };
