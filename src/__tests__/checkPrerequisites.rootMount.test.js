@@ -90,11 +90,28 @@ describe('check_prerequisites root mount propagation', () => {
         expect(check.skipped).toBeUndefined();
     });
 
-    test('shared on a mount other than / does not pass a private root', async () => {
-        const procFs = fakeProc({ 200: { comm: 'dockerd', mountinfo: mountinfo('') } });
-        const { check } = await runCheck({ procFs });
+    // A bind mount or container setup can list "/" more than once; the kernel's
+    // last entry is the one in effect.
+    test('the last "/" entry wins: an earlier private root then a later shared root passes', async () => {
+        const info = [
+            '22 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw',
+            '40 22 0:30 / / rw,relatime shared:7 - overlay overlay rw',
+        ].join('\n');
+        const { check } = await runCheck({ procFs: fakeProc({ 200: { comm: 'dockerd', mountinfo: info } }) });
+
+        expect(check.passed).toBe(true);
+        expect(check.skipped).toBeUndefined();
+    });
+
+    test('the last "/" entry wins: an earlier shared root then a later private root fails', async () => {
+        const info = [
+            '22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw',
+            '40 22 0:30 / / rw,relatime - overlay overlay rw',
+        ].join('\n');
+        const { check } = await runCheck({ procFs: fakeProc({ 200: { comm: 'dockerd', mountinfo: info } }) });
 
         expect(check.passed).toBe(false);
+        expect(check.remediation).toContain(FIX_COMMAND);
     });
 
     test('no local dockerd skips without failing', async () => {
