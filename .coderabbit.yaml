@@ -149,8 +149,9 @@ reviews:
         Token destinations: setup_cli_credentials takes no URL and sends the
         server's own sign-in token only to the server-owned Relayer UI base
         (options.relayerUiBase, default http://localhost:8888). Flag any code
-        path that sends an auth token or secret to a caller-supplied URL;
-        the server-held token must only go to the server-owned base.
+        path that sends the server-held token to a caller-supplied URL. A
+        caller-supplied token (verify_storage muse_token) may go to a
+        caller-supplied URL only after the src/lib/hostAllowlist.js check.
 
         Cleanup guards: verify_storage-style multi-step tools must run
         cleanup for every step that may have partially succeeded

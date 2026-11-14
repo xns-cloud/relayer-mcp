@@ -48,8 +48,9 @@ Both are yours to delete at any time.
 
 ## Network boundary
 
-No tool sends your sign-in token to a Relayer on the public internet. The tools that send it
-to a Relayer (`verify_storage`, `setup_cli_credentials`) run its host through an allowlist
+No tool sends your sign-in token to a Relayer on the public internet. `setup_cli_credentials`
+takes no address: it sends the token only to the server's own Relayer UI (by default
+`http://localhost:8888`). `verify_storage` runs the Relayer host it is given through an allowlist
 that permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
 `192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`). Two inputs are not limited to
 private addresses: the `host` of `check_relayer_health`, which gets plain HTTP health probes;
