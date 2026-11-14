@@ -405,7 +405,9 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // that redirects would otherwise reach a host the check never saw.
                 const curlTo = (url, outPath, followRedirects = true) => new Promise((resolve, reject) => {
                     const flags = followRedirects ? '-fsSL' : '-fsS';
-                    execFileFn('curl', [flags, '-o', outPath, url], { timeout: 60000 }, (err) => {
+                    // The override path may also read a local file, so file is allowed there.
+                    const args = followRedirects ? [flags, '-o', outPath, url] : [flags, '--proto', '=http,https,file', '-o', outPath, url];
+                    execFileFn('curl', args, { timeout: 60000 }, (err) => {
                         if (err) return reject(err);
                         resolve();
                     });
@@ -464,7 +466,10 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     // Override path: make the folder, then download a custom
                     // compose straight into it.
                     await mkdirInstallPath();
-                    await curlTo(compose_url, composePath, false).catch((err) => {
+                    // DECISION: curl gets the serialized URL that was checked, not the
+                    // raw string. Node and curl parse a backslash before "@" differently,
+                    // so the raw string could name another host than the one allowed.
+                    await curlTo(new URL(compose_url).href, composePath, false).catch((err) => {
                         throw safeError('Failed to download compose file', err);
                     });
                     source = 'compose_url';

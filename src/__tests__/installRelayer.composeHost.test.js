@@ -54,6 +54,31 @@ describe('install_relayer compose_url host limit', () => {
         expect(t.composeUp).toHaveBeenCalledTimes(1);
     });
 
+    test('a backslash before @ cannot make curl fetch from a host other than the checked one', async () => {
+        const t = setup();
+        const raw = 'http://127.0.0.1\\@evil.example/c.yml';
+        const parsed = await t.run({ install_path: '/tmp/xns', compose_url: raw });
+
+        const curl = t.execFile.mock.calls.find((c) => c[0] === 'curl');
+        if (!curl) {
+            expect(parsed.success).toBe(false);
+            return;
+        }
+        const sent = curl[1][curl[1].length - 1];
+        expect(sent).not.toBe(raw);
+        expect(new URL(sent).hostname).toBe('127.0.0.1');
+        expect(sent).not.toContain('\\');
+    });
+
+    test('the override download limits curl to http, https and file', async () => {
+        const t = setup();
+        await t.run({ install_path: '/tmp/xns', compose_url: 'https://releases.xns.tech/c.yml' });
+
+        const curl = t.execFile.mock.calls.find((c) => c[0] === 'curl');
+        const args = curl[1];
+        expect(args[args.indexOf('--proto') + 1]).toBe('=http,https,file');
+    });
+
     test('the override download does not follow redirects', async () => {
         const t = setup();
         await t.run({ install_path: '/tmp/xns', compose_url: 'https://releases.xns.tech/c.yml' });
