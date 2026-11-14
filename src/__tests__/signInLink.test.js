@@ -58,7 +58,18 @@ function managerWithFailingBrowser(listener, openedUrls) {
     });
 }
 
+// Short sign-in timeout, driven by fake timers so no test depends on real time.
+const SIGNIN_TIMEOUT_MS = 20;
+
 describe('sign-in when the browser cannot be opened', () => {
+    beforeEach(() => {
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
     test('first call rejects with the link and the port to forward; a call joining while pending gets the link at once; one listener', async () => {
         const listener = fakeListener();
         const openedUrls = [];
@@ -129,7 +140,7 @@ describe('sign-in when the browser cannot be opened', () => {
             acquireToken,
             _tokenStateModule: memoryTokenState(),
             oidcOptions: {
-                timeoutMs: 20,
+                timeoutMs: SIGNIN_TIMEOUT_MS,
                 createServer: listener.createServer,
                 httpClient,
                 openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
@@ -137,7 +148,7 @@ describe('sign-in when the browser cannot be opened', () => {
         });
 
         await tokenMgr.ensureToken().catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await jest.advanceTimersByTimeAsync(SIGNIN_TIMEOUT_MS * 5);
         const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
 
         expect(listener.createServer).toHaveBeenCalledTimes(2);
@@ -154,14 +165,14 @@ describe('sign-in when the browser cannot be opened', () => {
                 acquireToken,
                 _tokenStateModule: memoryTokenState(),
                 oidcOptions: {
-                    timeoutMs: 20,
+                    timeoutMs: SIGNIN_TIMEOUT_MS,
                     createServer: listener.createServer,
                     httpClient,
                     openBrowser: async () => { throw new Error('no browser'); },
                 },
             });
             await tokenMgr.ensureToken().catch(() => {});
-            await new Promise((resolve) => setTimeout(resolve, 80));
+            await jest.advanceTimersByTimeAsync(SIGNIN_TIMEOUT_MS * 5);
         } finally {
             process.removeListener('unhandledRejection', onUnhandled);
         }
@@ -175,7 +186,7 @@ describe('sign-in when the browser cannot be opened', () => {
             acquireToken,
             _tokenStateModule: memoryTokenState(),
             oidcOptions: {
-                timeoutMs: 20,
+                timeoutMs: SIGNIN_TIMEOUT_MS,
                 createServer: listener.createServer,
                 httpClient,
                 openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
@@ -188,7 +199,7 @@ describe('sign-in when the browser cannot be opened', () => {
 
         expect(result.isError).toBe(true);
         expect(JSON.parse(result.content[0].text).error).toContain(openedUrls[0]);
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await jest.advanceTimersByTimeAsync(SIGNIN_TIMEOUT_MS * 5);
     });
 
     test('verify_storage hands the sign-in link to the agent', async () => {
