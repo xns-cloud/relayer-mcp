@@ -175,7 +175,7 @@ describe('sign-in when the browser cannot be opened', () => {
 
         const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
         expect(next.code).toBe('SIGNIN_LINK');
-        expect(next.message).toMatch(/^The last sign-in did not finish: OIDC sign-in timed out after \d+ minutes\. Please try again\. Open this link/);
+        expect(next.message).toMatch(/^The last sign-in did not finish: it timed out before the browser came back\. Open this link/);
         expect(next.message).toContain(openedUrls[1]);
 
         // Reported once: a call joining the same pending sign-in does not repeat it.
@@ -207,8 +207,53 @@ describe('sign-in when the browser cannot be opened', () => {
 
         const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
         expect(next.code).toBe('SIGNIN_LINK');
-        expect(next.message).toContain('The last sign-in did not finish: Token exchange failed (HTTP 400)');
+        expect(next.message).toContain('The last sign-in did not finish: the token exchange failed (HTTP 400). Open this link');
+        // The provider's response body stays in the server log.
+        expect(next.message).not.toContain('invalid_grant');
         expect(listener.createServer).toHaveBeenCalledTimes(2);
+    });
+
+    test('an unrecognized sign-in failure is reported with a fixed sentence, not its own text', async () => {
+        const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const link = 'https://auth.example/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A12345%2Fcallback';
+        let fail;
+        let calls = 0;
+        const fakeAcquire = jest.fn(({ onBrowserOpenFailed }) => new Promise((resolve, reject) => {
+            calls += 1;
+            onBrowserOpenFailed(link);
+            if (calls === 1) fail = reject;
+        }));
+        const tokenMgr = createTokenManager({ acquireToken: fakeAcquire, _tokenStateModule: memoryTokenState() });
+
+        await tokenMgr.ensureToken().catch(() => {});
+        fail(new Error('connect ECONNREFUSED /internal/path secret-field=abc'));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        const next = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(next.code).toBe('SIGNIN_LINK');
+        expect(next.message).toContain('The last sign-in did not finish: it stopped with an error (see the server log). Open this link');
+        expect(next.message).not.toContain('ECONNREFUSED');
+        expect(errorLog.mock.calls.flat().join(' ')).toContain('ECONNREFUSED');
+        errorLog.mockRestore();
+    });
+
+    test('setup_cli_credentials does not return a token manager error text to the caller', async () => {
+        const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+        let handler;
+        const http = { get: jest.fn(), post: jest.fn() };
+        registerSetupCliCredentials({ registerTool: (name, config, fn) => { handler = fn; } }, {
+            acquireToken: jest.fn().mockRejectedValue(new Error('Token refresh failed (HTTP 500): {"internal":"/srv/keycloak"}')),
+            _tokenStateModule: memoryTokenState(),
+            httpClient: http,
+        });
+
+        const parsed = JSON.parse((await handler({ installation_id: '' })).content[0].text);
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toBe('Setting up CLI credentials failed. See the server log for detail, then call setup_cli_credentials again.');
+        expect(errorLog.mock.calls.flat().join(' ')).toContain('/srv/keycloak');
+        expect(http.post).not.toHaveBeenCalled();
+        errorLog.mockRestore();
     });
 
     test('a pending sign-in that times out with nobody waiting raises no unhandled rejection', async () => {

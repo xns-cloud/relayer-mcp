@@ -13,6 +13,19 @@ const pendingSignIns = new WeakMap();
 // links with no word about why the last one did not work.
 const lastSignInFailures = new WeakMap();
 
+// A fixed reason for why a sign-in stopped. The raw error can carry the
+// provider's response body, so only these sentences reach the person; the
+// full text goes to the server log.
+function signInFailureReason(err) {
+    const message = err && err.message ? String(err.message) : '';
+    if (/^OIDC sign-in timed out/.test(message)) return 'it timed out before the browser came back';
+    const oidc = message.match(/^OIDC error: ([a-z_]{1,64})$/);
+    if (oidc) return `the sign-in server returned ${oidc[1]}`;
+    const exchange = message.match(/^Token exchange failed \(HTTP (\d{3})\)/);
+    if (exchange) return `the token exchange failed (HTTP ${exchange[1]})`;
+    return 'it stopped with an error (see the server log)';
+}
+
 // The sign-in link redirects to 127.0.0.1:<port> on the machine running this
 // server, so the browser has to reach that port.
 function signInLinkMessage(url) {
@@ -85,7 +98,8 @@ function createTokenManager(options = {}) {
             () => { clearPending(pending); },
             (err) => {
                 if (pending.linkHandedOut) {
-                    lastSignInFailures.set(_tokenState, err && err.message ? err.message : String(err));
+                    console.error(`[sign-in] the sign-in did not finish: ${err && err.message ? err.message : String(err)}`);
+                    lastSignInFailures.set(_tokenState, signInFailureReason(err));
                 }
                 clearPending(pending);
             },
@@ -104,7 +118,7 @@ function createTokenManager(options = {}) {
                 pending.linkHandedOut = true;
                 const failure = lastSignInFailures.get(_tokenState);
                 lastSignInFailures.delete(_tokenState);
-                const prefix = failure ? `The last sign-in did not finish: ${failure.replace(/[.\s]+$/, '')}. ` : '';
+                const prefix = failure ? `The last sign-in did not finish: ${failure}. ` : '';
                 const err = new Error(prefix + signInLinkMessage(url));
                 err.code = 'SIGNIN_LINK';
                 err.authorizeUrl = url;
