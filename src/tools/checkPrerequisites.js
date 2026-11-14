@@ -109,20 +109,26 @@ async function isInDockerGroup(readFile, username) {
 /**
  * Propagation state of the "/" mount in a mountinfo file: 'shared', 'slave'
  * (a master: tag) or 'private'; null when no "/" entry is found. When "/" is
- * mounted over more than once, the last entry is the one in effect.
+ * mounted over more than once, the top mount is the "/" entry that no other
+ * "/" entry names as its parent; line order says nothing about stacking.
  */
 function rootPropagation(mountinfo) {
-    let state = null;
+    const roots = [];
     for (const line of String(mountinfo).split('\n')) {
         const fields = line.trim().split(' ');
         if (fields.length < 7 || fields[4] !== '/') continue;
         const separator = fields.indexOf('-');
         const optional = separator === -1 ? fields.slice(6) : fields.slice(6, separator);
+        let state = 'private';
         if (optional.some((f) => f.startsWith('shared:'))) state = 'shared';
         else if (optional.some((f) => f.startsWith('master:'))) state = 'slave';
-        else state = 'private';
+        roots.push({ id: fields[0], parent: fields[1], state });
     }
-    return state;
+    if (roots.length === 0) return null;
+    const parents = new Set(roots.map((r) => r.parent));
+    const top = roots.filter((r) => !parents.has(r.id));
+    // A cycle or several unrelated tops cannot be told apart; read it as unknown.
+    return top.length === 1 ? top[0].state : null;
 }
 
 module.exports = function registerCheckPrerequisites(server, options = {}) {
@@ -139,19 +145,20 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
     const _readdir = options.procFs?.readdir || require('fs').promises.readdir;
     const _procRead = options.procFs?.readFile || require('fs').promises.readFile;
 
-    /** PID of a dockerd running on this machine, or null. */
-    async function findLocalDockerd() {
+    /** PIDs of every dockerd running on this machine, lowest first. */
+    async function findLocalDockerds() {
         const entries = await _readdir('/proc');
         const pids = entries.map(String).filter((e) => /^\d+$/.test(e)).sort((a, b) => Number(a) - Number(b));
+        const found = [];
         for (const pid of pids) {
             try {
                 const comm = await _procRead(`/proc/${pid}/comm`, 'utf8');
-                if (String(comm).trim() === 'dockerd') return pid;
+                if (String(comm).trim() === 'dockerd') found.push(pid);
             } catch {
                 // the process ended or is not readable; keep looking
             }
         }
-        return null;
+        return found;
     }
 
     async function isWsl() {
@@ -175,22 +182,25 @@ module.exports = function registerCheckPrerequisites(server, options = {}) {
         const skipped = (why) => ({ name, passed: true, skipped: true, detail: `Root mount check skipped — ${why}.` });
         if (_platform !== 'linux') return skipped('only Linux hosts are checked');
         if (dockerHost.remote) return skipped(`the Docker daemon runs on ${dockerHost.host}`);
-        let pid;
+        let pids;
         try {
-            pid = await findLocalDockerd();
+            pids = await findLocalDockerds();
         } catch (err) {
             console.error(`[check_prerequisites] could not scan /proc: ${err.message}`);
             return skipped('the process list could not be read');
         }
+        // With several daemons (for example a system one and a rootless one) the
+        // one behind the Docker endpoint cannot be told from the process list.
+        if (pids.length > 1) return skipped(`${pids.length} Docker daemon processes run on this machine (PIDs ${pids.join(', ')}), so the one this install uses cannot be picked`);
+        const pid = pids.length === 1 ? pids[0] : null;
         if (pid === null) return skipped('no Docker daemon process runs on this machine (Docker Desktop or a remote daemon keeps its own mounts)');
+        // Only the daemon's own mountinfo says what its mount namespace looks like;
+        // another process (PID 1) can sit in a different namespace.
         let mountinfo = null;
-        for (const file of [`/proc/${pid}/mountinfo`, '/proc/1/mountinfo']) {
-            try {
-                mountinfo = await _procRead(file, 'utf8');
-                break;
-            } catch (err) {
-                console.error(`[check_prerequisites] could not read ${file}: ${err.message}`);
-            }
+        try {
+            mountinfo = await _procRead(`/proc/${pid}/mountinfo`, 'utf8');
+        } catch (err) {
+            console.error(`[check_prerequisites] could not read /proc/${pid}/mountinfo: ${err.message}`);
         }
         const state = mountinfo === null ? null : rootPropagation(mountinfo);
         if (state === null) return skipped('the root mount could not be read');

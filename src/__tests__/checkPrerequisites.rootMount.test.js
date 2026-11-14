@@ -118,7 +118,7 @@ describe('check_prerequisites root mount propagation', () => {
         const procFs = fakeProc({
             100: { comm: 'bash' },
             4242: { comm: 'dockerd', mountinfo: mountinfo('') },
-            5000: { comm: 'dockerd', mountinfo: mountinfo('shared:1') },
+            5000: { comm: 'containerd', mountinfo: mountinfo('shared:1') },
         });
         const { check } = await runCheck({ procFs });
 
@@ -152,12 +152,52 @@ describe('check_prerequisites root mount propagation', () => {
         expect(check.skipped).toBe(true);
     });
 
-    test("falls back to PID 1's mountinfo when the daemon's is unreadable", async () => {
+    test("skips, and does not read PID 1's mounts, when the daemon's mountinfo is unreadable", async () => {
         const procFs = fakeProc({ 200: { comm: 'dockerd' }, 1: { comm: 'systemd', mountinfo: mountinfo('') } });
+        const { check } = await runCheck({ procFs });
+
+        expect(check.passed).toBe(true);
+        expect(check.skipped).toBe(true);
+        expect(procFs.readFile).not.toHaveBeenCalledWith('/proc/1/mountinfo', 'utf8');
+    });
+
+    test('a private root stacked over a shared one fails, whatever the line order', async () => {
+        // Mount 22 sits on top of mount 40 (its parent) but is listed first.
+        const stacked = [
+            '22 40 8:1 / / rw,relatime - ext4 /dev/sda1 rw',
+            '40 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sdb1 rw',
+        ].join('\n');
+        const procFs = fakeProc({ 200: { comm: 'dockerd', mountinfo: stacked } });
         const { check } = await runCheck({ procFs });
 
         expect(check.passed).toBe(false);
         expect(check.remediation).toContain(FIX_COMMAND);
+    });
+
+    test('a shared root stacked over a private one passes, whatever the line order', async () => {
+        const stacked = [
+            '40 22 8:2 / / rw,relatime shared:1 - ext4 /dev/sdb1 rw',
+            '22 1 8:1 / / rw,relatime - ext4 /dev/sda1 rw',
+        ].join('\n');
+        const procFs = fakeProc({ 200: { comm: 'dockerd', mountinfo: stacked } });
+        const { check } = await runCheck({ procFs });
+
+        expect(check.passed).toBe(true);
+        expect(check.skipped).toBeUndefined();
+    });
+
+    test('skips when more than one Docker daemon runs, rather than checking the wrong one', async () => {
+        const procFs = fakeProc({
+            200: { comm: 'dockerd', mountinfo: mountinfo('shared:1') },
+            300: { comm: 'dockerd', mountinfo: mountinfo('') },
+        });
+        const { parsed, check } = await runCheck({ procFs });
+
+        expect(check.passed).toBe(true);
+        expect(check.skipped).toBe(true);
+        expect(check.detail).toContain('200, 300');
+        expect(check.remediation).toBeUndefined();
+        expect(parsed.checks.find((c) => c.name === 'root_mount_propagation')).toBe(check);
     });
 
     test('skips when neither mountinfo can be read', async () => {
