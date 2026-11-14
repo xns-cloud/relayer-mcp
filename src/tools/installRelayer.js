@@ -140,6 +140,9 @@ function checkComposeUrl(url) {
     }
     if (parsed.protocol === 'https:' && hostname === RELEASES_HOST) return { allowed: true, host: hostname };
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { allowed: false, host: hostname || parsed.protocol };
+    // Only plain DNS names and IP literals. Node accepts characters such as "{" in a
+    // hostname that curl reads as syntax, so the host curl contacts could differ.
+    if (!/^([a-z0-9-]+\.)*[a-z0-9-]+$|^\[[0-9a-f:.]+\]$/.test(hostname)) return { allowed: false, host: hostname };
     return { allowed: validateHostAllowlist(url).allowed, host: hostname };
 }
 
@@ -406,7 +409,8 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 const curlTo = (url, outPath, followRedirects = true) => new Promise((resolve, reject) => {
                     const flags = followRedirects ? '-fsSL' : '-fsS';
                     // The override path may also read a local file, so file is allowed there.
-                    const args = followRedirects ? [flags, '-o', outPath, url] : [flags, '--proto', '=http,https,file', '-o', outPath, url];
+                    // -g: curl must not expand {a,b} or [1-9] patterns into other URLs.
+                    const args = followRedirects ? [flags, '-g', '-o', outPath, url] : [flags, '-g', '--proto', '=http,https,file', '-o', outPath, url];
                     execFileFn('curl', args, { timeout: 60000 }, (err) => {
                         if (err) return reject(err);
                         resolve();

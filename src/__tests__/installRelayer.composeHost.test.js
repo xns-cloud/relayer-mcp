@@ -59,11 +59,8 @@ describe('install_relayer compose_url host limit', () => {
         const raw = 'http://127.0.0.1\\@evil.example/c.yml';
         const parsed = await t.run({ install_path: '/tmp/xns', compose_url: raw });
 
+        expect(parsed.success).toBe(true);
         const curl = t.execFile.mock.calls.find((c) => c[0] === 'curl');
-        if (!curl) {
-            expect(parsed.success).toBe(false);
-            return;
-        }
         const sent = curl[1][curl[1].length - 1];
         expect(sent).not.toBe(raw);
         expect(new URL(sent).hostname).toBe('127.0.0.1');
@@ -85,5 +82,22 @@ describe('install_relayer compose_url host limit', () => {
 
         const curl = t.execFile.mock.calls.find((c) => c[0] === 'curl');
         expect(curl[1].join(' ')).not.toMatch(/-\w*L/);
+    });
+
+    test('a hostname curl would read as a {a,b} pattern is refused before anything is downloaded', async () => {
+        const t = setup();
+        const parsed = await t.run({ install_path: '/tmp/xns', compose_url: 'http://{a.local/c.yml?,evil.example/c.yml?}' });
+
+        expect(parsed.success).toBe(false);
+        expect(t.execFile.mock.calls.find((c) => c[0] === 'curl')).toBeUndefined();
+        expect(t.composeUp).not.toHaveBeenCalled();
+    });
+
+    test('curl is told not to expand URL patterns on the override path', async () => {
+        const t = setup();
+        await t.run({ install_path: '/tmp/xns', compose_url: 'http://192.168.1.20/c.yml' });
+
+        const curl = t.execFile.mock.calls.find((c) => c[0] === 'curl');
+        expect(curl[1]).toContain('-g');
     });
 });
