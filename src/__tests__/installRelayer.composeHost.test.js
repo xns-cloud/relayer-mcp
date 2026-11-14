@@ -101,6 +101,29 @@ describe('install_relayer compose_url host limit', () => {
         expect(args[args.indexOf('--max-filesize') + 1]).toBe('1048576');
     });
 
+    test('the override download holds at most 1 MiB in memory, whatever the curl version', async () => {
+        const t2 = setup();
+        await t2.run({ install_path: '/tmp/xns', compose_url: 'file:///home/me/docker-compose.yml' });
+
+        const curl = t2.execFile.mock.calls.find((c) => c[0] === 'curl');
+        expect(curl[2].maxBuffer).toBe(1048576);
+        expect(curl[1]).not.toContain('-o');
+    });
+
+    test('an override larger than 1 MiB is refused and nothing is written', async () => {
+        const t2 = setup();
+        t2.execFile.mockImplementation((cmd, args, opts, cb) => {
+            if (cmd === 'curl') return cb(Object.assign(new Error('stdout maxBuffer length exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }), Buffer.alloc(0), '');
+            return cb(null, '', '');
+        });
+        const parsed = await t2.run({ install_path: '/tmp/xns', compose_url: 'http://192.168.1.10/compose.yml' });
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('larger than 1048576 bytes');
+        expect(t2.fs.writeFile).not.toHaveBeenCalled();
+        expect(t2.composeUp).not.toHaveBeenCalled();
+    });
+
     test('a backslash before @ cannot make curl fetch from a host other than the checked one', async () => {
         const t = setup();
         const raw = 'http://127.0.0.1\\@evil.example/c.yml';

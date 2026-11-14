@@ -423,24 +423,29 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     });
                 });
 
-                // curl -fsSL -o <outPath> <url> (execFile, no shell). Rejects
-                // with curl's own error; each caller chooses the message.
-                // Redirects are followed only for the release channel; an override URL
-                // that redirects would otherwise reach a host the check never saw.
-                const curlTo = (url, outPath, followRedirects = true) => new Promise((resolve, reject) => {
-                    const flags = followRedirects ? '-fsSL' : '-fsS';
-                    // -q must be the first argument: it keeps curl from reading ~/.curlrc.
-                    // The override path may also read a local file, so file is allowed there,
-                    // capped in size so a source that never ends cannot fill the disk.
-                    // -g: curl must not expand {a,b} or [1-9] patterns into other URLs.
-                    const args = followRedirects
-                        ? ['-q', flags, '-g', '-o', outPath, url]
-                        : ['-q', flags, '-g', '--proto', '=http,https,file', '--max-filesize', String(MAX_OVERRIDE_BYTES), '-o', outPath, url];
-                    execFileFn('curl', args, { timeout: 60000 }, (err) => {
+                // curl -fsSL -o <outPath> <url> (execFile, no shell) for the release
+                // channel. Rejects with curl's own error; each caller chooses the message.
+                // -q must be the first argument: it keeps curl from reading ~/.curlrc.
+                // -g: curl must not expand {a,b} or [1-9] patterns into other URLs.
+                const curlTo = (url, outPath) => new Promise((resolve, reject) => {
+                    execFileFn('curl', ['-q', '-fsSL', '-g', '-o', outPath, url], { timeout: 60000 }, (err) => {
                         if (err) return reject(err);
                         resolve();
                     });
                 });
+
+                // The override download: no redirects (a redirect would reach a host the
+                // check never saw), http, https or a local file only, and at most
+                // MAX_OVERRIDE_BYTES. curl writes to stdout and Node stops it past the
+                // cap, because --max-filesize does not stop a transfer of unknown length
+                // before curl 8.4.0. Only then is the file written.
+                const curlOverrideTo = (url, outPath) => new Promise((resolve, reject) => {
+                    const args = ['-q', '-fsS', '-g', '--proto', '=http,https,file', '--max-filesize', String(MAX_OVERRIDE_BYTES), url];
+                    execFileFn('curl', args, { timeout: 60000, maxBuffer: MAX_OVERRIDE_BYTES, encoding: 'buffer' }, (err, stdout) => {
+                        if (err) return reject(err);
+                        resolve(stdout);
+                    });
+                }).then((body) => fsp.writeFile(outPath, body ?? ''));
 
                 // Download the release compose and .env into an owner-only
                 // temporary folder, read them and run the two checks. The folder
@@ -493,12 +498,15 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 let source;
                 if (compose_url) {
                     // Override path: make the folder, then download a custom
-                    // compose straight into it.
+                    // compose and write it into it.
                     await mkdirInstallPath();
                     // DECISION: curl gets the serialized URL that was checked, not the
                     // raw string. Node and curl parse a backslash before "@" differently,
                     // so the raw string could name another host than the one allowed.
-                    await curlTo(new URL(compose_url).href, composePath, false).catch((err) => {
+                    await curlOverrideTo(new URL(compose_url).href, composePath).catch((err) => {
+                        if (err && err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+                            throw safeError(`Failed to download compose file: it is larger than ${MAX_OVERRIDE_BYTES} bytes, so nothing was written`, err);
+                        }
                         throw safeError('Failed to download compose file', err);
                     });
                     source = 'compose_url';

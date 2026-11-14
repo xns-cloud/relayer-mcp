@@ -53,6 +53,7 @@ describe('install_relayer', () => {
     test('success → message says containers starting', async () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs: { writeFile: jest.fn(async () => {}) },
             dockerUtil: {
                 composeUp: jest.fn().mockResolvedValue({ stdout: 'ok', stderr: '' }),
                 findContainer: jest.fn().mockResolvedValue(null),
@@ -387,14 +388,15 @@ describe('install_relayer', () => {
         expect(parsed.binding.composed_from).not.toContain('/tmp/xns/.env');
         expect(parsed.binding.composed_from).toContain('no .env written');
         expect(parsed.binding.composed_from).toContain('docker compose');
-        expect(fs.writeFile).not.toHaveBeenCalled();
+        // Only the downloaded compose is written; no .env.
+        expect(fs.writeFile.mock.calls.map((c) => c[0])).toEqual(['/tmp/xns/docker-compose.yml']);
     });
 
     // A compose_url override downloads straight into the install folder, with no
     // temporary folder.
     test('compose_url override → mkdir, then curl into the install folder, no temporary folder', async () => {
         const fs = fakeFs();
-        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, '', ''));
+        const execFile = jest.fn((cmd, args, opts, cb) => cb(null, Buffer.from('services: {}\n'), ''));
         const handler = registerWithOptions({
             execFile,
             fs,
@@ -405,7 +407,8 @@ describe('install_relayer', () => {
 
         expect(execFile.mock.calls.map((c) => c[0])).toEqual(['mkdir', 'curl']);
         const curlArgs = execFile.mock.calls[1][1];
-        expect(curlArgs[curlArgs.indexOf('-o') + 1]).toBe('/tmp/xns/docker-compose.yml');
+        expect(curlArgs).not.toContain('-o');
+        expect(fs.writes['/tmp/xns/docker-compose.yml'].toString()).toBe('services: {}\n');
         expect(fs.mkdtemp).not.toHaveBeenCalled();
         expect(parsed.source).toBe('compose_url');
     });
@@ -617,6 +620,7 @@ describe('install_relayer', () => {
     test('compose_url path → bind_address_applied says unknown', async () => {
         const handler = registerWithOptions({
             execFile: jest.fn((cmd, args, opts, cb) => cb(null, '', '')),
+            fs: { writeFile: jest.fn(async () => {}) },
             dockerUtil: {
                 composeUp: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
                 findContainer: jest.fn().mockResolvedValue(null),
