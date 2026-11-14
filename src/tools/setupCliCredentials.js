@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
+const { createTokenManager } = require('../lib/ensureToken');
 const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
 
 /**
@@ -16,11 +17,13 @@ const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/host
  *   2. Receives the one-time {access_key, secret_key} response
  *   3. Writes ~/.xns/credentials (AC-11 JSON schema, mode 0600)
  *
- * The muse_token is the Keycloak JWT already held by the agent from the
- * configure_vpd / get_host_tags calls — no new auth step required.
+ * The sign-in token comes from the server's own token manager, the same one
+ * get_host_tags and configure_vpd use (one browser sign-in per session); the
+ * caller never passes a token.
  */
 module.exports = function registerSetupCliCredentials(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
+    const tokenMgr = createTokenManager(options);
 
     server.registerTool(
         'setup_cli_credentials',
@@ -28,9 +31,8 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             title: 'Set up CLI credentials',
             description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
-                muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
-                relayer_ui_url: z.string().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888). Must be a loopback, private-network, or .local address — this tool sends your Muse token to it.'),
+                relayer_ui_url: z.string().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888). Must be a loopback, private-network, or .local address — this tool sends your sign-in token to it.'),
             },
             annotations: {
                 readOnlyHint: false,
@@ -38,8 +40,8 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 openWorldHint: true,
             },
         },
-        async ({ muse_token, installation_id, relayer_ui_url }) => {
-            // This request carries the caller's Muse token. Check the destination BEFORE
+        async ({ installation_id, relayer_ui_url }) => {
+            // This request carries the sign-in token. Check the destination BEFORE
             // sending anything, or a caller can name any host and collect the token
             // (MR !33). Same allowlist verify_storage has always applied.
             const allow = validateHostAllowlist(relayer_ui_url);
@@ -57,12 +59,22 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             }
 
             try {
-                // Step 1: create IAM user "xns-cli" via MC proxy
-                const { status, data } = await http.post(
+                // The destination is allowed; only now acquire the token.
+                let token = await tokenMgr.ensureToken();
+                const createUser = (bearer) => http.post(
                     `${relayer_ui_url}/api/v1/mc/user`,
                     { user: 'xns-cli' },
-                    { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
+                    { headers: { keycloaktoken: bearer }, ...NO_REDIRECT_TOKEN_CONFIG }
                 );
+
+                // Step 1: create IAM user "xns-cli" via MC proxy
+                let { status, data } = await createUser(token);
+
+                // A rejected token gets one re-auth and retry.
+                if (status === 401) {
+                    token = await tokenMgr.reauth();
+                    ({ status, data } = await createUser(token));
+                }
 
                 if (status !== 200) {
                     return {
