@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const net = require('net');
 const { createDockerUtil, redactEndpoint, classifyDockerFailure } = require('../lib/dockerUtil');
+const { validateHostAllowlist } = require('../lib/hostAllowlist');
 
 const BIND_ADDRESS_HELP = 'bind_address must be empty (all interfaces), an IPv4 address (e.g. "127.0.0.1"), or a bracketed IPv6 address (e.g. "[::1]") — the Compose ports host component is an IP address, not a hostname';
 
@@ -111,6 +112,64 @@ function isValidBindAddress(value) {
 // rest of the release settings) sits beside it and is fetched on every run.
 const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
 const CHANNEL_ENV_FILE = '.env';
+
+const RELEASES_HOST = 'releases.xns.tech';
+const MAX_OVERRIDE_BYTES = 1048576;
+
+/**
+ * Decide whether a compose_url override may be downloaded and run.
+ * Allowed: https on releases.xns.tech, a file:// URL (a file on this machine), or
+ * a loopback / private-network / .local host over http or https.
+ *
+ * DECISION: no opt-in flag for other hosts. The compose file runs as root through
+ * docker compose, and a flag is one more input a planted instruction could set.
+ *
+ * @param {string} url
+ * @returns {{ allowed: boolean, host: string }}
+ */
+function isComposeFilePath(pathname) {
+    let decoded;
+    try {
+        decoded = decodeURIComponent(pathname);
+    } catch {
+        return false;
+    }
+    return /\.ya?ml$/i.test(decoded);
+}
+
+function checkComposeUrl(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return { allowed: false, host: '(unreadable URL)' };
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol === 'file:') {
+        const local = hostname === '' || hostname === 'localhost';
+        if (!local) return { allowed: false, host: hostname };
+        // curl would copy any readable file (or read /dev/zero without end) into the
+        // install folder, so only a compose file by name is accepted.
+        if (!isComposeFilePath(parsed.pathname)) {
+            return { allowed: false, host: 'this machine', reason: 'file-extension' };
+        }
+        return { allowed: true, host: 'this machine' };
+    }
+    if (parsed.protocol === 'https:' && hostname === RELEASES_HOST) return { allowed: true, host: hostname };
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { allowed: false, host: hostname || parsed.protocol };
+    // Only plain DNS names and IP literals. Node accepts characters such as "{" in a
+    // hostname that curl reads as syntax, so the host curl contacts could differ.
+    if (!/^([a-z0-9-]+\.)*[a-z0-9-]+$|^\[[0-9a-f:.]+\]$/.test(hostname)) return { allowed: false, host: hostname };
+    return { allowed: validateHostAllowlist(url).allowed, host: hostname };
+}
+
+function composeFileRefusedMessage() {
+    return 'compose_url file:// path must be a .yml or .yaml file, so nothing was written and nothing was downloaded. Pass the path of your docker-compose.yml, for example file:///home/you/docker-compose.yml.';
+}
+
+function composeHostRefusedMessage(host) {
+    return `compose_url host ${host} is not allowed, so nothing was written and nothing was downloaded. A custom compose runs as root through Docker, so it may only come from https://${RELEASES_HOST}, a file:// URL, or a loopback, private-network or .local host. To use your own compose file, download it to this machine and pass a file:// URL (for example file:///home/you/docker-compose.yml), or serve it from your private network.`;
+}
 
 // Where a release .env that stops short is reported.
 const BUGS_URL = require('../../package.json').bugs.url;
@@ -280,12 +339,12 @@ module.exports = function registerInstallRelayer(server, options = {}) {
         'install_relayer',
         {
             title: 'Install the Relayer',
-            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.xns.tech (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. If the release files cannot be downloaded or used, it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose.\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 24 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. When bind_address is set and the release compose does not use BIND_ADDRESS on every published port, the tool stops before installing anything and says so. A compose_url override is fetched remotely and may not honor it. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
+            description: 'Install and start the XNS Relayer. By default fetches the canonical release channel bundle — relayer + the Prometheus/Grafana monitoring stack — and its .env from releases.xns.tech (anonymous pull), appends the ports to that .env, then runs docker compose up -d — the user does NOT need to author any file. If the release files cannot be downloaded or used, it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the command that fixes it. Pass compose_url only to override with a custom compose; it must be https on releases.xns.tech, a file:// URL, or a loopback, private-network or .local host (any other host is refused before anything is downloaded).\n\nIMPORTANT — two machines: this tool writes docker-compose.yml and .env on the machine running the MCP, then starts the containers on whichever machine the Docker daemon is on. When DOCKER_HOST or an ssh:// Docker context points at a daemon on another machine, the tool refuses: it writes nothing and starts nothing, and returns an error naming the Docker host. Run the MCP on the Docker host (Node.js 24 there) and install from there.\n\nExposure decisions on this surface:\n\n1. BINDING — bind_address controls which host network interface Docker publishes ports on. Default: empty (all interfaces — the dashboard answers from any machine on the LAN with zero configuration). Set to "127.0.0.1" for loopback-only, or a specific interface IP. The value is passed to docker compose via env as BIND_ADDRESS; it takes effect only if the compose file used for the install references BIND_ADDRESS in its port declarations. When bind_address is set and the release compose does not use BIND_ADDRESS on every published port, the tool stops before installing anything and says so. A compose_url override is fetched remotely and may not honor it. The prerequisite check (check_prerequisites) probes port availability by binding 0.0.0.0 regardless of this setting.\n\n2. UI TLS — ui_tls_enabled describes whether the admin UI listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host.\n\n3. S3 TLS — s3_tls_enabled describes whether the S3 gateway listens on HTTPS in addition to HTTP. Default: false (off). This switch is described here for decision visibility; it is NOT wired to behavior in this version — setting it to true is accepted but has no effect until a future release ships the listener. Cost when enabled: requires a TLS certificate and key provisioned on the host; S3 clients must be configured to use the HTTPS endpoint.',
             inputSchema: {
                 install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888). Docker publishes this port on the interface chosen by bind_address.'),
                 s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000). Docker publishes this port on the interface chosen by bind_address.'),
-                compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
+                compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Allowed: https on releases.xns.tech, a file:// URL (a .yml or .yaml compose file on this machine), or a loopback, private-network or .local host; any other host is refused. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
                 // R5 input boundary — see isValidBindAddress above for why each
                 // documented address form is validated whole rather than by charset.
                 bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, or a bracketed IPv6 address (e.g. "[::1]"). Hostnames are rejected — the Compose ports host component is an IP address. This value is passed to docker compose via env, and on the default path it is also written into the .env this installer authors (the compose_url override path writes no .env). On the default path the installer checks the fetched channel compose for BIND_ADDRESS and stops, installing nothing, when it is absent. On the compose_url path the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
@@ -302,6 +361,12 @@ module.exports = function registerInstallRelayer(server, options = {}) {
             try {
                 const { execFile: nodeExecFile } = require('child_process');
                 const execFileFn = _execFile || nodeExecFile;
+                // Before any lookup, mkdir or download: the override compose runs
+                // as root, so its host is checked first.
+                const composeCheck = compose_url ? checkComposeUrl(compose_url) : null;
+                if (composeCheck && !composeCheck.allowed) {
+                    return errorResponse(`Relayer installation failed: ${composeCheck.reason === 'file-extension' ? composeFileRefusedMessage() : composeHostRefusedMessage(composeCheck.host)}`);
+                }
                 const composePath = path.join(install_path, 'docker-compose.yml');
                 const envPath = path.join(install_path, '.env');
 
@@ -358,14 +423,29 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                     });
                 });
 
-                // curl -fsSL -o <outPath> <url> (execFile, no shell). Rejects
-                // with curl's own error; each caller chooses the message.
+                // curl -fsSL -o <outPath> <url> (execFile, no shell) for the release
+                // channel. Rejects with curl's own error; each caller chooses the message.
+                // -q must be the first argument: it keeps curl from reading ~/.curlrc.
+                // -g: curl must not expand {a,b} or [1-9] patterns into other URLs.
                 const curlTo = (url, outPath) => new Promise((resolve, reject) => {
-                    execFileFn('curl', ['-fsSL', '-o', outPath, url], { timeout: 60000 }, (err) => {
+                    execFileFn('curl', ['-q', '-fsSL', '-g', '-o', outPath, url], { timeout: 60000 }, (err) => {
                         if (err) return reject(err);
                         resolve();
                     });
                 });
+
+                // The override download: no redirects (a redirect would reach a host the
+                // check never saw), http, https or a local file only, and at most
+                // MAX_OVERRIDE_BYTES. curl writes to stdout and Node stops it past the
+                // cap, because --max-filesize does not stop a transfer of unknown length
+                // before curl 8.4.0. Only then is the file written.
+                const curlOverrideTo = (url, outPath) => new Promise((resolve, reject) => {
+                    const args = ['-q', '-fsS', '-g', '--proto', '=http,https,file', '--max-filesize', String(MAX_OVERRIDE_BYTES), url];
+                    execFileFn('curl', args, { timeout: 60000, maxBuffer: MAX_OVERRIDE_BYTES, encoding: 'buffer' }, (err, stdout) => {
+                        if (err) return reject(err);
+                        resolve(stdout);
+                    });
+                }).then((body) => fsp.writeFile(outPath, body ?? ''));
 
                 // Download the release compose and .env into an owner-only
                 // temporary folder, read them and run the two checks. The folder
@@ -418,9 +498,15 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 let source;
                 if (compose_url) {
                     // Override path: make the folder, then download a custom
-                    // compose straight into it.
+                    // compose and write it into it.
                     await mkdirInstallPath();
-                    await curlTo(compose_url, composePath).catch((err) => {
+                    // DECISION: curl gets the serialized URL that was checked, not the
+                    // raw string. Node and curl parse a backslash before "@" differently,
+                    // so the raw string could name another host than the one allowed.
+                    await curlOverrideTo(new URL(compose_url).href, composePath).catch((err) => {
+                        if (err && err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+                            throw safeError(`Failed to download compose file: it is larger than ${MAX_OVERRIDE_BYTES} bytes, so nothing was written`, err);
+                        }
                         throw safeError('Failed to download compose file', err);
                     });
                     source = 'compose_url';
@@ -462,6 +548,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                             compose_path: composePath,
                             install_path,
                             source,
+                            compose_host: composeCheck ? composeCheck.host : new URL(channelComposeUrl).host,
                             // D5/W5: state the binding at install time, out-of-band, so a
                             // refused connection is explainable later. Two statements, never
                             // merged (PRD §7): `composed_from` is what this installer asserts

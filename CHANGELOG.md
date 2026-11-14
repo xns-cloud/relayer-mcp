@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.14.0] — 2026-11-14
+
+### Changed
+
+- **`setup_cli_credentials` no longer takes a `muse_token`.** No tool hands that token back, so an
+  agent could only ask the person to paste it into chat. The tool now uses the server's own
+  sign-in, like `get_host_tags`, and retries once after a fresh sign-in on HTTP 401. It no longer
+  takes a `relayer_ui_url`: the token goes only to the server's own Relayer UI base. A new
+  optional `ui_port` (default 8888) picks the port for a Relayer installed with another
+  `ui_port`; the host is always the server's own.
+- **`install_relayer` limits where a `compose_url` can come from.** The compose file runs as root
+  through Docker, and any URL was accepted. It must now be https on `releases.xns.tech`, a
+  `file://` URL (a path that must be a .yml or .yaml file), or a loopback, private-network or
+  `.local` host; any other host is refused before anything is written or downloaded, with the
+  `file://` way to use your own compose. The override download no longer follows redirects, is
+  capped at 1 MiB, and the reply names the host in `compose_host`. Every curl call skips
+  `~/.curlrc`.
+
+### Fixed
+
+- **Sign-in no longer hangs when no browser can open.** The call used to wait 30 minutes with no
+  link. It now returns the link at once, for every call while the sign-in is pending, and the
+  sign-in keeps waiting. On WSL the Windows browser works. From another machine the port in the
+  link has to be forwarded first, and the message says how. `manage_backups` and `verify_storage`
+  pass that link through instead of a generic failure.
+- **`check_prerequisites` catches a private root mount.** The Relayer compose needs `/` shared or
+  slave for the Docker daemon. WSL2 mounts it private, so the containers stayed in "Created" while
+  every check passed. The new `root_mount_propagation` check fails with the command that fixes it,
+  and on WSL says the fix must be run again after each restart. It is skipped when no Docker
+  daemon runs on this machine, when more than one does, or when the daemon's mounts cannot be
+  read.
+
 ## [0.13.0] — 2026-11-12
 
 ### Changed

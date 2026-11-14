@@ -5,7 +5,11 @@ const path = require('path');
 const os = require('os');
 const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
-const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
+const { createTokenManager } = require('../lib/ensureToken');
+const { NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
+
+const DEFAULT_UI_PORT = 8888;
+const RELAYER_UI_BASE = `http://localhost:${DEFAULT_UI_PORT}`;
 
 /**
  * Tool 11: setup_cli_credentials
@@ -16,11 +20,14 @@ const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/host
  *   2. Receives the one-time {access_key, secret_key} response
  *   3. Writes ~/.xns/credentials (AC-11 JSON schema, mode 0600)
  *
- * The muse_token is the Keycloak JWT already held by the agent from the
- * configure_vpd / get_host_tags calls — no new auth step required.
+ * The sign-in token comes from the server's own token manager, the same one
+ * get_host_tags and configure_vpd use (one browser sign-in per session); the
+ * caller never passes a token.
  */
 module.exports = function registerSetupCliCredentials(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
+    const relayerUiBase = (options.relayerUiBase || RELAYER_UI_BASE).replace(/\/+$/, '');
+    const tokenMgr = createTokenManager(options);
 
     server.registerTool(
         'setup_cli_credentials',
@@ -28,9 +35,8 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             title: 'Set up CLI credentials',
             description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
-                muse_token: z.string().describe('Keycloak/Muse token — the same token used for get_host_tags and configure_vpd'),
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
-                relayer_ui_url: z.string().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888). Must be a loopback, private-network, or .local address — this tool sends your Muse token to it.'),
+                ui_port: z.number().int().min(1).max(65535).optional().default(DEFAULT_UI_PORT).describe('Relayer UI port, if install_relayer was run with a ui_port other than 8888. Only the port is chosen; the host is always this machine.'),
             },
             annotations: {
                 readOnlyHint: false,
@@ -38,31 +44,30 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 openWorldHint: true,
             },
         },
-        async ({ muse_token, installation_id, relayer_ui_url }) => {
-            // This request carries the caller's Muse token. Check the destination BEFORE
-            // sending anything, or a caller can name any host and collect the token
-            // (MR !33). Same allowlist verify_storage has always applied.
-            const allow = validateHostAllowlist(relayer_ui_url);
-            if (!allow.allowed) {
-                console.error(`[setup_cli_credentials] relayer_ui_url rejected: ${allow.reason}`);
-                return {
-                    content: [{
-                        type: 'text',
-                        text: JSON.stringify({
-                            success: false,
-                            error: `relayer_ui_url rejected: ${allow.reason}`,
-                        }),
-                    }],
-                };
-            }
-
+        async ({ installation_id, ui_port = DEFAULT_UI_PORT }) => {
+            // DECISION: the server's own sign-in token is never sent to a caller-chosen
+            // host. The request goes only to the server-owned Relayer UI base, the same
+            // base get_host_tags uses; the tool takes no URL input. The caller picks
+            // only the UI port, never the host.
             try {
-                // Step 1: create IAM user "xns-cli" via MC proxy
-                const { status, data } = await http.post(
-                    `${relayer_ui_url}/api/v1/mc/user`,
+                const uiUrl = new URL(relayerUiBase);
+                uiUrl.port = String(ui_port);
+                const uiBase = uiUrl.toString().replace(/\/+$/, '');
+                let token = await tokenMgr.ensureToken();
+                const createUser = (bearer) => http.post(
+                    `${uiBase}/api/v1/mc/user`,
                     { user: 'xns-cli' },
-                    { headers: { keycloaktoken: muse_token }, ...NO_REDIRECT_TOKEN_CONFIG }
+                    { headers: { keycloaktoken: bearer }, ...NO_REDIRECT_TOKEN_CONFIG }
                 );
+
+                // Step 1: create IAM user "xns-cli" via MC proxy
+                let { status, data } = await createUser(token);
+
+                // A rejected token gets one re-auth and retry.
+                if (status === 401) {
+                    token = await tokenMgr.reauth();
+                    ({ status, data } = await createUser(token));
+                }
 
                 if (status !== 200) {
                     return {
@@ -99,7 +104,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 // only rewrote an EXISTING :port slot, so a portless URL kept 80/443, a
                 // query or fragment survived into the persisted endpoint, and a ':digits'
                 // sequence in the PATH could be rewritten instead of the port (MR !33).
-                const s3Url = new URL(relayer_ui_url);
+                const s3Url = new URL(relayerUiBase);
                 s3Url.port = '9000';
                 s3Url.username = '';
                 s3Url.password = '';
@@ -153,12 +158,19 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                     }],
                 };
             } catch (err) {
+                // Caught error text stays in the server log. The sign-in link message
+                // is the one exception: this server builds it from fixed text and the
+                // link, and the person needs it to sign in.
+                const signInLink = err && err.code === 'SIGNIN_LINK';
+                if (!signInLink) console.error(`[setup_cli_credentials] ${err && err.message ? err.message : String(err)}`);
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: err.message,
+                            error: signInLink
+                                ? err.message
+                                : 'Setting up CLI credentials failed. See the server log for detail, then call setup_cli_credentials again.',
                         }),
                     }],
                 };

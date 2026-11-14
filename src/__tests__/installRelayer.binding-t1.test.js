@@ -124,7 +124,7 @@ describe('install_relayer binding — T1 gaps (E-A2/D5, AC8)', () => {
     test('a caller-supplied compose_url leaves container_port absent, not guessed', async () => {
         const composeUp = jest.fn().mockResolvedValue({ stdout: '', stderr: '' });
         const result = await run(composeUp, {
-            compose_url: 'https://example.invalid/custom-compose.yml',
+            compose_url: 'https://releases.xns.tech/custom-compose.yml',
         });
         const parsed = JSON.parse(result.content[0].text);
 

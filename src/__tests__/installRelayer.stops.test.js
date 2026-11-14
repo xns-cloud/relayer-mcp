@@ -74,7 +74,7 @@ function build({
         if (cmd !== 'curl') return cb(null, '', '');
         const url = args[args.length - 1];
         const out = args[args.indexOf('-o') + 1];
-        curlCalls.push({ url, out, timeout: opts && opts.timeout });
+        curlCalls.push({ url, out, args, timeout: opts && opts.timeout });
         if (failing.includes(url)) return cb(new Error(`curl: (22) The requested URL returned error: 404 ${url}`));
         files[out] = bodies[url] ?? '';
         return cb(null, '', '');
@@ -130,6 +130,14 @@ describe('install_relayer stops', () => {
         await stop(ctx);
 
         expect(ctx.curlCalls.map((c) => c.timeout)).toEqual([60000, 60000]);
+    });
+
+    test('both release downloads start with -q so ~/.curlrc is not read', async () => {
+        const ctx = build({ failing: [CHANNEL_ENV_URL] });
+        await stop(ctx);
+
+        expect(ctx.curlCalls).toHaveLength(2);
+        expect(ctx.curlCalls.map((c) => c.args[0])).toEqual(['-q', '-q']);
     });
 
     test('the .env download fails → stops naming .env and the host', async () => {

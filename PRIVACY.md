@@ -48,17 +48,20 @@ Both are yours to delete at any time.
 
 ## Network boundary
 
-No tool sends your sign-in token to a Relayer on the public internet. The tools that send it
-to a Relayer (`verify_storage`, `setup_cli_credentials`) run its host through an allowlist
+No tool sends your sign-in token to a Relayer on the public internet. `setup_cli_credentials`
+takes no address: it sends the token only to the server's own Relayer UI (by default
+`http://localhost:8888`). `verify_storage` runs the Relayer host it is given through an allowlist
 that permits only `localhost`, loopback, RFC 1918 private ranges (`10/8`, `172.16/12`,
-`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`). Three inputs are not limited to
+`192.168/16`), and `*.local` (`src/lib/hostAllowlist.js`). Two inputs are not limited to
 private addresses: the `host` of `check_relayer_health`, which gets plain HTTP health probes;
-the `compose_url` of `install_relayer`, from which the compose file is downloaded; and the S3
-`endpoint` of `verify_storage` (by default port 9000 on the Docker host), which gets the
+and the S3 `endpoint` of `verify_storage` (by default port 9000 on the Docker host), which gets the
 round-trip test as S3 requests signed with a throwaway key (or the keys you pass). A signed
 request carries the access key id and a signature, never the secret. The tool deletes a
 throwaway key after the test, pass or fail; if that deletion fails, the reply carries a
-`cleanup_warning` and the key stays until you remove it. Apart from those, the only public hosts contacted are the
+`cleanup_warning` and the key stays until you remove it. The `compose_url` of
+`install_relayer`, which is downloaded and run by Docker as root, is limited the same way
+plus `https://releases.xns.tech` and `file://` URLs; any other host is refused before
+anything is downloaded. Apart from those, the only public hosts contacted are the
 three XNS services named above and, for the `prom/node-exporter` image that an install
 pulls, Docker Hub.
 

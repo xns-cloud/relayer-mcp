@@ -146,12 +146,12 @@ reviews:
            fails at compose/runtime. Keep flagging until schemas use
            .int().min(1).max(65535). Do not treat this as accepted.
 
-        UNRESOLVED Critical (MR3) — keep flagging until fixed:
-        setup_cli_credentials forwards muse_token (keycloaktoken header)
-        to a caller-supplied relayer_ui_url, enabling token exfiltration
-        to arbitrary hosts. Flag any code path that forwards auth tokens
-        or secrets to a caller-supplied URL; the fix is an allowlist or a
-        server-side configured base URL. Not an accepted state.
+        Token destinations: setup_cli_credentials takes no URL and sends the
+        server's own sign-in token only to the server-owned Relayer UI base
+        (options.relayerUiBase, default http://localhost:8888). Flag any code
+        path that sends the server-held token to a caller-supplied URL. A
+        caller-supplied token (verify_storage muse_token) may go to a
+        caller-supplied URL only after the src/lib/hostAllowlist.js check.
 
         Cleanup guards: verify_storage-style multi-step tools must run
         cleanup for every step that may have partially succeeded

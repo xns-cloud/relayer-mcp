@@ -29,7 +29,9 @@ const DEFAULT_SIGNIN_TIMEOUT_MS = 1800000; // 30 minutes
  * @param {object} [opts.httpClient] - Injected HTTP client (testing)
  * @param {function} [opts.openBrowser] - Injected browser opener (testing)
  * @param {function} [opts.createServer] - Injected http.createServer (testing)
- * @returns {Promise<{access_token: string, expires_at: number, refresh_token: string, authorize_url: string}>}
+ * @param {function} [opts.onBrowserOpenFailed] - Called with the authorize URL when the
+ *   browser cannot be opened; the loopback listener keeps waiting for the callback
+ * @returns {Promise<{access_token: string, expires_at: number, refresh_token: string}>}
  */
 async function acquireToken(opts = {}) {
     const clientId = opts.clientId || DEFAULT_CLIENT_ID;
@@ -55,6 +57,7 @@ async function acquireToken(opts = {}) {
         openBrowser,
         createServer: _createServer,
         timeoutMs: opts.timeoutMs,
+        onBrowserOpenFailed: opts.onBrowserOpenFailed,
     });
 
     // 5. Exchange code for tokens
@@ -79,7 +82,6 @@ async function acquireToken(opts = {}) {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: Date.now() + (data.expires_in * 1000),
-        authorize_url: undefined, // already consumed
     };
 }
 
@@ -157,13 +159,25 @@ function captureAuthCode(opts) {
         const srv = createServer((req, res) => {
             const url = new URL(req.url, `http://127.0.0.1`);
 
+            // Validate the OIDC state first (CSRF). Any local process or web page can
+            // reach this port, so a request with a missing or wrong state is answered
+            // with 400 and ignored; it must not end the shared sign-in.
+            const returnedState = url.searchParams.get('state');
+            if (!returnedState || returnedState !== expectedState) {
+                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end('<html><body><h1>Invalid state parameter</h1><p>This request does not belong to the current sign-in.</p></body></html>');
+                return; // Keep waiting for the real redirect
+            }
+
             const error = url.searchParams.get('error');
             if (error) {
                 res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Authentication failed</h1><p>You can close this window.</p></body></html>');
                 clearTimeout(timeoutHandle);
                 srv.close();
-                return reject(new Error(`OIDC error: ${error} — ${url.searchParams.get('error_description') || ''}`));
+                // Only the error code reaches the caller; error_description is free text.
+                const errorCode = /^[a-z_]{1,64}$/.test(error) ? error : 'unknown';
+                return reject(new Error(`OIDC error: ${errorCode}`));
             }
 
             const code = url.searchParams.get('code');
@@ -171,16 +185,6 @@ function captureAuthCode(opts) {
                 res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end('<html><body><h1>Missing authorization code</h1></body></html>');
                 return; // Don't close server — wait for the real redirect
-            }
-
-            // R5-STATE-1: Validate OIDC state parameter to prevent CSRF
-            const returnedState = url.searchParams.get('state');
-            if (returnedState !== expectedState) {
-                res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end('<html><body><h1>Invalid state parameter</h1><p>Possible CSRF attack. Please try again.</p></body></html>');
-                clearTimeout(timeoutHandle);
-                srv.close();
-                return reject(new Error('OIDC callback state mismatch — possible CSRF. Please try again.'));
             }
 
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -227,10 +231,17 @@ function captureAuthCode(opts) {
                 reject(new Error(`OIDC sign-in timed out after ${Math.round(timeoutMs / 60000)} minutes. Please try again.`));
             }, timeoutMs);
 
-            // Open browser or return URL for the agent to present
-            openBrowser(authorizeUrl).catch(() => {
-                // If browser open fails, the authorize_url is still available
-            });
+            // Open the browser. When that fails (no desktop, SSH, WSL) the person
+            // can still sign in by hand, so hand the URL to the caller and keep
+            // the listener waiting for the callback.
+            const reportOpenFailure = () => {
+                if (typeof opts.onBrowserOpenFailed === 'function') opts.onBrowserOpenFailed(authorizeUrl);
+            };
+            try {
+                Promise.resolve(openBrowser(authorizeUrl)).catch(reportOpenFailure);
+            } catch {
+                reportOpenFailure();
+            }
         });
     });
 }

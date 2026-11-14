@@ -17,10 +17,14 @@ describe('check_prerequisites', () => {
     // statfs, so the disk check never reads the CI host's real disk.
     const AMPLE_STATFS = jest.fn(async () => ({ bavail: 500 * 10 ** 9, bsize: 1 }));
 
+    // No local Docker daemon process unless a test injects one, so the root
+    // mount check never reads the CI host's real /proc.
+    const NO_DOCKERD_PROC = { readdir: jest.fn(async () => []), readFile: jest.fn(async () => { throw new Error('ENOENT'); }) };
+
     function registerWithOptions(opts) {
         const { readRegistration } = require('./helpers/mockRegistration');
         const register = require('../tools/checkPrerequisites');
-        register(server, { statfs: AMPLE_STATFS, ...opts });
+        register(server, { statfs: AMPLE_STATFS, platform: 'linux', procFs: NO_DOCKERD_PROC, ...opts });
         const reg = readRegistration(server);
         registeredTools[reg.name] = reg.handler;
         return reg.handler;
@@ -578,7 +582,7 @@ describe('check_prerequisites', () => {
             const { readRegistration } = require('./helpers/mockRegistration');
             const register = require('../tools/checkPrerequisites');
             const fresh = { registerTool: jest.fn() };
-            register(fresh, { statfs: AMPLE_STATFS, ...opts });
+            register(fresh, { statfs: AMPLE_STATFS, platform: 'linux', procFs: NO_DOCKERD_PROC, ...opts });
             return readRegistration(fresh).handler;
         }
 

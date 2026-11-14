@@ -47,14 +47,14 @@ function repoFiles() {
 }
 
 describe('product words', () => {
-    test('the top changelog entry is the version package.json carries, 0.13.0', () => {
+    test('the top changelog entry is the version package.json carries, 0.14.0', () => {
         const pkg = readJson('package.json');
         const top = read('CHANGELOG.md').split('\n').find((l) => l.startsWith('## ['));
         const match = /^## \[(\d+\.\d+\.\d+)\] — \d{4}-\d{2}-\d{2}$/.exec(top);
 
         expect(match).not.toBeNull();
         expect(match[1]).toBe(pkg.version);
-        expect(pkg.version).toBe('0.13.0');
+        expect(pkg.version).toBe('0.14.0');
     });
 
     test('the server instructions end on the plugin being optional and pin no package version', () => {

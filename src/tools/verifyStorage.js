@@ -115,6 +115,7 @@ module.exports = function registerVerifyStorage(server, options = {}) {
                         try {
                             muse_token = await tokenMgr.ensureToken();
                         } catch (signInErr) {
+                            if (signInErr.code === 'SIGNIN_LINK') throw safeError(signInErr.message);
                             console.error(`[verify_storage] SignIn: ${signInErr.message}`);
                             throw safeError('OIDC sign-in did not complete. Run get_host_tags first to sign in, or pass muse_token or access_key_id/secret_access_key.');
                         }
