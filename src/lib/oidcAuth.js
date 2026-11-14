@@ -29,7 +29,9 @@ const DEFAULT_SIGNIN_TIMEOUT_MS = 1800000; // 30 minutes
  * @param {object} [opts.httpClient] - Injected HTTP client (testing)
  * @param {function} [opts.openBrowser] - Injected browser opener (testing)
  * @param {function} [opts.createServer] - Injected http.createServer (testing)
- * @returns {Promise<{access_token: string, expires_at: number, refresh_token: string, authorize_url: string}>}
+ * @param {function} [opts.onBrowserOpenFailed] - Called with the authorize URL when the
+ *   browser cannot be opened; the loopback listener keeps waiting for the callback
+ * @returns {Promise<{access_token: string, expires_at: number, refresh_token: string}>}
  */
 async function acquireToken(opts = {}) {
     const clientId = opts.clientId || DEFAULT_CLIENT_ID;
@@ -55,6 +57,7 @@ async function acquireToken(opts = {}) {
         openBrowser,
         createServer: _createServer,
         timeoutMs: opts.timeoutMs,
+        onBrowserOpenFailed: opts.onBrowserOpenFailed,
     });
 
     // 5. Exchange code for tokens
@@ -79,7 +82,6 @@ async function acquireToken(opts = {}) {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: Date.now() + (data.expires_in * 1000),
-        authorize_url: undefined, // already consumed
     };
 }
 
@@ -227,10 +229,17 @@ function captureAuthCode(opts) {
                 reject(new Error(`OIDC sign-in timed out after ${Math.round(timeoutMs / 60000)} minutes. Please try again.`));
             }, timeoutMs);
 
-            // Open browser or return URL for the agent to present
-            openBrowser(authorizeUrl).catch(() => {
-                // If browser open fails, the authorize_url is still available
-            });
+            // Open the browser. When that fails (no desktop, SSH, WSL) the person
+            // can still sign in by hand, so hand the URL to the caller and keep
+            // the listener waiting for the callback.
+            const reportOpenFailure = () => {
+                if (typeof opts.onBrowserOpenFailed === 'function') opts.onBrowserOpenFailed(authorizeUrl);
+            };
+            try {
+                Promise.resolve(openBrowser(authorizeUrl)).catch(reportOpenFailure);
+            } catch {
+                reportOpenFailure();
+            }
         });
     });
 }

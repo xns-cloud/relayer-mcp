@@ -146,7 +146,9 @@ module.exports = function registerManageBackups(server, options = {}) {
                         type: 'text',
                         text: JSON.stringify({
                             success: false,
-                            error: `Backup ${action} failed. See server log for detail.`,
+                            error: err.code === 'SIGNIN_LINK'
+                                ? err.message
+                                : `Backup ${action} failed. See server log for detail.`,
                         }),
                     }],
                     isError: true,

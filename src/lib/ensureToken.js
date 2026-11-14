@@ -3,6 +3,11 @@
 const { acquireToken, refreshToken } = require('./oidcAuth');
 const sharedTokenState = require('./tokenState');
 
+// One pending browser sign-in per token state, shared by every tool that
+// builds a token manager on that state. Keyed by the state module so
+// injected test state stays isolated from the real one.
+const pendingSignIns = new WeakMap();
+
 /**
  * Create an ensureToken function with injectable deps for testing.
  * Used by getHostTags and configureVpd — both need OIDC token
@@ -51,10 +56,43 @@ function createTokenManager(options = {}) {
             }
         }
 
-        // Full OIDC sign-in
-        const newState = await _acquireToken(oidcOpts);
-        _tokenState.set(newState);
-        return newState.access_token;
+        // Full OIDC sign-in — join one already waiting for the person, if any
+        let pending = pendingSignIns.get(_tokenState);
+        if (pending) return pending.signIn;
+
+        pending = startSignIn();
+        pendingSignIns.set(_tokenState, pending);
+        pending.signIn.then(
+            () => { clearPending(pending); },
+            () => { clearPending(pending); },
+        );
+
+        // Either the sign-in finishes, or the browser could not be opened and
+        // the person needs the link. The sign-in keeps running in that case.
+        return Promise.race([
+            pending.signIn,
+            pending.link.then((url) => {
+                const err = new Error(`Open this link to sign in to XNS, then call this tool again: ${url}`);
+                err.code = 'SIGNIN_LINK';
+                err.authorizeUrl = url;
+                throw err;
+            }),
+        ]);
+    }
+
+    function startSignIn() {
+        let reportLink;
+        const link = new Promise((resolve) => { reportLink = resolve; });
+        const signIn = _acquireToken({ ...oidcOpts, onBrowserOpenFailed: reportLink })
+            .then((newState) => {
+                _tokenState.set(newState);
+                return newState.access_token;
+            });
+        return { signIn, link };
+    }
+
+    function clearPending(pending) {
+        if (pendingSignIns.get(_tokenState) === pending) pendingSignIns.delete(_tokenState);
     }
 
     /**
