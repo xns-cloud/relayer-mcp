@@ -66,6 +66,21 @@ describe('setup_cli_credentials sends the server token only to the server-owned 
         expect(posts[0].c.maxRedirects).toBe(0);
     });
 
+    test('ui_port picks the port on the server-owned host; a caller relayer_ui_url is still ignored', async () => {
+        const { posts, config, handler } = build();
+        const args = z.object(config.inputSchema).parse({ ui_port: 8889 });
+
+        await handler({ ...args, relayer_ui_url: 'http://evil.example.com:8889' });
+
+        expect(posts).toHaveLength(1);
+        expect(posts[0].u).toBe('http://localhost:8889/api/v1/mc/user');
+    });
+
+    test.each([0, 65536, 8888.5, '8889'])('ui_port %p is rejected', (bad) => {
+        const { config } = build();
+        expect(z.object(config.inputSchema).safeParse({ ui_port: bad }).success).toBe(false);
+    });
+
     test('uses the server-configured base when one is set, still ignoring a caller URL', async () => {
         const { posts, config, handler } = build({ relayerUiBase: 'http://192.168.1.50:8888/' });
         const args = z.object(config.inputSchema).parse({});

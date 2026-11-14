@@ -7,7 +7,9 @@
 - **`setup_cli_credentials` no longer takes a `muse_token`.** No tool hands that token back, so an
   agent could only ask the person to paste it into chat. The tool now uses the server's own
   sign-in, like `get_host_tags`, and retries once after a fresh sign-in on HTTP 401. It no longer
-  takes a `relayer_ui_url`: the token goes only to the server's own Relayer UI base.
+  takes a `relayer_ui_url`: the token goes only to the server's own Relayer UI base. A new
+  optional `ui_port` (default 8888) picks the port for a Relayer installed with another
+  `ui_port`; the host is always the server's own.
 - **`install_relayer` limits where a `compose_url` can come from.** The compose file runs as root
   through Docker, and any URL was accepted. It must now be https on `releases.xns.tech`, a
   `file://` URL, or a loopback, private-network or `.local` host; any other host is refused before

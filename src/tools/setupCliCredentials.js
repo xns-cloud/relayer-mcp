@@ -8,7 +8,8 @@ const { createHttpClient } = require('../lib/httpClient');
 const { createTokenManager } = require('../lib/ensureToken');
 const { NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
 
-const RELAYER_UI_BASE = 'http://localhost:8888';
+const DEFAULT_UI_PORT = 8888;
+const RELAYER_UI_BASE = `http://localhost:${DEFAULT_UI_PORT}`;
 
 /**
  * Tool 11: setup_cli_credentials
@@ -35,6 +36,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
+                ui_port: z.number().int().min(1).max(65535).optional().default(DEFAULT_UI_PORT).describe('Relayer UI port, if install_relayer was run with a ui_port other than 8888. Only the port is chosen; the host is always this machine.'),
             },
             annotations: {
                 readOnlyHint: false,
@@ -42,14 +44,18 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 openWorldHint: true,
             },
         },
-        async ({ installation_id }) => {
+        async ({ installation_id, ui_port = DEFAULT_UI_PORT }) => {
             // DECISION: the server's own sign-in token is never sent to a caller-chosen
             // host. The request goes only to the server-owned Relayer UI base, the same
-            // base get_host_tags uses; the tool takes no URL input.
+            // base get_host_tags uses; the tool takes no URL input. The caller picks
+            // only the UI port, never the host.
             try {
+                const uiUrl = new URL(relayerUiBase);
+                uiUrl.port = String(ui_port);
+                const uiBase = uiUrl.toString().replace(/\/+$/, '');
                 let token = await tokenMgr.ensureToken();
                 const createUser = (bearer) => http.post(
-                    `${relayerUiBase}/api/v1/mc/user`,
+                    `${uiBase}/api/v1/mc/user`,
                     { user: 'xns-cli' },
                     { headers: { keycloaktoken: bearer }, ...NO_REDIRECT_TOKEN_CONFIG }
                 );
