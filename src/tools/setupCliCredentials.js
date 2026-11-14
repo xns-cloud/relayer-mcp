@@ -6,7 +6,9 @@ const os = require('os');
 const { z } = require('zod');
 const { createHttpClient } = require('../lib/httpClient');
 const { createTokenManager } = require('../lib/ensureToken');
-const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
+const { NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
+
+const RELAYER_UI_BASE = 'http://localhost:8888';
 
 /**
  * Tool 11: setup_cli_credentials
@@ -23,6 +25,7 @@ const { validateHostAllowlist, NO_REDIRECT_TOKEN_CONFIG } = require('../lib/host
  */
 module.exports = function registerSetupCliCredentials(server, options = {}) {
     const http = options.httpClient || createHttpClient(options);
+    const relayerUiBase = (options.relayerUiBase || RELAYER_UI_BASE).replace(/\/+$/, '');
     const tokenMgr = createTokenManager(options);
 
     server.registerTool(
@@ -32,7 +35,6 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
-                relayer_ui_url: z.string().url().optional().default('http://localhost:8888').describe('Relayer UI base URL (default: http://localhost:8888). Must be a loopback, private-network, or .local address — this tool sends your sign-in token to it.'),
             },
             annotations: {
                 readOnlyHint: false,
@@ -40,29 +42,14 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 openWorldHint: true,
             },
         },
-        async ({ installation_id, relayer_ui_url }) => {
-            // This request carries the sign-in token. Check the destination BEFORE
-            // sending anything, or a caller can name any host and collect the token
-            // (MR !33). Same allowlist verify_storage has always applied.
-            const allow = validateHostAllowlist(relayer_ui_url);
-            if (!allow.allowed) {
-                console.error(`[setup_cli_credentials] relayer_ui_url rejected: ${allow.reason}`);
-                return {
-                    content: [{
-                        type: 'text',
-                        text: JSON.stringify({
-                            success: false,
-                            error: `relayer_ui_url rejected: ${allow.reason}`,
-                        }),
-                    }],
-                };
-            }
-
+        async ({ installation_id }) => {
+            // DECISION: the server's own sign-in token is never sent to a caller-chosen
+            // host. The request goes only to the server-owned Relayer UI base, the same
+            // base get_host_tags uses; the tool takes no URL input.
             try {
-                // The destination is allowed; only now acquire the token.
                 let token = await tokenMgr.ensureToken();
                 const createUser = (bearer) => http.post(
-                    `${relayer_ui_url}/api/v1/mc/user`,
+                    `${relayerUiBase}/api/v1/mc/user`,
                     { user: 'xns-cli' },
                     { headers: { keycloaktoken: bearer }, ...NO_REDIRECT_TOKEN_CONFIG }
                 );
@@ -111,7 +98,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 // only rewrote an EXISTING :port slot, so a portless URL kept 80/443, a
                 // query or fragment survived into the persisted endpoint, and a ':digits'
                 // sequence in the PATH could be rewritten instead of the port (MR !33).
-                const s3Url = new URL(relayer_ui_url);
+                const s3Url = new URL(relayerUiBase);
                 s3Url.port = '9000';
                 s3Url.username = '';
                 s3Url.password = '';
