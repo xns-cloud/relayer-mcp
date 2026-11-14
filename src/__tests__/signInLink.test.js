@@ -3,6 +3,8 @@
 const { createTokenManager } = require('../lib/ensureToken');
 const { acquireToken } = require('../lib/oidcAuth');
 const registerManageBackups = require('../tools/manageBackups');
+const registerVerifyStorage = require('../tools/verifyStorage');
+const registerSetupCliCredentials = require('../tools/setupCliCredentials');
 
 function memoryTokenState() {
     let state = null;
@@ -187,5 +189,29 @@ describe('sign-in when the browser cannot be opened', () => {
         expect(result.isError).toBe(true);
         expect(JSON.parse(result.content[0].text).error).toContain(openedUrls[0]);
         await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    test('verify_storage hands the sign-in link to the agent', async () => {
+        const listener = fakeListener();
+        const openedUrls = [];
+        let handler;
+        const http = { get: jest.fn(), post: jest.fn(), del: jest.fn() };
+        registerVerifyStorage({ registerTool: (name, config, fn) => { handler = fn; } }, {
+            acquireToken,
+            _tokenStateModule: memoryTokenState(),
+            oidcOptions: {
+                createServer: listener.createServer,
+                httpClient,
+                openBrowser: async (url) => { openedUrls.push(url); throw new Error('no browser'); },
+            },
+            httpClient: http,
+            dockerUtil: { getDockerHost: jest.fn().mockResolvedValue({ remote: false, host: 'localhost', endpoint: null }) },
+        });
+
+        const result = await handler({ endpoint: 'http://localhost:9000' });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain(openedUrls[0]);
+        expect(http.post).not.toHaveBeenCalled();
     });
 });
