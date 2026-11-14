@@ -37,6 +37,13 @@ const httpClient = {
     get: jest.fn(),
 };
 
+// The callback exchanges the code over an async call; wait until the token lands.
+async function waitForToken(tokenMgr) {
+    while (!tokenMgr.getTokenState()) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+}
+
 function managerWithFailingBrowser(listener, openedUrls) {
     return createTokenManager({
         acquireToken,
@@ -50,7 +57,7 @@ function managerWithFailingBrowser(listener, openedUrls) {
 }
 
 describe('sign-in when the browser cannot be opened', () => {
-    test('first call rejects promptly with the link; a second call gets the token after the callback, with one listener', async () => {
+    test('first call rejects with the link and the port to forward; a call joining while pending gets the link at once; one listener', async () => {
         const listener = fakeListener();
         const openedUrls = [];
         const tokenMgr = managerWithFailingBrowser(listener, openedUrls);
@@ -61,16 +68,32 @@ describe('sign-in when the browser cannot be opened', () => {
         expect(first.code).toBe('SIGNIN_LINK');
         expect(first.message).toContain(openedUrls[0]);
         expect(first.message).toContain('/protocol/openid-connect/auth?');
+        const port = new URL(new URL(openedUrls[0]).searchParams.get('redirect_uri')).port;
+        expect(port).not.toBe('');
+        expect(first.message).toContain(`ssh -L ${port}:127.0.0.1:${port}`);
+        expect(first.message).toContain('on this machine');
 
-        // The person signs in; the callback reaches the still-waiting listener.
-        const second = tokenMgr.ensureToken();
-        callbackFor(openedUrls[0], listener.created[0].handler);
-
-        await expect(second).resolves.toBe('signed-in-token');
+        // Still waiting for the person: a second call must not block.
+        const joined = await tokenMgr.ensureToken().then(() => null, (err) => err);
+        expect(joined.code).toBe('SIGNIN_LINK');
+        expect(joined.message).toBe(first.message);
         expect(listener.createServer).toHaveBeenCalledTimes(1);
     });
 
-    test('a different token manager on the same state joins the pending sign-in', async () => {
+    test('a call made after the person finished signing in gets the token', async () => {
+        const listener = fakeListener();
+        const openedUrls = [];
+        const tokenMgr = managerWithFailingBrowser(listener, openedUrls);
+
+        await tokenMgr.ensureToken().catch(() => {});
+        callbackFor(openedUrls[0], listener.created[0].handler);
+        await waitForToken(tokenMgr);
+
+        await expect(tokenMgr.ensureToken()).resolves.toBe('signed-in-token');
+        expect(listener.createServer).toHaveBeenCalledTimes(1);
+    });
+
+    test('a different token manager on the same state joins the pending sign-in and gets the link at once', async () => {
         const listener = fakeListener();
         const openedUrls = [];
         const stateModule = memoryTokenState();
@@ -85,11 +108,16 @@ describe('sign-in when the browser cannot be opened', () => {
         });
 
         await make().ensureToken().catch(() => {});
-        const joined = make().ensureToken();
-        callbackFor(openedUrls[0], listener.created[0].handler);
+        const joined = await make().ensureToken().then(() => null, (err) => err);
 
-        await expect(joined).resolves.toBe('signed-in-token');
+        expect(joined.code).toBe('SIGNIN_LINK');
+        expect(joined.authorizeUrl).toBe(openedUrls[0]);
         expect(listener.createServer).toHaveBeenCalledTimes(1);
+
+        const other = make();
+        callbackFor(openedUrls[0], listener.created[0].handler);
+        await waitForToken(other);
+        await expect(other.ensureToken()).resolves.toBe('signed-in-token');
     });
 
     test('after the pending sign-in times out, the next call starts a fresh one', async () => {

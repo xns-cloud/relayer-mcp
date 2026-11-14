@@ -8,6 +8,20 @@ const sharedTokenState = require('./tokenState');
 // injected test state stays isolated from the real one.
 const pendingSignIns = new WeakMap();
 
+// The sign-in link redirects to 127.0.0.1:<port> on the machine running this
+// server, so the browser has to reach that port.
+function signInLinkMessage(url) {
+    const message = `Open this link in a browser on this machine to sign in to XNS (on WSL the Windows browser works), then call this tool again: ${url}`;
+    let port = '';
+    try {
+        port = new URL(new URL(url).searchParams.get('redirect_uri')).port;
+    } catch {
+        return message;
+    }
+    if (!port) return message;
+    return `${message}\nIf your browser is on another machine, first forward the port with: ssh -L ${port}:127.0.0.1:${port} <this machine>`;
+}
+
 /**
  * Create an ensureToken function with injectable deps for testing.
  * Used by getHostTags and configureVpd — both need OIDC token
@@ -58,7 +72,7 @@ function createTokenManager(options = {}) {
 
         // Full OIDC sign-in — join one already waiting for the person, if any
         let pending = pendingSignIns.get(_tokenState);
-        if (pending) return pending.signIn;
+        if (pending) return raceSignInOrLink(pending);
 
         pending = startSignIn();
         pendingSignIns.set(_tokenState, pending);
@@ -67,12 +81,17 @@ function createTokenManager(options = {}) {
             () => { clearPending(pending); },
         );
 
-        // Either the sign-in finishes, or the browser could not be opened and
-        // the person needs the link. The sign-in keeps running in that case.
+        return raceSignInOrLink(pending);
+    }
+
+    // Either the sign-in finishes, or the browser could not be opened and the
+    // person needs the link. The sign-in keeps running in that case. A call that
+    // joins a pending sign-in gets the same race, so it never waits blind.
+    function raceSignInOrLink(pending) {
         return Promise.race([
             pending.signIn,
             pending.link.then((url) => {
-                const err = new Error(`Open this link to sign in to XNS, then call this tool again: ${url}`);
+                const err = new Error(signInLinkMessage(url));
                 err.code = 'SIGNIN_LINK';
                 err.authorizeUrl = url;
                 throw err;

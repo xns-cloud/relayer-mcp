@@ -16,10 +16,11 @@
 
 ### Fixed
 
-- **Sign-in no longer hangs when no browser can open** (WSL, SSH, a headless box). The call used to
-  wait 30 minutes with no link. It now returns at once with the sign-in link for the agent to
-  show, and the sign-in keeps waiting, so the next call after the person signs in uses it.
-  `manage_backups` and `verify_storage` now pass that link through instead of a generic failure.
+- **Sign-in no longer hangs when no browser can open.** The call used to wait 30 minutes with no
+  link. It now returns the link at once, for every call while the sign-in is pending, and the
+  sign-in keeps waiting. On WSL the Windows browser works. From another machine the port in the
+  link has to be forwarded first, and the message says how. `manage_backups` and `verify_storage`
+  pass that link through instead of a generic failure.
 - **`check_prerequisites` catches a private root mount.** The Relayer compose needs `/` shared or
   slave for the Docker daemon. WSL2 mounts it private, so the containers stayed in "Created" while
   every check passed. The new `root_mount_propagation` check fails with the command that fixes it,
