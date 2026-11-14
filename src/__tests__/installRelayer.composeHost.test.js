@@ -54,6 +54,53 @@ describe('install_relayer compose_url host limit', () => {
         expect(t.composeUp).toHaveBeenCalledTimes(1);
     });
 
+    test.each([
+        'file:///etc/passwd',
+        'file:///dev/zero',
+        'file:///proc/self/environ',
+        'file:///home/me/.xns/credentials',
+        'file:///home/me/compose.yml.bak',
+        'file:///home/me/compose%2Ftxt',
+    ])('%s is refused as a compose file before anything is written or downloaded', async (url) => {
+        const t = setup();
+        const parsed = await t.run({ install_path: '/tmp/xns', compose_url: url });
+
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('.yml or .yaml');
+        expect(t.execFile).not.toHaveBeenCalled();
+        expect(t.composeUp).not.toHaveBeenCalled();
+        expect(t.fs.writeFile).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        'file:///home/me/docker-compose.yml',
+        'file:///home/me/stack.YAML',
+        'file://localhost/home/me/my%20compose.Yml',
+    ])('%s is accepted as a compose file', async (url) => {
+        const t = setup();
+        const parsed = await t.run({ install_path: '/tmp/xns', compose_url: url });
+
+        expect(parsed.success).toBe(true);
+        expect(parsed.compose_host).toBe('this machine');
+    });
+
+    test('every curl call starts with -q so ~/.curlrc is not read', async () => {
+        const t = setup();
+        await t.run({ install_path: '/tmp/xns', compose_url: 'https://releases.xns.tech/c.yml' });
+
+        const curls = t.execFile.mock.calls.filter((c) => c[0] === 'curl');
+        expect(curls.length).toBeGreaterThan(0);
+        for (const call of curls) expect(call[1][0]).toBe('-q');
+    });
+
+    test('the override download is capped at 1 MiB', async () => {
+        const t = setup();
+        await t.run({ install_path: '/tmp/xns', compose_url: 'file:///home/me/docker-compose.yml' });
+
+        const args = t.execFile.mock.calls.find((c) => c[0] === 'curl')[1];
+        expect(args[args.indexOf('--max-filesize') + 1]).toBe('1048576');
+    });
+
     test('a backslash before @ cannot make curl fetch from a host other than the checked one', async () => {
         const t = setup();
         const raw = 'http://127.0.0.1\\@evil.example/c.yml';

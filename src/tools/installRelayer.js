@@ -114,6 +114,7 @@ const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-co
 const CHANNEL_ENV_FILE = '.env';
 
 const RELEASES_HOST = 'releases.xns.tech';
+const MAX_OVERRIDE_BYTES = 1048576;
 
 /**
  * Decide whether a compose_url override may be downloaded and run.
@@ -126,6 +127,16 @@ const RELEASES_HOST = 'releases.xns.tech';
  * @param {string} url
  * @returns {{ allowed: boolean, host: string }}
  */
+function isComposeFilePath(pathname) {
+    let decoded;
+    try {
+        decoded = decodeURIComponent(pathname);
+    } catch {
+        return false;
+    }
+    return /\.ya?ml$/i.test(decoded);
+}
+
 function checkComposeUrl(url) {
     let parsed;
     try {
@@ -136,7 +147,13 @@ function checkComposeUrl(url) {
     const hostname = parsed.hostname.toLowerCase();
     if (parsed.protocol === 'file:') {
         const local = hostname === '' || hostname === 'localhost';
-        return { allowed: local, host: local ? 'this machine' : hostname };
+        if (!local) return { allowed: false, host: hostname };
+        // curl would copy any readable file (or read /dev/zero without end) into the
+        // install folder, so only a compose file by name is accepted.
+        if (!isComposeFilePath(parsed.pathname)) {
+            return { allowed: false, host: 'this machine', reason: 'file-extension' };
+        }
+        return { allowed: true, host: 'this machine' };
     }
     if (parsed.protocol === 'https:' && hostname === RELEASES_HOST) return { allowed: true, host: hostname };
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return { allowed: false, host: hostname || parsed.protocol };
@@ -144,6 +161,10 @@ function checkComposeUrl(url) {
     // hostname that curl reads as syntax, so the host curl contacts could differ.
     if (!/^([a-z0-9-]+\.)*[a-z0-9-]+$|^\[[0-9a-f:.]+\]$/.test(hostname)) return { allowed: false, host: hostname };
     return { allowed: validateHostAllowlist(url).allowed, host: hostname };
+}
+
+function composeFileRefusedMessage() {
+    return 'compose_url file:// path must be a .yml or .yaml file, so nothing was written and nothing was downloaded. Pass the path of your docker-compose.yml, for example file:///home/you/docker-compose.yml.';
 }
 
 function composeHostRefusedMessage(host) {
@@ -323,7 +344,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 install_path: z.string().optional().default('/opt/xns-relayer').describe('Directory to install the compose file into'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(8888).describe('Host port for the Relayer admin/customer UI (container 8888). Docker publishes this port on the interface chosen by bind_address.'),
                 s3_port: z.number().int().min(1).max(65535).optional().default(9000).describe('Host port for the S3 API (container 9000). Docker publishes this port on the interface chosen by bind_address.'),
-                compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Allowed: https on releases.xns.tech, a file:// URL (a compose file on this machine), or a loopback, private-network or .local host; any other host is refused. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
+                compose_url: z.string().url().optional().describe('OPTIONAL override: URL to a custom docker-compose.yml. Allowed: https on releases.xns.tech, a file:// URL (a .yml or .yaml compose file on this machine), or a loopback, private-network or .local host; any other host is refused. Omit for the normal released install. When provided, bind_address is passed to docker compose via env but the downloaded compose must use the BIND_ADDRESS variable in its port declarations for it to take effect.'),
                 // R5 input boundary — see isValidBindAddress above for why each
                 // documented address form is validated whole rather than by charset.
                 bind_address: z.string().max(255).refine(isValidBindAddress, BIND_ADDRESS_HELP).optional().default('').describe('Host network interface for Docker port publication. Default: empty string (all interfaces — reachable from any machine on the LAN). Set to "127.0.0.1" for loopback-only access, or a specific interface IP to restrict reachability. Accepted forms: empty, an IPv4 address, or a bracketed IPv6 address (e.g. "[::1]"). Hostnames are rejected — the Compose ports host component is an IP address. This value is passed to docker compose via env, and on the default path it is also written into the .env this installer authors (the compose_url override path writes no .env). On the default path the installer checks the fetched channel compose for BIND_ADDRESS and stops, installing nothing, when it is absent. On the compose_url path the fetched compose must reference the BIND_ADDRESS variable in its port declarations for the setting to take effect — this installer cannot verify that.'),
@@ -344,7 +365,7 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // as root, so its host is checked first.
                 const composeCheck = compose_url ? checkComposeUrl(compose_url) : null;
                 if (composeCheck && !composeCheck.allowed) {
-                    return errorResponse(`Relayer installation failed: ${composeHostRefusedMessage(composeCheck.host)}`);
+                    return errorResponse(`Relayer installation failed: ${composeCheck.reason === 'file-extension' ? composeFileRefusedMessage() : composeHostRefusedMessage(composeCheck.host)}`);
                 }
                 const composePath = path.join(install_path, 'docker-compose.yml');
                 const envPath = path.join(install_path, '.env');
@@ -408,9 +429,13 @@ module.exports = function registerInstallRelayer(server, options = {}) {
                 // that redirects would otherwise reach a host the check never saw.
                 const curlTo = (url, outPath, followRedirects = true) => new Promise((resolve, reject) => {
                     const flags = followRedirects ? '-fsSL' : '-fsS';
-                    // The override path may also read a local file, so file is allowed there.
+                    // -q must be the first argument: it keeps curl from reading ~/.curlrc.
+                    // The override path may also read a local file, so file is allowed there,
+                    // capped in size so a source that never ends cannot fill the disk.
                     // -g: curl must not expand {a,b} or [1-9] patterns into other URLs.
-                    const args = followRedirects ? [flags, '-g', '-o', outPath, url] : [flags, '-g', '--proto', '=http,https,file', '-o', outPath, url];
+                    const args = followRedirects
+                        ? ['-q', flags, '-g', '-o', outPath, url]
+                        : ['-q', flags, '-g', '--proto', '=http,https,file', '--max-filesize', String(MAX_OVERRIDE_BYTES), '-o', outPath, url];
                     execFileFn('curl', args, { timeout: 60000 }, (err) => {
                         if (err) return reject(err);
                         resolve();

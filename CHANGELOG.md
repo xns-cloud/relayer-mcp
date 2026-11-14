@@ -12,9 +12,11 @@
   `ui_port`; the host is always the server's own.
 - **`install_relayer` limits where a `compose_url` can come from.** The compose file runs as root
   through Docker, and any URL was accepted. It must now be https on `releases.xns.tech`, a
-  `file://` URL, or a loopback, private-network or `.local` host; any other host is refused before
-  anything is written or downloaded, with the `file://` way to use your own compose. The override
-  download no longer follows redirects, and the reply names the host in `compose_host`.
+  `file://` URL (a path that must be a .yml or .yaml file), or a loopback, private-network or
+  `.local` host; any other host is refused before anything is written or downloaded, with the
+  `file://` way to use your own compose. The override download no longer follows redirects, is
+  capped at 1 MiB, and the reply names the host in `compose_host`. Every curl call skips
+  `~/.curlrc`.
 
 ### Fixed
 
