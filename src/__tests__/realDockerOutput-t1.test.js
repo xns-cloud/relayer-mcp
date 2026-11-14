@@ -53,6 +53,8 @@ function checkPrerequisites({ answers, portFree = () => true, groupFile = 'docke
         statfs: jest.fn(async () => ({ bavail: 500 * 10 ** 9, bsize: 1 })),
         userInfo,
         fs: { readFile: jest.fn(async () => groupFile) },
+        // No local dockerd: keeps the root-mount check off this machine's real /proc.
+        procFs: { readdir: jest.fn(async () => []), readFile: jest.fn(async () => { throw new Error('ENOENT'); }) },
     });
     const { handler } = readRegistration(server);
     return {
