@@ -4,6 +4,9 @@
 
 ### Changed
 
+- **The README names both Claude Code plugins.** `xns-relayer` registers this server and
+  `xns-storage` adds the skills, so the install block gives three commands. Only `xns-relayer`
+  must not sit beside a by-hand registration.
 - **`setup_cli_credentials` no longer takes a `muse_token`.** No tool hands that token back, so an
   agent could only ask the person to paste it into chat. The tool now uses the server's own
   sign-in, like `get_host_tags`, and retries once after a fresh sign-in on HTTP 401. It no longer
