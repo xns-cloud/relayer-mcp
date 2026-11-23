@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -54,13 +55,13 @@ function pickProfileName(profiles) {
 
 /**
  * Replace the file in one step, so a failed write cannot cut short the profiles in it.
- * 'wx' creates the temporary file fresh, which makes mode 0600 hold whatever the old
- * file's mode was.
+ * The temporary file is this write's own: the xns CLI or a second server may be saving at
+ * the same moment, and must not take it. 'wx' creates it fresh, which makes mode 0600 hold
+ * whatever the old file's mode was.
  */
 function writeCredentials(credsPath, creds) {
     fs.mkdirSync(path.dirname(credsPath), { recursive: true, mode: 0o700 });
-    const tmp = `${credsPath}.tmp`;
-    fs.rmSync(tmp, { force: true });
+    const tmp = `${credsPath}.${crypto.randomUUID()}.tmp`;
     try {
         fs.writeFileSync(tmp, JSON.stringify(creds, null, 2), { mode: 0o600, flag: 'wx' });
         fs.renameSync(tmp, credsPath);
@@ -93,7 +94,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
         'setup_cli_credentials',
         {
             title: 'Set up CLI credentials',
-            description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and saves its keys in ~/.xns/credentials, where `xns ls` and the other S3 verbs read them. Profiles already in that file are kept: if its default profile holds keys, the new keys go in a new profile, and the reply names it and the command that uses it. Call once after check_claim_status reaches STATE_3.',
+            description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and saves its keys in ~/.xns/credentials, where `xns ls` and the other S3 verbs read them. Profiles in that file that hold keys are kept: if its default profile is one of them, the new keys go in a new profile, and the reply names it and the command that uses it. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(DEFAULT_UI_PORT).describe('Relayer UI port, if install_relayer was run with a ui_port other than 8888. Only the port is chosen; the host is always this machine.'),

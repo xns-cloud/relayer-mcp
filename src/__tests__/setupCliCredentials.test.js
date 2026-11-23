@@ -157,15 +157,28 @@ describe('an existing credentials file', () => {
         expect(readCreds().active_profile).toBe('default');
     });
 
-    test('ends at mode 0600 and leaves no temporary file, even after a crashed run left one', async () => {
+    test('ends at mode 0600 and leaves no temporary file', async () => {
         seed({ version: 1, profiles: { work: profile('work') }, active_profile: 'work' });
         fs.chmodSync(credsPath, 0o644);
-        fs.writeFileSync(`${credsPath}.tmp`, 'left over', { mode: 0o644 });
 
         await run();
 
-        expect(fs.statSync(credsPath).mode & 0o777).toBe(0o600);
+        // Windows reports a writable file as 0666 whatever mode it was created with.
+        if (process.platform !== 'win32') expect(fs.statSync(credsPath).mode & 0o777).toBe(0o600);
         expect(fs.readdirSync(path.dirname(credsPath))).toEqual(['credentials']);
+    });
+
+    test('each write has its own temporary file and leaves the one the xns CLI uses alone', async () => {
+        seed({ version: 1, profiles: { work: profile('work') }, active_profile: 'work' });
+        fs.writeFileSync(`${credsPath}.tmp`, 'the CLI is writing this');
+        const renames = jest.spyOn(fs, 'renameSync');
+
+        await run();
+        await run();
+
+        expect(fs.readFileSync(`${credsPath}.tmp`, 'utf8')).toBe('the CLI is writing this');
+        expect(new Set(renames.mock.calls.map(([from]) => from)).size).toBe(2);
+        expect(Object.keys(readCreds().profiles)).toEqual(['work', 'default', 'xns-cli']);
     });
 
     test('a write that fails part way leaves the old file whole and names the user to delete', async () => {
