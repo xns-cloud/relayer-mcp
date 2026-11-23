@@ -23,6 +23,7 @@ const OPENING = 'XNS is S3-compatible cloud object storage. $6.00 per TB per mon
 const PRICE_LINE = '$6.00 per TB per month. $0 egress, uncapped. 30-day minimum retention, no early-delete fee.';
 const PLUGIN_ADD = '/plugin marketplace add xns-cloud/xns-storage-plugin';
 const PLUGIN_INSTALL = '/plugin install xns-storage@xns-cloud';
+const CONNECTOR_INSTALL = '/plugin install xns-relayer@xns-cloud';
 const BY_HAND = 'claude mcp add --scope user relayer -- npx @xns-cloud/relayer-mcp@latest';
 const NPX_LINE = 'npx @xns-cloud/relayer-mcp@latest';
 
@@ -124,6 +125,7 @@ describe('product words', () => {
             head.indexOf('xns-storage'),
             head.indexOf(`\n${PLUGIN_ADD}\n`),
             head.indexOf(`\n${PLUGIN_INSTALL}\n`),
+            head.indexOf(`\n${CONNECTOR_INSTALL}\n`),
         ];
         expect(order.every((i) => i >= 0)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -142,15 +144,19 @@ describe('product words', () => {
         const order = [
             blockLines.indexOf(PLUGIN_ADD),
             blockLines.indexOf(PLUGIN_INSTALL),
-            blockLines.indexOf('Without the plugin, register it by hand:'),
+            blockLines.indexOf(CONNECTOR_INSTALL),
+            blockLines.indexOf('Without the plugins, register it by hand:'),
             blockLines.indexOf(BY_HAND),
-            blockLines.indexOf('Do one or the other, not both: with both, the 15 tools load twice.'),
+            blockLines.indexOf('Do not add the `xns-relayer` plugin beside a by-hand registration or one an earlier install script made: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.'),
         ];
         expect(order.every((i) => i >= 0)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);
         expect(count(readme.slice(to), '"relayer": {')).toBe(2);
         expect(readme.split('\n').filter((l) => l === '## Troubleshooting')).toHaveLength(1);
-        expect(section(readme, '## Install')).toContain('remove the `relayer` registration');
+        expect(section(readme, '## Install')).toContain('the script installs the XNS plugins, which register this server and add the skills');
+        // Only xns-relayer registers the server; xns-storage holds the skills.
+        expect(count(readme, '`xns-relayer` registers this server')).toBe(2);
+        expect(readme).not.toMatch(/`xns-storage`[^.\n]*registers/);
     });
 
     test('the privacy notice and the README name Docker Hub beside the three XNS services', () => {

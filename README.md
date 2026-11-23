@@ -6,11 +6,12 @@
 
 S3-compatible cloud object storage from XNS, set up and managed by your AI assistant. This is the MCP server for [XNS](https://xns.tech). Provides 15 tools that let an AI agent set up the Relayer, the small gateway that runs on your own machine, and manage it day to day over stdio.
 
-In Claude, use the `xns-storage` plugin: it registers this server and adds the step-by-step skills. In Claude Code, run:
+In Claude, use two plugins: `xns-relayer` registers this server and `xns-storage` adds the step-by-step skills. In Claude Code, run:
 
 ```text
 /plugin marketplace add xns-cloud/xns-storage-plugin
 /plugin install xns-storage@xns-cloud
+/plugin install xns-relayer@xns-cloud
 ```
 
 then say: set up XNS storage
@@ -67,24 +68,25 @@ On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers thi
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-If you use Claude Code with the `xns-storage` plugin, remove the `relayer` registration the script made; the plugin registers its own.
+When Claude Code is present, the script installs the XNS plugins, which register this server and add the skills.
 
 To set it up yourself instead:
 
-**Claude Code** (with the plugin, which registers this server for you):
+**Claude Code** (with the plugins: `xns-relayer` registers this server, `xns-storage` adds the skills):
 
 ```text
 /plugin marketplace add xns-cloud/xns-storage-plugin
 /plugin install xns-storage@xns-cloud
+/plugin install xns-relayer@xns-cloud
 ```
 
-Without the plugin, register it by hand:
+Without the plugins, register it by hand:
 
 ```bash
 claude mcp add --scope user relayer -- npx @xns-cloud/relayer-mcp@latest
 ```
 
-Do one or the other, not both: with both, the 15 tools load twice.
+Do not add the `xns-relayer` plugin beside a by-hand registration or one an earlier install script made: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.
 
 **Claude Desktop / any MCP client** — add to your `claude_desktop_config.json` (or equivalent):
 
