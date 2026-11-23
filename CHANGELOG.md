@@ -14,6 +14,10 @@ never published on their own.
 - **The README install command is tagged and quoted.** It reads
   `curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh`; the quotes stop
   zsh from reading `?` as a pattern ("no matches found").
+- **PRIVACY.md and the README name the download tag.** Both now say the default compose download
+  URL carries `?src=mcp`, an anonymous source tag used to count downloads by source, with no
+  identifier, so the privacy notice and the tool table describe the same request this release
+  makes.
 
 ## [0.14.0] — 2026-11-14
 
