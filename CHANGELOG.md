@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.1] — 2026-11-23
+
+The first published release since 0.13.0: it also carries the 0.14.0 changes below, which were
+never published on their own.
+
+### Changed
+
+- **`install_relayer` tags its default compose download.** The release channel's compose file is
+  fetched as `docker-compose.yml?src=mcp`, so a release download can be counted by the install
+  path that made it. The tag is a fixed word, never an identifier. The `.env` download and a
+  `compose_url` you pass are fetched exactly as before, with no tag.
+- **The README install command is tagged and quoted.** It reads
+  `curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh`; the quotes stop
+  zsh from reading `?` as a pattern ("no matches found").
+
 ## [0.14.0] — 2026-11-14
 
 ### Changed
