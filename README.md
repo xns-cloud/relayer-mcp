@@ -219,7 +219,7 @@ server is in [PRIVACY.md](./PRIVACY.md).
 
 The short version:
 
-- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
+- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home. The one tag it adds: `install_relayer` fetches the default compose file as `docker-compose.yml?src=mcp`, a fixed source tag with no identifier, used to count downloads by source.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
 - **Credentials stay on your network.** `verify_storage` runs the Relayer host you pass through an allowlist (`localhost`, loopback, RFC 1918, `*.local`) before sending a token, and `setup_cli_credentials` takes no URL and sends its token only to the server's own Relayer UI. `check_relayer_health` sends plain HTTP health probes, with no credentials, to the Docker host or the `host` you pass, which is not limited to private addresses, `install_relayer` downloads a `compose_url` override only from https on `releases.xns.tech`, a `file://` URL, or a loopback, private-network or `.local` host, and the S3 test in `verify_storage` goes to the `endpoint` you pass (requests are signed, so the secret key is never sent). Otherwise the public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.
