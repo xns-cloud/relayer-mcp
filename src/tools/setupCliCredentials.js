@@ -11,6 +11,65 @@ const { NO_REDIRECT_TOKEN_CONFIG } = require('../lib/hostAllowlist');
 const DEFAULT_UI_PORT = 8888;
 const RELAYER_UI_BASE = `http://localhost:${DEFAULT_UI_PORT}`;
 
+// Profile name used when `default` already holds keys; the Relayer user has the same name.
+const SPARE_PROFILE = 'xns-cli';
+
+const BAD_FILE_ERROR = '~/.xns/credentials exists but could not be read as an XNS credentials file, so it was left as it is. Ask the user to fix it or move it aside, then call setup_cli_credentials again.';
+
+const NOT_SAVED_ERROR = 'The Relayer created the user xns-cli, but its keys could not be saved to ~/.xns/credentials. See the server log for detail. Ask the user to delete the user xns-cli in the Relayer UI and make sure that file can be written, then call setup_cli_credentials again.';
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Read the credentials file the xns CLI uses. Absent file: an empty set. A file that is
+ * there but is not one the CLI would load throws CREDS_UNREADABLE, because writing over
+ * it would drop keys a Relayer shows only once.
+ */
+function readCredentials(credsPath) {
+    let creds;
+    try {
+        creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    } catch (err) {
+        if (err.code === 'ENOENT') return { version: 1, profiles: {} };
+        // JSON.parse quotes the text it failed on, which may be a key: never pass it on.
+        throw Object.assign(new Error(`credentials file unreadable (${err.code || 'not JSON'})`), { code: 'CREDS_UNREADABLE' });
+    }
+    if (!isPlainObject(creds) || creds.version !== 1 || !isPlainObject(creds.profiles)) {
+        throw Object.assign(new Error('credentials file is not XNS version 1'), { code: 'CREDS_UNREADABLE' });
+    }
+    return creds;
+}
+
+/**
+ * DECISION: a profile that holds a secret key is never replaced, `default` included. The
+ * new keys go to `default` when it is absent or keyless (`xns register` writes it keyless),
+ * otherwise to the first free xns-cli, xns-cli-2, ... name.
+ */
+function pickProfileName(profiles) {
+    if (!Object.hasOwn(profiles, 'default') || !profiles.default?.secret_access_key) return 'default';
+    let name = SPARE_PROFILE;
+    for (let n = 2; Object.hasOwn(profiles, name); n += 1) name = `${SPARE_PROFILE}-${n}`;
+    return name;
+}
+
+/**
+ * Replace the file in one step, so a failed write cannot cut short the profiles in it.
+ * 'wx' creates the temporary file fresh, which makes mode 0600 hold whatever the old
+ * file's mode was.
+ */
+function writeCredentials(credsPath, creds) {
+    fs.mkdirSync(path.dirname(credsPath), { recursive: true, mode: 0o700 });
+    const tmp = `${credsPath}.tmp`;
+    fs.rmSync(tmp, { force: true });
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(creds, null, 2), { mode: 0o600, flag: 'wx' });
+        fs.renameSync(tmp, credsPath);
+    } catch (err) {
+        fs.rmSync(tmp, { force: true });
+        throw err;
+    }
+}
+
 /**
  * Tool 11: setup_cli_credentials
  *
@@ -18,7 +77,8 @@ const RELAYER_UI_BASE = `http://localhost:${DEFAULT_UI_PORT}`;
  * but no CLI credentials. This tool:
  *   1. Creates an IAM user "xns-cli" via the Relayer UI MC proxy
  *   2. Receives the one-time {access_key, secret_key} response
- *   3. Writes ~/.xns/credentials (AC-11 JSON schema, mode 0600)
+ *   3. Adds them to ~/.xns/credentials as one profile (mode 0600),
+ *      keeping every profile already there
  *
  * The sign-in token comes from the server's own token manager, the same one
  * get_host_tags and configure_vpd use (one browser sign-in per session); the
@@ -33,7 +93,7 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
         'setup_cli_credentials',
         {
             title: 'Set up CLI credentials',
-            description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and writes ~/.xns/credentials so that `xns ls` and other S3 verbs work without further configuration. Call once after check_claim_status reaches STATE_3.',
+            description: 'Provision S3 IAM credentials for the XNS CLI. Creates an IAM user in the Relayer and saves its keys in ~/.xns/credentials, where `xns ls` and the other S3 verbs read them. Profiles already in that file are kept: if its default profile holds keys, the new keys go in a new profile, and the reply names it and the command that uses it. Call once after check_claim_status reaches STATE_3.',
             inputSchema: {
                 installation_id: z.string().optional().default('').describe('Installation ID from check_claim_status STATE_3 result — used as cost_center_id in credentials'),
                 ui_port: z.number().int().min(1).max(65535).optional().default(DEFAULT_UI_PORT).describe('Relayer UI port, if install_relayer was run with a ui_port other than 8888. Only the port is chosen; the host is always this machine.'),
@@ -49,11 +109,18 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
             // host. The request goes only to the server-owned Relayer UI base, the same
             // base get_host_tags uses; the tool takes no URL input. The caller picks
             // only the UI port, never the host.
+            let keysIssued = false;
             try {
                 const uiUrl = new URL(relayerUiBase);
                 uiUrl.port = String(ui_port);
                 const uiBase = uiUrl.toString().replace(/\/+$/, '');
+                const credsPath = path.join(os.homedir(), '.xns', 'credentials');
                 let token = await tokenMgr.ensureToken();
+
+                // Checked before the user is created: the Relayer shows the secret key
+                // once, so a file that cannot take it has to stop the tool here.
+                readCredentials(credsPath);
+
                 const createUser = (bearer) => http.post(
                     `${uiBase}/api/v1/mc/user`,
                     { user: 'xns-cli' },
@@ -93,11 +160,13 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                             text: JSON.stringify({
                                 success: false,
                                 error: `Relayer: ${msg}`,
-                                hint: 'CLI credentials may already exist. Run `xns ls` — if it works, credentials are valid.',
+                                hint: 'CLI credentials may already exist in one of the profiles in ~/.xns/credentials. Run `xns ls`, or `xns --profile <name> ls` for a profile that is not active — if it works, those credentials are valid.',
                             }),
                         }],
                     };
                 }
+
+                keysIssued = true;
 
                 // Step 2: derive S3 endpoint (same host, port 9000).
                 // Parse rather than regex-replace: the old `.replace(/:(\d+)(\/|$)/, ...)`
@@ -112,47 +181,46 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 s3Url.hash = '';
                 const s3Endpoint = s3Url.toString().replace(/\/$/, '');
 
-                // Step 3: write ~/.xns/credentials (AC-11 JSON schema, mode 0600)
-                const credsPath = path.join(os.homedir(), '.xns', 'credentials');
-                fs.mkdirSync(path.dirname(credsPath), { recursive: true });
-
-                const creds = {
-                    version: 1,
-                    profiles: {
-                        default: {
-                            endpoint: s3Endpoint,
-                            access_key_id: ak,
-                            secret_access_key: sk,
-                            cost_center_id: installation_id,
-                            // Deliberately empty. The 5-key schema requires the key to be
-                            // PRESENT, but the xns CLI never reads its value — the only
-                            // reference in that codebase is `_ = p.MuseToken` in
-                            // validateProfile, whose comment states "muse_token may be
-                            // empty", and its round-trip test asserts the field IS empty.
-                            // Writing the JWT here bought nothing and cost real exposure:
-                            // it expires in minutes so the copy goes stale, there is no
-                            // refresh token to renew it, and until expiry a read of this
-                            // file grants Muse-API reach well beyond S3. The access and
-                            // secret keys below do belong here — S3 request signing needs
-                            // them in plaintext, same as ~/.aws/credentials.
-                            muse_token: '',
-                        },
-                    },
-                    active_profile: 'default',
+                // Step 3: add the profile to ~/.xns/credentials (mode 0600).
+                // Read again: another program may have saved a profile in the meantime.
+                const creds = readCredentials(credsPath);
+                const profileName = pickProfileName(creds.profiles);
+                creds.profiles[profileName] = {
+                    endpoint: s3Endpoint,
+                    access_key_id: ak,
+                    secret_access_key: sk,
+                    cost_center_id: installation_id,
+                    // Deliberately empty. The 5-key schema requires the key to be
+                    // PRESENT, but the xns CLI never reads its value — the only
+                    // reference in that codebase is `_ = p.MuseToken` in
+                    // validateProfile, whose comment states "muse_token may be
+                    // empty", and its round-trip test asserts the field IS empty.
+                    // Writing the JWT here bought nothing and cost real exposure:
+                    // it expires in minutes so the copy goes stale, there is no
+                    // refresh token to renew it, and until expiry a read of this
+                    // file grants Muse-API reach well beyond S3. The access and
+                    // secret keys below do belong here — S3 request signing needs
+                    // them in plaintext, same as ~/.aws/credentials.
+                    muse_token: '',
                 };
-
-                fs.writeFileSync(credsPath, JSON.stringify(creds, null, 2), { mode: 0o600 });
-                // writeFileSync's mode only applies when the file is CREATED. This file is
-                // overwritten unconditionally, so an existing loose-permission file would
-                // keep those permissions and hold secret keys (MR !33).
-                fs.chmodSync(credsPath, 0o600);
+                // DECISION: the active profile stays the user's. Moving it would point
+                // every later `xns` command at another Relayer. The CLI refuses a file
+                // whose active_profile names no profile, so only that case is set.
+                if (typeof creds.active_profile !== 'string' || !Object.hasOwn(creds.profiles, creds.active_profile)) {
+                    creds.active_profile = profileName;
+                }
+                writeCredentials(credsPath, creds);
 
                 return {
                     content: [{
                         type: 'text',
                         text: JSON.stringify({
                             success: true,
-                            message: 'CLI credentials written to ~/.xns/credentials. The user can now run `xns ls` to list their storage.',
+                            message: creds.active_profile === profileName
+                                ? 'CLI credentials written to ~/.xns/credentials. The user can now run `xns ls` to list their storage.'
+                                : `CLI credentials written to ~/.xns/credentials as the profile ${profileName}. Profiles that already hold keys are unchanged, and plain \`xns\` commands still use ${creds.active_profile}. The user can now run \`xns --profile ${profileName} ls\` to list the storage on this Relayer.`,
+                            profile: profileName,
+                            active_profile: creds.active_profile,
                             s3_endpoint: s3Endpoint,
                         }),
                     }],
@@ -161,17 +229,20 @@ module.exports = function registerSetupCliCredentials(server, options = {}) {
                 // Caught error text stays in the server log. The sign-in link message
                 // is the one exception: this server builds it from fixed text and the
                 // link, and the person needs it to sign in.
-                const signInLink = err && err.code === 'SIGNIN_LINK';
-                if (!signInLink) console.error(`[setup_cli_credentials] ${err && err.message ? err.message : String(err)}`);
+                let error = 'Setting up CLI credentials failed. See the server log for detail, then call setup_cli_credentials again.';
+                if (err && err.code === 'SIGNIN_LINK') {
+                    error = err.message;
+                } else {
+                    console.error(`[setup_cli_credentials] ${err && err.message ? err.message : String(err)}`);
+                    // Calling again would not help once the user exists: the Relayer
+                    // refuses a second xns-cli and does not show the first one's key again.
+                    if (keysIssued) error = NOT_SAVED_ERROR;
+                    else if (err && err.code === 'CREDS_UNREADABLE') error = BAD_FILE_ERROR;
+                }
                 return {
                     content: [{
                         type: 'text',
-                        text: JSON.stringify({
-                            success: false,
-                            error: signInLink
-                                ? err.message
-                                : 'Setting up CLI credentials failed. See the server log for detail, then call setup_cli_credentials again.',
-                        }),
+                        text: JSON.stringify({ success: false, error }),
                     }],
                 };
             }
