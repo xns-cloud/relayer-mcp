@@ -17,7 +17,10 @@ conversation, your prompts, or the agent's tool calls.
 ## The server collects nothing
 
 There is no analytics, no telemetry, no crash reporting, and no usage counter in this
-package. It does not phone home.
+package. It does not phone home. The one tag it sends is on the default compose download of
+`install_relayer`, fetched as `docker-compose.yml?src=mcp`: `src=mcp` is an anonymous source
+tag, the same fixed word for every user and carrying no identifier, used to count downloads by
+source. The `.env` download and a `compose_url` you pass carry no tag.
 
 ## What leaves your machine, and where it goes
 
@@ -28,7 +31,7 @@ Only through the ordinary, visible operation of the tools you ask the agent to r
 | Creating an account, signing in | Your credentials, entered by you in your own browser | `auth.xns.tech` (Keycloak) |
 | Claiming a Relayer to your account | The claim session and the installation's identity | `console.xns.tech` |
 | Reading or changing settings, host selection, backups | The setting values you ask to read or change | `console.xns.tech` |
-| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images | `releases.xns.tech`; the `prom/node-exporter` image comes from Docker Hub |
+| Installing or updating the Relayer | An anonymous download of the Docker Compose bundle and images; the default compose URL carries the source tag `?src=mcp`, with no identifier | `releases.xns.tech`; the `prom/node-exporter` image comes from Docker Hub |
 
 The agent never handles your password. Sign-in happens in your browser against our identity
 service; the extension receives only a short-lived access token.

@@ -116,7 +116,7 @@ describe('install_relayer', () => {
 
     // --- Default path: fetch the channel bundle, user authors nothing ---------
 
-    const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
+    const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml?src=mcp';
     const CHANNEL_ENV_URL = 'https://releases.xns.tech/relayer/release/.env';
     // The temporary folder every fake mkdtemp below hands back.
     const STAGE = require('path').join(require('os').tmpdir(), 'xns-relayer-install-TEST');
@@ -266,6 +266,19 @@ describe('install_relayer', () => {
                 expect(url).toContain('/relayer/release/');
                 expect(url).not.toContain('/beta/');
             }
+        });
+
+        // The compose fetch is tagged so release downloads can be counted by
+        // source; the .env beside it is not a download and carries no query.
+        test('default run tags the compose fetch with src=mcp and fetches the .env with no query', async () => {
+            const { handler, curl } = build();
+
+            await handler({ install_path: '/tmp/xns' });
+
+            expect(curl.calls.map((c) => c.url)).toEqual([
+                'https://releases.xns.tech/relayer/release/docker-compose.yml?src=mcp',
+                'https://releases.xns.tech/relayer/release/.env',
+            ]);
         });
 
         // M-L15: every fetched line is kept (COMPOSE_PROFILES, comments, blank

@@ -54,6 +54,24 @@ describe('install_relayer compose_url host limit', () => {
         expect(t.composeUp).toHaveBeenCalledTimes(1);
     });
 
+    // Only the default release fetch carries a source tag; a user's own
+    // compose file is fetched exactly as given.
+    test.each([
+        'https://releases.xns.tech/custom/compose.yml',
+        'file:///home/me/docker-compose.yml',
+        'http://192.168.1.20/c.yml',
+    ])('%s is fetched exactly as given, with no src tag', async (url) => {
+        const t = setup();
+        const parsed = await t.run({ install_path: '/tmp/xns', compose_url: url });
+
+        expect(parsed.success).toBe(true);
+        const curls = t.execFile.mock.calls.filter((c) => c[0] === 'curl');
+        expect(curls).toHaveLength(1);
+        const sent = curls[0][1][curls[0][1].length - 1];
+        expect(sent).toBe(url);
+        expect(sent).not.toContain('src=');
+    });
+
     test.each([
         'file:///etc/passwd',
         'file:///dev/zero',

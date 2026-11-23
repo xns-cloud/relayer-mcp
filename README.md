@@ -29,7 +29,7 @@ npx @xns-cloud/relayer-mcp@latest
 On Ubuntu 24.04 or Debian 12, one command sets up everything:
 
 ```bash
-curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
+curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh
 ```
 
 The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 24 when Node is missing or older and registers this MCP. Log out and back in afterward so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
@@ -65,7 +65,7 @@ The Relayer runs as a Docker container and persists its data in a Docker volume.
 On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers this MCP when Claude Code is present:
 
 ```bash
-curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
+curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh
 ```
 
 When Claude Code is present, the script also registers this server with it.
@@ -123,7 +123,7 @@ No separate install step required — npx fetches the package on demand.
 | 1 | `check_prerequisites` | Verify Docker (local or remote), the compose plugin, Docker socket access (when it is denied, whether the `docker` group membership is missing or not yet live), ports (8888, 9000, 9443), an existing installation, free disk (10 GB on the Docker root and the install directory), the root mount's propagation for the Docker daemon (a private `/`, the WSL2 default, leaves the containers stuck in "Created"), and network connectivity. Each failure names the command that fixes it; ports held by a running `xns-relayer` pass. |
 | 2 | `start_registration` | Get the browser sign-up URL for creating an XNS account — the agent never handles credentials. |
 | 3 | `check_email_verified` | Poll email verification status (15s interval, 30-min timeout). |
-| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml` and its `.env`, anonymous pull, no `docker login`) — add the ports to that `.env`, and start the containers. If the release files cannot be downloaded or used it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
+| 4 | `install_relayer` | Fetch the canonical release channel bundle — relayer + Prometheus/Grafana monitoring stack (`https://releases.xns.tech/relayer/release/docker-compose.yml?src=mcp` and its `.env`, anonymous pull, no `docker login`; `?src=mcp` is an anonymous source tag used to count downloads by source, with no identifier, and the `.env` and a `compose_url` override carry no tag) — add the ports to that `.env`, and start the containers. If the release files cannot be downloaded or used it stops, says why and what to do, and installs nothing. A failure names its cause (port in use, image pull refused, Docker stopped, out of disk, Docker socket permission) and the fix. **Fresh installs only** — see [Fresh installs vs. existing deployments](#fresh-installs-vs-existing-deployments). The user authors nothing; `compose_url` is an optional override for custom installs. |
 | 5 | `check_relayer_health` | Poll UI, S3, HostIO, and the monitoring sidecars (10s interval, 300s timeout). A missing monitoring stack reports as degraded without blocking the flow. Before the owner claims the Relayer and signs in, the S3 gateway is not started yet, so the tool returns `awaiting_claim: true` when the UI answers, the Docker CLI reaches the checked host, and the `xns-relayer` container holds no Muse token yet. When the token cannot be read (no such container, Docker unreachable), S3 down stays unhealthy. Targets the Docker host automatically. |
 | 6 | `start_claim` | Initiate a claim session — returns a URL for browser confirmation. |
 | 7 | `check_claim_status` | Poll claim state (STATE_1 / STATE_2 / STATE_3). |
@@ -219,7 +219,7 @@ server is in [PRIVACY.md](./PRIVACY.md).
 
 The short version:
 
-- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home.
+- **No telemetry.** No analytics, crash reporting, or usage counters. It does not phone home. The one tag it adds: `install_relayer` fetches the default compose file as `docker-compose.yml?src=mcp`, a fixed source tag with no identifier, used to count downloads by source.
 - **Tokens live in memory only.** OIDC access tokens are never written to disk; they are discarded when the process exits.
 - **The agent never sees your password.** Sign-in happens in your own browser against `auth.xns.tech`.
 - **Credentials stay on your network.** `verify_storage` runs the Relayer host you pass through an allowlist (`localhost`, loopback, RFC 1918, `*.local`) before sending a token, and `setup_cli_credentials` takes no URL and sends its token only to the server's own Relayer UI. `check_relayer_health` sends plain HTTP health probes, with no credentials, to the Docker host or the `host` you pass, which is not limited to private addresses, `install_relayer` downloads a `compose_url` override only from https on `releases.xns.tech`, a `file://` URL, or a loopback, private-network or `.local` host, and the S3 test in `verify_storage` goes to the `endpoint` you pass (requests are signed, so the secret key is never sent). Otherwise the public hosts contacted are the three XNS services `auth.xns.tech`, `console.xns.tech` and `releases.xns.tech`, and Docker Hub for the `prom/node-exporter` image that an install pulls.

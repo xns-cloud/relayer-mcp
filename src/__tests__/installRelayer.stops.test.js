@@ -19,7 +19,7 @@ const pkg = require('../../package.json');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
-const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
+const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml?src=mcp';
 const CHANNEL_ENV_URL = 'https://releases.xns.tech/relayer/release/.env';
 const STAGE = path.join(os.tmpdir(), 'xns-relayer-install-TEST');
 const INSTALL = '/tmp/xns';
