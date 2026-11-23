@@ -8,8 +8,23 @@
  * file it lives in.
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { z } = require('zod');
 const { validateHostAllowlist } = require('../lib/hostAllowlist');
+
+// setup_cli_credentials writes under the home folder: point it at a throwaway one, never
+// at the credentials of whoever runs the tests.
+let testHome;
+beforeEach(() => {
+    testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xns-home-'));
+    jest.spyOn(os, 'homedir').mockReturnValue(testHome);
+});
+afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(testHome, { recursive: true, force: true });
+});
 
 // Token manager wiring for setup_cli_credentials: an in-memory token state and a
 // sign-in that returns a fixed token, so no browser or network is involved.
@@ -159,45 +174,33 @@ describe('the credentials file does not persist the Muse token', () => {
     // reference, and its comment says "muse_token may be empty". Writing the live JWT
     // there left a short-lived, unrenewable credential on disk granting Muse-API reach
     // beyond S3, for no consumer.
-    const fs = require('fs');
-    const os = require('os');
-    const path = require('path');
-
     test('writes the muse_token key present but empty, and keeps the S3 keys', async () => {
-        const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xns-creds-'));
-        const realHomedir = os.homedir;
-        os.homedir = () => tmpHome;
-        try {
-            const tools = register('../tools/setupCliCredentials', {
+        const tools = register('../tools/setupCliCredentials', {
             ...tokenOptions(),
-                httpClient: {
-                    post: async () => ({ status: 200, data: { access_key: 'AKIAEXAMPLE', secret_key: 'wJalrSECRET' } }),
-                    get: async () => ({ status: 200, data: {} }),
-                },
-            });
-            const { config, handler } = tools['setup_cli_credentials'];
-            const args = z.object(config.inputSchema).parse({
-                installation_id: 'cc-test-001',
-            });
+            httpClient: {
+                post: async () => ({ status: 200, data: { access_key: 'AKIAEXAMPLE', secret_key: 'wJalrSECRET' } }),
+                get: async () => ({ status: 200, data: {} }),
+            },
+        });
+        const { config, handler } = tools['setup_cli_credentials'];
+        const args = z.object(config.inputSchema).parse({
+            installation_id: 'cc-test-001',
+        });
 
-            await handler(args);
+        await handler(args);
 
-            const raw = fs.readFileSync(path.join(tmpHome, '.xns', 'credentials'), 'utf8');
-            const profile = JSON.parse(raw).profiles.default;
+        const raw = fs.readFileSync(path.join(testHome, '.xns', 'credentials'), 'utf8');
+        const profile = JSON.parse(raw).profiles.default;
 
-            // The key must still be present — the CLI's schema is 5-key.
-            expect(Object.keys(profile)).toContain('muse_token');
-            expect(profile.muse_token).toBe('');
-            // The token must not appear anywhere in the file, under any key.
-            expect(raw).not.toContain('eyJHEADER');
-            // The credentials the CLI actually needs are still written.
-            expect(profile.access_key_id).toBe('AKIAEXAMPLE');
-            expect(profile.secret_access_key).toBe('wJalrSECRET');
-            expect(profile.cost_center_id).toBe('cc-test-001');
-        } finally {
-            os.homedir = realHomedir;
-            fs.rmSync(tmpHome, { recursive: true, force: true });
-        }
+        // The key must still be present — the CLI's schema is 5-key.
+        expect(Object.keys(profile)).toContain('muse_token');
+        expect(profile.muse_token).toBe('');
+        // The token must not appear anywhere in the file, under any key.
+        expect(raw).not.toContain('eyJHEADER');
+        // The credentials the CLI actually needs are still written.
+        expect(profile.access_key_id).toBe('AKIAEXAMPLE');
+        expect(profile.secret_access_key).toBe('wJalrSECRET');
+        expect(profile.cost_center_id).toBe('cc-test-001');
     });
 });
 

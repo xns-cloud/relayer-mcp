@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.2] — 2026-11-23
+
+### Fixed
+
+- **`setup_cli_credentials` keeps the profiles already in `~/.xns/credentials`.** It replaced the
+  file with one `default` profile, so every other XNS CLI profile was lost, and a Relayer shows a
+  secret key only once. The new keys now go in `default` when that profile is absent or holds no
+  secret key, and otherwise in a new profile (`xns-cli`, then `xns-cli-2`). The active profile
+  stays as it was, and the reply carries `profile`, `active_profile` and the `xns` command to run.
+  A file that is not an XNS credentials file is refused before any user is created, and the file
+  is replaced in one step, so a failed write leaves the old one whole. If the keys cannot be saved
+  after the user is made, the reply says so and names the user to delete before trying again.
+
 ## [0.14.1] — 2026-11-23
 
 The first published release since 0.13.0: it also carries the 0.14.0 changes below, which were
