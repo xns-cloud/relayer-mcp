@@ -68,7 +68,7 @@ On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers thi
 curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
 ```
 
-When Claude Code is present, the script installs the XNS plugins, which register this server and add the skills.
+When Claude Code is present, the script also registers this server with it.
 
 To set it up yourself instead:
 
@@ -86,7 +86,7 @@ Without the plugins, register it by hand:
 claude mcp add --scope user relayer -- npx @xns-cloud/relayer-mcp@latest
 ```
 
-Do not add the `xns-relayer` plugin beside a by-hand registration or one an earlier install script made: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.
+Do not add the `xns-relayer` plugin beside a `relayer` registration, whether you or the install script made it: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.
 
 **Claude Desktop / any MCP client** — add to your `claude_desktop_config.json` (or equivalent):
 

@@ -147,13 +147,13 @@ describe('product words', () => {
             blockLines.indexOf(CONNECTOR_INSTALL),
             blockLines.indexOf('Without the plugins, register it by hand:'),
             blockLines.indexOf(BY_HAND),
-            blockLines.indexOf('Do not add the `xns-relayer` plugin beside a by-hand registration or one an earlier install script made: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.'),
+            blockLines.indexOf('Do not add the `xns-relayer` plugin beside a `relayer` registration, whether you or the install script made it: with both, the 15 tools load twice. The `xns-storage` plugin carries no server, so it can go beside either.'),
         ];
         expect(order.every((i) => i >= 0)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);
         expect(count(readme.slice(to), '"relayer": {')).toBe(2);
         expect(readme.split('\n').filter((l) => l === '## Troubleshooting')).toHaveLength(1);
-        expect(section(readme, '## Install')).toContain('the script installs the XNS plugins, which register this server and add the skills');
+        expect(section(readme, '## Install')).toContain('When Claude Code is present, the script also registers this server with it.');
         // Only xns-relayer registers the server; xns-storage holds the skills.
         expect(count(readme, '`xns-relayer` registers this server')).toBe(2);
         expect(readme).not.toMatch(/`xns-storage`[^.\n]*registers/);
