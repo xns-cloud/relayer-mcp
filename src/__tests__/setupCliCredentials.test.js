@@ -132,6 +132,16 @@ describe('an existing credentials file', () => {
         });
     });
 
+    test('a file that stops being readable after the keys are issued: names the user to delete', async () => {
+        seed({ version: 1, profiles: { work: profile('work') }, active_profile: 'work' });
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        const { reply } = await run({ onPost: () => seed('not json') });
+
+        expect(reply.error).toContain('delete the user xns-cli');
+        expect(fs.readFileSync(credsPath, 'utf8')).toBe('not json');
+    });
+
     test.each([
         ['not JSON', '[default]\naws_access_key_id = AKIA\n'],
         ['a JSON array', '[]'],
