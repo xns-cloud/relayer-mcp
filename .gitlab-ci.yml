@@ -18,13 +18,16 @@
 #      (governance: only maintainers can trigger a release).
 #   3. GitLab → Settings → CI/CD → Variables: add `MCP_REGISTRY_KEY`
 #      (Masked + Protected). See PUBLISHING.md for how to derive its value.
-# Requires GitLab.com shared runners (self-hosted runners not yet supported
-# by npm trusted publishing).
+# The publish job requires GitLab.com hosted runners to be enabled for the project
+# (self-hosted runners are not yet supported by npm trusted publishing).
 #
 # The MCP Registry has no OIDC path for domain namespaces — `tech.xns` is a
 # reverse-DNS name, so it authenticates by signing a challenge with the private
 # key whose public half is served at https://xns.tech/.well-known/mcp-registry-auth.
 # That is why this one job needs a stored secret and the npm job does not.
+
+default:
+  tags: [scp-runner]
 
 stages:
   - test
@@ -114,6 +117,8 @@ bundle:
 publish:
   stage: publish
   image: node:24   # trusted publishing needs npm >= 11.5.1 / Node >= 22.14
+  # Hosted because npm refuses a publish with provenance from a self-hosted runner (E422).
+  tags: [saas-linux-small-amd64]
   needs: [test]
   id_tokens:
     NPM_ID_TOKEN:
