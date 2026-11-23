@@ -48,14 +48,14 @@ function repoFiles() {
 }
 
 describe('product words', () => {
-    test('the top changelog entry is the version package.json carries, 0.14.0', () => {
+    test('the top changelog entry is the version package.json carries, 0.14.1', () => {
         const pkg = readJson('package.json');
         const top = read('CHANGELOG.md').split('\n').find((l) => l.startsWith('## ['));
         const match = /^## \[(\d+\.\d+\.\d+)\] — \d{4}-\d{2}-\d{2}$/.exec(top);
 
         expect(match).not.toBeNull();
         expect(match[1]).toBe(pkg.version);
-        expect(pkg.version).toBe('0.14.0');
+        expect(pkg.version).toBe('0.14.1');
     });
 
     test('the server instructions end on the plugin being optional and pin no package version', () => {
@@ -157,6 +157,17 @@ describe('product words', () => {
         // Only xns-relayer registers the server; xns-storage holds the skills.
         expect(count(readme, '`xns-relayer` registers this server')).toBe(2);
         expect(readme).not.toMatch(/`xns-storage`[^.\n]*registers/);
+    });
+
+    // The query string marks downloads from this README; quoted so zsh does
+    // not read "?" as a glob.
+    test('both README install lines fetch the quoted install.sh URL tagged src=github', () => {
+        const readme = read('README.md');
+        const ours = 'releases.xns.tech/relayer/install.sh';
+
+        expect(readme.split('\n').filter((l) => l === "curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh")).toHaveLength(2);
+        expect(count(readme, ours)).toBe(2);
+        expect(count(readme, `${ours}?src=github'`)).toBe(2);
     });
 
     test('the privacy notice and the README name Docker Hub beside the three XNS services', () => {

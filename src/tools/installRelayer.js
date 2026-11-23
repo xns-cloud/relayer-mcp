@@ -110,7 +110,8 @@ function isValidBindAddress(value) {
 // monitoring stack), published on the XNS releases registry and served
 // login-free. THE default install source. Its .env (COMPOSE_PROFILES and the
 // rest of the release settings) sits beside it and is fetched on every run.
-const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml';
+// src=mcp counts this download by source; the .env URL built from it drops the query.
+const CHANNEL_COMPOSE_URL = 'https://releases.xns.tech/relayer/release/docker-compose.yml?src=mcp';
 const CHANNEL_ENV_FILE = '.env';
 
 const RELEASES_HOST = 'releases.xns.tech';

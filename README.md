@@ -29,7 +29,7 @@ npx @xns-cloud/relayer-mcp@latest
 On Ubuntu 24.04 or Debian 12, one command sets up everything:
 
 ```bash
-curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
+curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh
 ```
 
 The script installs Docker Engine and the compose plugin, adds you to the `docker` group, starts the Relayer in `/opt/xns-relayer`, and waits for the dashboard at `http://localhost:8888`. If Claude Code is present, it also installs Node.js 24 when Node is missing or older and registers this MCP. Log out and back in afterward so the `docker` group applies. On macOS or Windows it installs nothing and points you to Docker Desktop.
@@ -65,7 +65,7 @@ The Relayer runs as a Docker container and persists its data in a Docker volume.
 On Ubuntu 24.04 or Debian 12, one command installs the Relayer and registers this MCP when Claude Code is present:
 
 ```bash
-curl -fsSL https://releases.xns.tech/relayer/install.sh | sh
+curl -fsSL 'https://releases.xns.tech/relayer/install.sh?src=github' | sh
 ```
 
 When Claude Code is present, the script also registers this server with it.
