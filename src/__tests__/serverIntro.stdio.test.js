@@ -47,7 +47,7 @@ describe('server introduction over stdio', () => {
         replies = await talkToServer([INITIALIZE, TOOLS_LIST], 2);
     }, 20000);
 
-    test('initialize returns the instructions (what XNS is, the price, the first tool and the plugin) and version 0.14.2', () => {
+    test('initialize returns the instructions (what XNS is, the price, the first tool and the plugin) and version 0.14.3', () => {
         const { instructions } = replies[0].result;
 
         expect(instructions).toBe(INSTRUCTIONS);
@@ -61,7 +61,7 @@ describe('server introduction over stdio', () => {
         const install = instructions.indexOf('/plugin install xns-storage@xns-cloud');
         expect(add).toBeGreaterThanOrEqual(0);
         expect(install).toBeGreaterThan(add);
-        expect(replies[0].result.serverInfo.version).toBe('0.14.2');
+        expect(replies[0].result.serverInfo.version).toBe('0.14.3');
     });
 
     test('tools/list returns 15 tools, each with a title in plain words', () => {

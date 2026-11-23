@@ -1,7 +1,7 @@
 {
   "name": "@xns-cloud/relayer-mcp",
   "mcpName": "tech.xns/relayer",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "description": "S3-compatible cloud object storage from XNS, set up and managed by your AI assistant.",
   "author": "SCP Corp",
   "license": "Apache-2.0",

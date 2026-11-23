@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.3] — 2026-11-23
+
+This release also carries the changes of 0.14.0, 0.14.1 and 0.14.2 below, none of which reached
+npm.
+
+### Fixed
+
+- **`setup_cli_credentials` makes a key that works.** It created the user `xns-cli` with no
+  policy, and the gateway denies every request from such a user: the tool reported success and
+  `xns ls` was denied. It now creates a policy, the gateway's ReadWrite actions plus
+  `s3:DeleteBucket` on every bucket, and attaches it to the user. A policy `xns-cli` from an
+  earlier run is used again; one with other rules is left alone and the next free name is taken
+  (`xns-cli-2`). Nothing is saved to `~/.xns/credentials` until the policy is attached. If that
+  fails, the user is deleted and the reply says so, or names the user to delete. A key made by an
+  earlier version stays denied: delete the user `xns-cli` in the Relayer UI and run the tool
+  again. The reply that finds that user already there now says this.
+
+### Changed
+
+- **The npm publish job is pinned to GitLab's hosted runner.** npm refuses a publish with
+  provenance from a self-hosted runner. Every other CI job is pinned to self-hosted runners.
+
 ## [0.14.2] — 2026-11-23
 
 ### Fixed
@@ -15,8 +37,7 @@
 
 ## [0.14.1] — 2026-11-23
 
-The first published release since 0.13.0: it also carries the 0.14.0 changes below, which were
-never published on their own.
+Not published to npm, and neither was 0.14.0 below. Both first ship in 0.14.3.
 
 ### Changed
 

@@ -13,6 +13,10 @@ const os = require('os');
 const path = require('path');
 const { z } = require('zod');
 const { validateHostAllowlist } = require('../lib/hostAllowlist');
+const { mockRelayer } = require('./helpers/mockRelayer');
+
+// What setup_cli_credentials asks the Relayer for, in order, when nothing fails.
+const SETUP_PATHS = ['/api/v1/mc/user', '/api/v1/mc/policy-create', '/api/v1/mc/policy'];
 
 // setup_cli_credentials writes under the home folder: point it at a throwaway one, never
 // at the credentials of whoever runs the tests.
@@ -45,16 +49,13 @@ function register(modulePath, options = {}) {
 
 describe('setup_cli_credentials sends the server token only to the server-owned base', () => {
     function build(extra = {}) {
-        const posts = [];
+        const relayer = mockRelayer();
         const tools = register('../tools/setupCliCredentials', {
             ...tokenOptions('MANAGER-TOKEN'),
-            httpClient: {
-                post: async (u, b, c) => { posts.push({ u, c }); return { status: 200, data: { access_key: 'AK', secret_key: 'SK' } }; },
-                get: async () => ({ status: 200, data: {} }),
-            },
+            httpClient: relayer.httpClient,
             ...extra,
         });
-        return { posts, ...tools['setup_cli_credentials'] };
+        return { calls: relayer.calls, ...tools['setup_cli_credentials'] };
     }
 
     test('takes no relayer_ui_url and no muse_token input', () => {
@@ -69,26 +70,26 @@ describe('setup_cli_credentials sends the server token only to the server-owned 
         'http://169.254.169.254',
         'http://10.0.0.5:8888',
     ])('a caller-passed relayer_ui_url %s is ignored; the request goes to the default base', async (url) => {
-        const { posts, config, handler } = build();
+        const { calls, config, handler } = build();
         const args = z.object(config.inputSchema).parse({ relayer_ui_url: url });
 
         await handler({ ...args, relayer_ui_url: url });
 
-        expect(posts).toHaveLength(1);
-        expect(posts[0].u).toBe('http://localhost:8888/api/v1/mc/user');
-        expect(posts[0].c.headers.keycloaktoken).toBe('MANAGER-TOKEN');
-        // A redirect on a token-bearing request would hand the token to another host.
-        expect(posts[0].c.maxRedirects).toBe(0);
+        expect(calls.map((c) => c.url)).toEqual(SETUP_PATHS.map((p) => `http://localhost:8888${p}`));
+        for (const { config: sent } of calls) {
+            expect(sent.headers.keycloaktoken).toBe('MANAGER-TOKEN');
+            // A redirect on a token-bearing request would hand the token to another host.
+            expect(sent.maxRedirects).toBe(0);
+        }
     });
 
     test('ui_port picks the port on the server-owned host; a caller relayer_ui_url is still ignored', async () => {
-        const { posts, config, handler } = build();
+        const { calls, config, handler } = build();
         const args = z.object(config.inputSchema).parse({ ui_port: 8889 });
 
         await handler({ ...args, relayer_ui_url: 'http://evil.example.com:8889' });
 
-        expect(posts).toHaveLength(1);
-        expect(posts[0].u).toBe('http://localhost:8889/api/v1/mc/user');
+        expect(calls.map((c) => c.url)).toEqual(SETUP_PATHS.map((p) => `http://localhost:8889${p}`));
     });
 
     test.each([0, 65536, 8888.5, '8889'])('ui_port %p is rejected', (bad) => {
@@ -97,36 +98,40 @@ describe('setup_cli_credentials sends the server token only to the server-owned 
     });
 
     test('uses the server-configured base when one is set, still ignoring a caller URL', async () => {
-        const { posts, config, handler } = build({ relayerUiBase: 'http://192.168.1.50:8888/' });
+        const { calls, config, handler } = build({ relayerUiBase: 'http://192.168.1.50:8888/' });
         const args = z.object(config.inputSchema).parse({});
 
         await handler({ ...args, relayer_ui_url: 'http://evil.example.com' });
 
-        expect(posts).toHaveLength(1);
-        expect(posts[0].u).toBe('http://192.168.1.50:8888/api/v1/mc/user');
+        expect(calls.map((c) => c.url)).toEqual(SETUP_PATHS.map((p) => `http://192.168.1.50:8888${p}`));
     });
 
     test('re-authenticates once and retries when the Relayer answers 401', async () => {
-        const seen = [];
+        let refused = false;
+        const relayer = mockRelayer({
+            routes: {
+                'POST /user': () => {
+                    if (refused) return { status: 200, data: { access_key: 'AK', secret_key: 'SK' } };
+                    refused = true;
+                    return { status: 401, data: {} };
+                },
+            },
+        });
         let signIns = 0;
         let state = null;
         const tools = register('../tools/setupCliCredentials', {
             acquireToken: async () => { signIns += 1; return { access_token: `T${signIns}`, refresh_token: 'r', expires_at: Date.now() + 3600000 }; },
             _tokenStateModule: { get: () => state, set: (s) => { state = s; }, clear: () => { state = null; } },
-            httpClient: {
-                post: async (u, b, c) => {
-                    seen.push(c.headers.keycloaktoken);
-                    return seen.length === 1 ? { status: 401, data: {} } : { status: 200, data: { access_key: 'AK', secret_key: 'SK' } };
-                },
-                get: async () => ({ status: 200, data: {} }),
-            },
+            httpClient: relayer.httpClient,
         });
         const { config, handler } = tools['setup_cli_credentials'];
         const args = z.object(config.inputSchema).parse({});
 
         const parsed = JSON.parse((await handler(args)).content[0].text);
 
-        expect(seen).toEqual(['T1', 'T2']);
+        expect(relayer.routes()).toEqual(['POST /user', 'POST /user', 'POST /policy-create', 'POST /policy']);
+        // The fresh token carries the rest of the run.
+        expect(relayer.calls.map((c) => c.config.headers.keycloaktoken)).toEqual(['T1', 'T2', 'T2', 'T2']);
         expect(parsed.success).toBe(true);
     });
 });
@@ -139,10 +144,7 @@ describe('the persisted S3 endpoint is derived, not string-patched', () => {
         const tools = register('../tools/setupCliCredentials', {
             ...tokenOptions(),
             relayerUiBase: relayerUiUrl,
-            httpClient: {
-                post: async () => ({ status: 200, data: { access_key: 'AK', secret_key: 'SK' } }),
-                get: async () => ({ status: 200, data: {} }),
-            },
+            httpClient: mockRelayer().httpClient,
         });
         const { config, handler } = tools['setup_cli_credentials'];
         const args = z.object(config.inputSchema).parse({});
@@ -177,10 +179,7 @@ describe('the credentials file does not persist the Muse token', () => {
     test('writes the muse_token key present but empty, and keeps the S3 keys', async () => {
         const tools = register('../tools/setupCliCredentials', {
             ...tokenOptions(),
-            httpClient: {
-                post: async () => ({ status: 200, data: { access_key: 'AKIAEXAMPLE', secret_key: 'wJalrSECRET' } }),
-                get: async () => ({ status: 200, data: {} }),
-            },
+            httpClient: mockRelayer({ keys: { access_key: 'AKIAEXAMPLE', secret_key: 'wJalrSECRET' } }).httpClient,
         });
         const { config, handler } = tools['setup_cli_credentials'];
         const args = z.object(config.inputSchema).parse({
